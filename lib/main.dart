@@ -22,6 +22,7 @@ import 'services/app_launch_action_service.dart';
 import 'services/backend_api.dart';
 import 'services/course_feedback_service.dart';
 import 'services/push_dispatch_service.dart';
+import 'services/recorded_progress_sync_service.dart';
 import 'firebase_options.dart';
 import 'learner/learner_games_screen.dart';
 import 'learner/learner_stories_screen.dart';
@@ -123,6 +124,7 @@ Future<void> _bootstrapApp() async {
     if (!kIsWeb) {
       unawaited(AppConnectivity.instance.start());
     }
+    unawaited(RecordedProgressSyncService.instance.start());
     unawaited(FCMService.I.init());
   });
 }

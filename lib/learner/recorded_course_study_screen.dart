@@ -18,8 +18,12 @@ import '../models/certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../services/course_feedback_service.dart';
+import '../services/recorded_course_offline_cache_service.dart';
+import '../services/recorded_offline_video_service.dart';
+import '../services/recorded_progress_sync_service.dart';
 import '../services/storage_existence.dart';
 import '../shared/app_feedback.dart';
+import '../shared/app_connectivity.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
@@ -62,6 +66,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   final FirebaseDatabase _db = FirebaseDatabase.instance;
   final CertificateService _certificateService = CertificateService();
   final CertificatePdfService _certificatePdfService = CertificatePdfService();
+  final RecordedOfflineVideoService _offlineVideos =
+      RecordedOfflineVideoService.instance;
+  final RecordedCourseOfflineCacheService _offlineCourseCache =
+      RecordedCourseOfflineCacheService.instance;
+  final RecordedProgressSyncService _progressSync =
+      RecordedProgressSyncService.instance;
 
   void _debug(String message) {
     // no-op in production build
@@ -79,6 +89,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   List<_RecordedUnit> _units = <_RecordedUnit>[];
   final Map<String, _RecordedProgress> _progressBySessionId =
       <String, _RecordedProgress>{};
+  bool _usingOfflineCourseCache = false;
 
   final Set<String> _expandedModuleLabels = <String>{};
   final Map<String, String> _selectedUnitByModule = <String, String>{};
@@ -92,7 +103,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   @override
   void initState() {
     super.initState();
+    _offlineVideos.addListener(_onOfflineVideosChanged);
+    unawaited(_offlineVideos.ensureLoaded());
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _offlineVideos.removeListener(_onOfflineVideosChanged);
+    super.dispose();
+  }
+
+  void _onOfflineVideosChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   DatabaseReference get _usersRef => _db.ref(_usersNode);
@@ -167,65 +191,42 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         }
       }
 
-      final Map<String, _RecordedProgress> progressById =
-          <String, _RecordedProgress>{};
-      if (progressSnap.value is Map) {
-        final rawMap = Map<String, dynamic>.from(progressSnap.value as Map);
-        for (final entry in rawMap.entries) {
-          if (entry.value is! Map) continue;
-          progressById[entry.key] = _RecordedProgress.fromMap(
-            Map<String, dynamic>.from(entry.value as Map),
-          );
-        }
-      }
+      final progressById = _parseProgress(progressSnap.value);
+      final units = _parseUnits(syllabusSnap.value);
 
-      final List<_RecordedUnit> units = <_RecordedUnit>[];
-      if (syllabusSnap.value is Map) {
-        final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
-        final rawModules = _asListOfMaps(root['modules']);
-        if (rawModules.isNotEmpty) {
-          for (int mi = 0; mi < rawModules.length; mi++) {
-            final module = rawModules[mi];
-            final moduleOrder = _asInt(module['order']) > 0
-                ? _asInt(module['order'])
-                : (mi + 1);
-            final moduleLabel =
-                (module['otherTitle'] ?? '').toString().trim().isNotEmpty
-                ? (module['otherTitle'] ?? '').toString().trim()
-                : ((module['title'] ?? '').toString().trim().isNotEmpty
-                      ? (module['title'] ?? '').toString().trim()
-                      : 'Module ${mi + 1}');
-            final rawUnits = _asListOfMaps(module['units']);
-            for (int ui = 0; ui < rawUnits.length; ui++) {
-              final u = rawUnits[ui];
-              final unitOrder = _asInt(u['order']) > 0
-                  ? _asInt(u['order'])
-                  : (ui + 1);
-              final unit = _RecordedUnit.fromMap({
-                ...u,
-                'otherTitle': moduleLabel,
-                'sessions': u['lessons'],
-                'order': (moduleOrder * 1000) + unitOrder,
-              });
-              units.add(unit);
-            }
-          }
-        } else {
-          final rawUnits = _asListOfMaps(root['units']);
-          for (final u in rawUnits) {
-            final unit = _RecordedUnit.fromMap(u);
-            units.add(unit);
-          }
+      final accessMap = accessSnap.value is Map
+          ? Map<String, dynamic>.from(accessSnap.value as Map)
+          : <String, dynamic>{};
+      final paymentMap = paymentSummarySnap.value is Map
+          ? Map<String, dynamic>.from(paymentSummarySnap.value as Map)
+          : <String, dynamic>{};
+      final syllabusMap = syllabusSnap.value is Map
+          ? Map<String, dynamic>.from(syllabusSnap.value as Map)
+          : <String, dynamic>{};
+      final progressMap = progressSnap.value is Map
+          ? Map<String, dynamic>.from(progressSnap.value as Map)
+          : <String, dynamic>{};
+      if (syllabusMap.isNotEmpty) {
+        final cachedCourse = Map<String, dynamic>.from(widget.courseData);
+        if (accessMap.isNotEmpty) cachedCourse['recorded_access'] = accessMap;
+        if (paymentMap.isNotEmpty) cachedCourse['payment_summary'] = paymentMap;
+        if (progressMap.isNotEmpty) {
+          cachedCourse['recorded_progress'] = progressMap;
         }
-      }
-
-      units.sort((a, b) => a.order.compareTo(b.order));
-      for (final unit in units) {
-        unit.sessions.sort((a, b) {
-          final aa = a.sessionNumber > 0 ? a.sessionNumber : a.order;
-          final bb = b.sessionNumber > 0 ? b.sessionNumber : b.order;
-          return aa.compareTo(bb);
-        });
+        unawaited(
+          _offlineCourseCache.save(
+            RecordedCourseOfflineCache(
+              uid: _uid,
+              courseKey: widget.courseKey,
+              courseId: _courseId,
+              courseData: cachedCourse,
+              recordedAccess: accessMap,
+              paymentSummary: paymentMap,
+              recordedSyllabus: syllabusMap,
+              cachedAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          ),
+        );
       }
 
       if (!mounted) return;
@@ -236,6 +237,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ..clear()
           ..addAll(progressById);
         _units = units;
+        _usingOfflineCourseCache = false;
         _ensureExpandedModules();
         _ensureSelectedUnits();
         _busy = false;
@@ -246,12 +248,128 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       );
     } catch (e) {
       _debug('loadAll error=$e');
+      final loadedFromCache = await _loadFromOfflineCourseCache();
+      if (loadedFromCache) return;
       if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
         _busy = false;
       });
     }
+  }
+
+  Map<String, _RecordedProgress> _parseProgress(dynamic raw) {
+    final out = <String, _RecordedProgress>{};
+    if (raw is! Map) return out;
+    final rawMap = Map<String, dynamic>.from(raw);
+    for (final entry in rawMap.entries) {
+      if (entry.value is! Map) continue;
+      out[entry.key] = _RecordedProgress.fromMap(
+        Map<String, dynamic>.from(entry.value as Map),
+      );
+    }
+    return out;
+  }
+
+  List<_RecordedUnit> _parseUnits(dynamic raw) {
+    final units = <_RecordedUnit>[];
+    if (raw is Map) {
+      final root = Map<String, dynamic>.from(raw);
+      final rawModules = _asListOfMaps(root['modules']);
+      if (rawModules.isNotEmpty) {
+        for (int mi = 0; mi < rawModules.length; mi++) {
+          final module = rawModules[mi];
+          final moduleOrder = _asInt(module['order']) > 0
+              ? _asInt(module['order'])
+              : (mi + 1);
+          final moduleLabel =
+              (module['otherTitle'] ?? '').toString().trim().isNotEmpty
+              ? (module['otherTitle'] ?? '').toString().trim()
+              : ((module['title'] ?? '').toString().trim().isNotEmpty
+                    ? (module['title'] ?? '').toString().trim()
+                    : 'Module ${mi + 1}');
+          final rawUnits = _asListOfMaps(module['units']);
+          for (int ui = 0; ui < rawUnits.length; ui++) {
+            final u = rawUnits[ui];
+            final unitOrder = _asInt(u['order']) > 0
+                ? _asInt(u['order'])
+                : (ui + 1);
+            units.add(
+              _RecordedUnit.fromMap({
+                ...u,
+                'otherTitle': moduleLabel,
+                'sessions': u['lessons'],
+                'order': (moduleOrder * 1000) + unitOrder,
+              }),
+            );
+          }
+        }
+      } else {
+        final rawUnits = _asListOfMaps(root['units']);
+        for (final u in rawUnits) {
+          units.add(_RecordedUnit.fromMap(u));
+        }
+      }
+    }
+
+    units.sort((a, b) => a.order.compareTo(b.order));
+    for (final unit in units) {
+      unit.sessions.sort((a, b) {
+        final aa = a.sessionNumber > 0 ? a.sessionNumber : a.order;
+        final bb = b.sessionNumber > 0 ? b.sessionNumber : b.order;
+        return aa.compareTo(bb);
+      });
+    }
+    return units;
+  }
+
+  Future<bool> _loadFromOfflineCourseCache() async {
+    final cache = await _offlineCourseCache.load(
+      uid: _uid,
+      courseKey: widget.courseKey,
+    );
+    if (cache == null || cache.recordedSyllabus.isEmpty) return false;
+
+    final units = _parseUnits(cache.recordedSyllabus);
+    if (units.isEmpty) return false;
+    final progressById = _parseProgress(cache.courseData['recorded_progress']);
+    for (final unit in units) {
+      for (final session in unit.sessions) {
+        final pendingOrRemote = await _progressSync.loadSessionProgress(
+          progressRef: _recordedProgressRef.child(session.id),
+          uid: _uid,
+          courseKey: widget.courseKey,
+          sessionId: session.id,
+        );
+        if (pendingOrRemote.isNotEmpty) {
+          progressById[session.id] = _RecordedProgress.fromMap(pendingOrRemote);
+        }
+      }
+    }
+
+    var expiresAt = _asInt(cache.recordedAccess['expiresAt']);
+    var durationMonths = _asInt(cache.recordedAccess['durationMonths']);
+    if (expiresAt <= 0) expiresAt = _asInt(cache.paymentSummary['expiresAt']);
+    if (durationMonths <= 0) {
+      durationMonths = _asInt(cache.paymentSummary['durationMonths']);
+    }
+
+    if (!mounted) return true;
+    setState(() {
+      _courseId = cache.courseId.trim().isEmpty ? _courseId : cache.courseId;
+      _expiresAt = expiresAt;
+      _durationMonths = durationMonths;
+      _progressBySessionId
+        ..clear()
+        ..addAll(progressById);
+      _units = units;
+      _usingOfflineCourseCache = true;
+      _ensureExpandedModules();
+      _ensureSelectedUnits();
+      _error = null;
+      _busy = false;
+    });
+    return true;
   }
 
   void _ensureExpandedModules() {
@@ -603,6 +721,162 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         : session.title.trim();
     return '$lessonType is currently unavailable for "$sessionTitle". '
         'Please refresh. If this continues, contact Your Bridge School support and share your course name + session number.';
+  }
+
+  RecordedVideoDownloadRequest? _downloadRequestForSession(
+    _RecordedSession session,
+  ) {
+    final url = session.videoUrl.trim();
+    if (!_isValidWebUrl(url) || _uid.trim().isEmpty || session.id.isEmpty) {
+      return null;
+    }
+    return RecordedVideoDownloadRequest(
+      uid: _uid,
+      courseKey: widget.courseKey,
+      courseId: _courseId,
+      sessionId: session.id,
+      sessionTitle: session.title.trim().isEmpty
+          ? 'Session ${session.sessionNumber}'
+          : session.title.trim(),
+      videoUrl: url,
+      expiresAt: _expiresAt,
+    );
+  }
+
+  List<RecordedVideoDownloadRequest> _downloadRequestsForUnit(
+    _RecordedUnit unit,
+  ) {
+    return unit.sessions
+        .map(_downloadRequestForSession)
+        .whereType<RecordedVideoDownloadRequest>()
+        .toList(growable: false);
+  }
+
+  List<RecordedVideoDownloadRequest> _downloadRequestsForModule(
+    List<_RecordedUnit> moduleUnits,
+  ) {
+    return moduleUnits.expand(_downloadRequestsForUnit).toList(growable: false);
+  }
+
+  List<RecordedVideoDownloadRequest> _downloadRequestsForCourse() {
+    return _units.expand(_downloadRequestsForUnit).toList(growable: false);
+  }
+
+  _DownloadSummary _downloadSummaryFor(
+    List<RecordedVideoDownloadRequest> requests,
+  ) {
+    if (requests.isEmpty) return const _DownloadSummary();
+    var downloaded = 0;
+    var failed = 0;
+    var active = 0;
+    var bytesDone = 0;
+    var bytesTotal = 0;
+    for (final request in requests) {
+      final info = _offlineVideos.infoFor(
+        uid: request.uid,
+        courseKey: request.courseKey,
+        sessionId: request.sessionId,
+      );
+      if (info == null) continue;
+      if (info.status == RecordedDownloadStatus.downloaded) downloaded++;
+      if (info.status == RecordedDownloadStatus.failed) failed++;
+      if (info.status == RecordedDownloadStatus.queued ||
+          info.status == RecordedDownloadStatus.downloading) {
+        active++;
+      }
+      bytesDone += info.bytesDownloaded;
+      bytesTotal += info.bytesTotal;
+    }
+    return _DownloadSummary(
+      total: requests.length,
+      downloaded: downloaded,
+      failed: failed,
+      active: active,
+      bytesDownloaded: bytesDone,
+      bytesTotal: bytesTotal,
+    );
+  }
+
+  Future<void> _downloadVideos(
+    List<RecordedVideoDownloadRequest> requests, {
+    required String emptyMessage,
+  }) async {
+    if (requests.isEmpty) {
+      _snack(emptyMessage);
+      return;
+    }
+    if (_daysLeft < 0) {
+      AppToast.show(
+        context,
+        'Your recorded access is expired. Please renew to download videos.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(
+        context,
+        'No internet connection. Connect to download videos.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    await _offlineVideos.enqueueAll(requests);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      requests.length == 1
+          ? 'Video download started.'
+          : '${requests.length} video downloads queued.',
+      type: AppToastType.success,
+    );
+  }
+
+  Future<void> _deleteDownloads(
+    List<RecordedVideoDownloadRequest> requests, {
+    required String title,
+  }) async {
+    final existing = requests
+        .where((request) {
+          return _offlineVideos.infoFor(
+                uid: request.uid,
+                courseKey: request.courseKey,
+                sessionId: request.sessionId,
+              ) !=
+              null;
+        })
+        .toList(growable: false);
+    if (existing.isEmpty) {
+      _snack('No downloaded videos to delete.');
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(
+          'Delete ${existing.length} offline video${existing.length == 1 ? '' : 's'} from this device?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _offlineVideos.deleteMany(existing);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'Offline videos deleted.',
+      type: AppToastType.success,
+    );
   }
 
   Future<bool> _isLessonAssetMissingOnServer({required String url}) async {
@@ -988,6 +1262,211 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  Widget _buildOfflineOverviewCard() {
+    final requests = _downloadRequestsForCourse();
+    final summary = _downloadSummaryFor(requests);
+    final pct = (summary.progress * 100).round();
+    final hasActive = summary.active > 0;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDDE7F6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.offline_pin_rounded,
+                  color: Color(0xFF4F46E5),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Offline videos',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                        fontSize: 14.5,
+                      ),
+                    ),
+                    Text(
+                      summary.total == 0
+                          ? 'No videos available to download.'
+                          : '${summary.downloaded}/${summary.total} downloaded${summary.failed > 0 ? ' • ${summary.failed} failed' : ''}',
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$pct%',
+                style: const TextStyle(
+                  color: Color(0xFF4F46E5),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: summary.progress,
+              minHeight: 7,
+              backgroundColor: const Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                hasActive ? const Color(0xFF0EA5E9) : const Color(0xFF4F46E5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: requests.isEmpty
+                      ? null
+                      : () => _downloadVideos(
+                          requests,
+                          emptyMessage: 'No videos available to download.',
+                        ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                  ),
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: const Text('Download all'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: requests.isEmpty ? null : _showDownloadsSheet,
+                  icon: const Icon(Icons.tune_rounded, size: 18),
+                  label: const Text('Manage'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDownloadsSheet() async {
+    final requests = _downloadRequestsForCourse();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      backgroundColor: const Color(0xFFF8FAFC),
+      builder: (_) {
+        return AnimatedBuilder(
+          animation: _offlineVideos,
+          builder: (context, _) {
+            final summary = _downloadSummaryFor(requests);
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Manage offline videos',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${summary.downloaded}/${summary.total} downloaded • ${summary.active} active • ${summary.failed} failed',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: summary.progress,
+                      minHeight: 8,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () async {
+                            await _downloadVideos(
+                              requests,
+                              emptyMessage: 'No videos available to download.',
+                            );
+                          },
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('Retry / download'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            _offlineVideos.cancelCurrent();
+                            AppToast.show(
+                              context,
+                              'Cancelling current download.',
+                            );
+                          },
+                          icon: const Icon(Icons.cancel_rounded),
+                          label: const Text('Cancel current'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _deleteDownloads(
+                        requests,
+                        title: 'Delete all offline videos?',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFB91C1C),
+                      ),
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Delete all downloads'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _openVideoPlaceholder(_RecordedSession session) async {
     final openTimer = Stopwatch()..start();
     final hasVideo = session.videoUrl.trim().isNotEmpty;
@@ -999,6 +1478,22 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       );
       return;
     }
+
+    if (_daysLeft < 0) {
+      AppToast.show(
+        context,
+        'Your recorded access is expired. Please renew to watch videos.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    final localPath = await _offlineVideos.localPathFor(
+      uid: _uid,
+      courseKey: widget.courseKey,
+      sessionId: session.id,
+      videoUrl: videoUrl,
+    );
 
     _debug('openVideo routePushStart sessionId=${session.id}');
     if (!mounted) return;
@@ -1017,10 +1512,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               sessionId: session.id,
               sessionTitle: session.title,
               videoUrl: videoUrl,
+              localVideoPath: localPath,
             ),
           ),
         );
       },
+      requireOnline: localPath == null,
     );
     _debug(
       'openVideo routeReturned sessionId=${session.id} elapsedMs=${openTimer.elapsedMilliseconds}',
@@ -2324,6 +2821,194 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  Widget _buildSessionDownloadButton({
+    required _RecordedSession session,
+    required bool isNarrow,
+  }) {
+    final request = _downloadRequestForSession(session);
+    if (request == null) return const SizedBox.shrink();
+    final info = _offlineVideos.infoFor(
+      uid: request.uid,
+      courseKey: request.courseKey,
+      sessionId: request.sessionId,
+    );
+    final status = info?.status ?? RecordedDownloadStatus.notDownloaded;
+    final progress = ((info?.progress ?? 0) * 100).round();
+
+    IconData icon = Icons.download_rounded;
+    Color color = const Color(0xFF0284C7);
+    String tooltip = 'Download video';
+    VoidCallback? onTap = () => _downloadVideos([
+      request,
+    ], emptyMessage: 'No video available to download.');
+
+    if (status == RecordedDownloadStatus.downloading ||
+        status == RecordedDownloadStatus.queued) {
+      icon = Icons.downloading_rounded;
+      color = const Color(0xFF0EA5E9);
+      tooltip = status == RecordedDownloadStatus.queued
+          ? 'Download queued'
+          : 'Downloading $progress%';
+      onTap = null;
+    } else if (status == RecordedDownloadStatus.downloaded) {
+      icon = Icons.offline_pin_rounded;
+      color = const Color(0xFF16A34A);
+      tooltip = 'Downloaded. Tap to delete.';
+      onTap = () => _deleteDownloads([request], title: 'Delete this video?');
+    } else if (status == RecordedDownloadStatus.failed) {
+      icon = Icons.error_outline_rounded;
+      color = const Color(0xFFB91C1C);
+      tooltip = 'Download failed. Tap to retry.';
+    } else if (status == RecordedDownloadStatus.cancelled) {
+      icon = Icons.refresh_rounded;
+      color = const Color(0xFFEA580C);
+      tooltip = 'Download cancelled. Tap to retry.';
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap,
+          child: Container(
+            width: isNarrow ? 28 : 30,
+            height: isNarrow ? 28 : 30,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: status == RecordedDownloadStatus.downloading
+                ? Padding(
+                    padding: const EdgeInsets.all(7),
+                    child: CircularProgressIndicator(
+                      value: info?.bytesTotal == 0 ? null : info?.progress,
+                      strokeWidth: 2,
+                      color: color,
+                    ),
+                  )
+                : Icon(icon, size: isNarrow ? 16 : 17, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScopeDownloadActions({
+    required List<RecordedVideoDownloadRequest> requests,
+    required String label,
+    required String deleteTitle,
+    bool compact = false,
+  }) {
+    final summary = _downloadSummaryFor(requests);
+    if (summary.total <= 0) return const SizedBox.shrink();
+    final isDone = summary.allDownloaded;
+    final hasActive = summary.active > 0;
+    final text = isDone
+        ? 'Downloaded'
+        : hasActive
+        ? '${(summary.progress * 100).round()}%'
+        : label;
+    return Container(
+      margin: EdgeInsets.only(top: compact ? 0 : 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 6 : 8,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          if (!compact) ...[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${summary.downloaded}/${summary.total} offline videos',
+                    style: const TextStyle(
+                      color: Color(0xFF334155),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: summary.progress,
+                      minHeight: 5,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          TextButton.icon(
+            onPressed: hasActive
+                ? null
+                : isDone
+                ? () => _deleteDownloads(requests, title: deleteTitle)
+                : () => _downloadVideos(
+                    requests,
+                    emptyMessage: 'No videos available to download.',
+                  ),
+            style: TextButton.styleFrom(
+              foregroundColor: isDone
+                  ? const Color(0xFF16A34A)
+                  : const Color(0xFF4F46E5),
+              minimumSize: const Size(0, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            icon: Icon(
+              isDone ? Icons.delete_outline_rounded : Icons.download_rounded,
+              size: 17,
+            ),
+            label: Text(text),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOfflineCacheBanner() {
+    if (!_usingOfflineCourseCache) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, color: Color(0xFFB45309), size: 20),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Offline mode: showing saved recorded lessons. Progress and notes sync when internet returns.',
+              style: TextStyle(
+                color: Color(0xFF92400E),
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSessionCard({
     required _RecordedSession session,
     required int flatIndex,
@@ -2456,6 +3141,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       ),
                     ),
                   ),
+                ),
+              if (requiresVideo)
+                _buildSessionDownloadButton(
+                  session: session,
+                  isNarrow: isNarrow,
                 ),
               if (requiresMaterials)
                 Padding(
@@ -2634,6 +3324,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 ],
                               ),
                             ),
+                            _buildScopeDownloadActions(
+                              requests: _downloadRequestsForModule(moduleUnits),
+                              label: 'Module',
+                              deleteTitle: 'Delete module downloads?',
+                              compact: true,
+                            ),
+                            const SizedBox(width: 6),
                             Container(
                               width: isNarrow ? 24 : 26,
                               height: isNarrow ? 24 : 26,
@@ -2817,6 +3514,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   ),
                                 ),
                               ),
+                            _buildScopeDownloadActions(
+                              requests: _downloadRequestsForUnit(selectedUnit),
+                              label: 'Download unit',
+                              deleteTitle: 'Delete unit downloads?',
+                            ),
                             const SizedBox(height: 2),
                             for (
                               int i = 0;
@@ -2994,6 +3696,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           await _loadAll();
         } else if (value == 'info') {
           await _showCourseInfoSheet();
+        } else if (value == 'downloads') {
+          await _showDownloadsSheet();
         } else if (value == 'certificate') {
           if (_courseCertificateUnlocked) {
             _onCertificateTap();
@@ -3010,6 +3714,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               Icon(Icons.info_outline_rounded, size: 18),
               SizedBox(width: 10),
               Text('Course info'),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'downloads',
+          child: Row(
+            children: [
+              Icon(Icons.offline_pin_rounded, size: 18),
+              SizedBox(width: 10),
+              Text('Offline videos'),
             ],
           ),
         ),
@@ -3169,7 +3883,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                           width: 360,
                           child: ListView(
                             padding: const EdgeInsets.fromLTRB(12, 10, 8, 18),
-                            children: [_buildTopOverviewCard()],
+                            children: [
+                              _buildTopOverviewCard(),
+                              const SizedBox(height: 10),
+                              _buildOfflineOverviewCard(),
+                            ],
                           ),
                         ),
                       Expanded(
@@ -3180,7 +3898,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             12,
                             18,
                           ),
-                          children: [_buildUnitsList()],
+                          children: [
+                            _buildOfflineCacheBanner(),
+                            _buildUnitsList(),
+                          ],
                         ),
                       ),
                     ],
@@ -3196,7 +3917,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       if (widget.showOverviewCard) ...[
                         _buildTopOverviewCard(),
                         const SizedBox(height: 10),
+                        _buildOfflineOverviewCard(),
+                        const SizedBox(height: 10),
                       ],
+                      _buildOfflineCacheBanner(),
                       _buildUnitsList(),
                     ],
                   ),
@@ -3494,6 +4218,34 @@ class _SessionRef {
   final int sessionIndex;
   final _RecordedUnit unit;
   final _RecordedSession session;
+}
+
+class _DownloadSummary {
+  const _DownloadSummary({
+    this.total = 0,
+    this.downloaded = 0,
+    this.failed = 0,
+    this.active = 0,
+    this.bytesDownloaded = 0,
+    this.bytesTotal = 0,
+  });
+
+  final int total;
+  final int downloaded;
+  final int failed;
+  final int active;
+  final int bytesDownloaded;
+  final int bytesTotal;
+
+  double get progress {
+    if (total <= 0) return 0;
+    if (bytesTotal > 0) {
+      return (bytesDownloaded / bytesTotal).clamp(0.0, 1.0).toDouble();
+    }
+    return (downloaded / total).clamp(0.0, 1.0).toDouble();
+  }
+
+  bool get allDownloaded => total > 0 && downloaded == total;
 }
 
 class _RecordedProgress {

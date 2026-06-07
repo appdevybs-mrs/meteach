@@ -14,6 +14,7 @@ class TakeAttendanceScreen extends StatefulWidget {
   final String? existingSessionId;
   final Map<String, dynamic>? existingRecord;
   final DateTime? initialDate;
+  final bool preserveExistingLearnerAttendanceOnly;
 
   const TakeAttendanceScreen({
     super.key,
@@ -21,6 +22,7 @@ class TakeAttendanceScreen extends StatefulWidget {
     this.existingSessionId,
     this.existingRecord,
     this.initialDate,
+    this.preserveExistingLearnerAttendanceOnly = false,
   });
 
   @override
@@ -556,10 +558,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         title: const Text(
           'Syllabus lesson required',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            color: primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
         ),
         content: const Text(
           'Please choose at least one lesson from the syllabus first. This keeps the attendance flow aligned with the course plan. After that, you can add custom items if needed.',
@@ -1215,6 +1214,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         final courses = _safeMap(cSnap.value);
 
         String? targetKey;
+        var learnerAttendanceExists = false;
 
         for (final entry in courses.entries) {
           final val = entry.value;
@@ -1230,11 +1230,15 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
           if (cid == _classId) {
             targetKey = entry.key.toString();
+            final attendance = _safeMap(valMap['attendance']);
+            learnerAttendanceExists = attendance.containsKey(sessionId);
             break;
           }
         }
 
-        if (targetKey != null) {
+        if (targetKey != null &&
+            (!widget.preserveExistingLearnerAttendanceOnly ||
+                learnerAttendanceExists)) {
           updates['users/$lUid/courses/$targetKey/attendance/$sessionId'] = {
             ...classRecord,
             'class_id': _classId,

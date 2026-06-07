@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import '../services/recorded_progress_sync_service.dart';
+import '../shared/app_connectivity.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
@@ -21,6 +24,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
     required this.sessionId,
     required this.sessionTitle,
     required this.videoUrl,
+    this.localVideoPath,
   });
 
   final String uid;
@@ -29,6 +33,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
   final String sessionId;
   final String sessionTitle;
   final String videoUrl;
+  final String? localVideoPath;
 
   @override
   State<RecordedVideoPlayerScreen> createState() =>
@@ -41,6 +46,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   static const String _recordedProgressNode = 'recorded_progress';
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
+  final RecordedProgressSyncService _progressSync =
+      RecordedProgressSyncService.instance;
 
   VideoPlayerController? _controller;
   StreamSubscription<DatabaseEvent>? _progressSub;
@@ -225,14 +232,16 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     });
 
     try {
-      final snap = await _progressRef.get();
-      if (snap.value is Map) {
-        final map = Map<String, dynamic>.from(snap.value as Map);
-        _savedPositionMs = _asInt(map['videoPositionMs']);
-        _savedDurationMs = _asInt(map['videoDurationMs']);
-        _lessonNotes = _parseLessonNotes(map['lessonNotes']);
-        _isCompleted = _asBool(map['videoCompleted']);
-      }
+      final map = await _progressSync.loadSessionProgress(
+        progressRef: _progressRef,
+        uid: widget.uid,
+        courseKey: widget.courseKey,
+        sessionId: widget.sessionId,
+      );
+      _savedPositionMs = _asInt(map['videoPositionMs']);
+      _savedDurationMs = _asInt(map['videoDurationMs']);
+      _lessonNotes = _parseLessonNotes(map['lessonNotes']);
+      _isCompleted = _asBool(map['videoCompleted']);
 
       final uri = Uri.tryParse(widget.videoUrl.trim());
       if (uri == null) {
@@ -240,7 +249,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       }
       _debug('video uri=$uri');
 
-      final controller = VideoPlayerController.networkUrl(uri);
+      final localPath = widget.localVideoPath?.trim() ?? '';
+      final localFile = localPath.isEmpty ? null : File(localPath);
+      final hasLocal = localFile != null && await localFile.exists();
+      final controller = hasLocal
+          ? VideoPlayerController.file(localFile)
+          : VideoPlayerController.networkUrl(uri);
       _controller = controller;
 
       final initTimer = Stopwatch()..start();
@@ -284,6 +298,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   void _listenForRemoteProgress() {
+    if (AppConnectivity.instance.isOffline) return;
     _progressSub?.cancel();
     _progressSub = _progressRef.onValue.listen((event) {
       final raw = event.snapshot.value;
@@ -291,11 +306,14 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
       final map = Map<String, dynamic>.from(raw);
       final remoteCompleted = _asBool(map['videoCompleted']);
+      final remoteNotes = _parseLessonNotes(map['lessonNotes']);
 
       if (!mounted) return;
       setState(() {
-        _lessonNotes = _parseLessonNotes(map['lessonNotes']);
-        _isCompleted = remoteCompleted;
+        if (remoteNotes.isNotEmpty || _lessonNotes.isEmpty) {
+          _lessonNotes = remoteNotes;
+        }
+        _isCompleted = _isCompleted || remoteCompleted;
       });
     });
   }
@@ -306,13 +324,19 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     final durationMs = controller.value.duration.inMilliseconds;
 
-    await _progressRef.update({
-      'videoUrl': widget.videoUrl.trim(),
-      'sessionTitle': widget.sessionTitle.trim(),
-      'videoDurationMs': durationMs,
-      'lastOpenedAt': ServerValue.timestamp,
-      'updatedAt': ServerValue.timestamp,
-    });
+    await _progressSync.updateProgress(
+      progressRef: _progressRef,
+      uid: widget.uid,
+      courseKey: widget.courseKey,
+      sessionId: widget.sessionId,
+      patch: {
+        'videoUrl': widget.videoUrl.trim(),
+        'sessionTitle': widget.sessionTitle.trim(),
+        'videoDurationMs': durationMs,
+        'lastOpenedAt': ServerValue.timestamp,
+        'updatedAt': ServerValue.timestamp,
+      },
+    );
   }
 
   static int _asInt(dynamic v) {
@@ -399,12 +423,18 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     try {
       _saving = true;
-      await _progressRef.update({
-        'videoPositionMs': currentMs,
-        'videoDurationMs': durationMs,
-        'lastOpenedAt': ServerValue.timestamp,
-        'updatedAt': ServerValue.timestamp,
-      });
+      await _progressSync.updateProgress(
+        progressRef: _progressRef,
+        uid: widget.uid,
+        courseKey: widget.courseKey,
+        sessionId: widget.sessionId,
+        patch: {
+          'videoPositionMs': currentMs,
+          'videoDurationMs': durationMs,
+          'lastOpenedAt': ServerValue.timestamp,
+          'updatedAt': ServerValue.timestamp,
+        },
+      );
     } catch (_) {
     } finally {
       _saving = false;
@@ -414,23 +444,30 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Future<void> _markVideoCompleted() async {
     if (_isCompleted) return;
 
-    final snap = await _progressRef.get();
-    final map = snap.value is Map
-        ? Map<String, dynamic>.from(snap.value as Map)
-        : <String, dynamic>{};
-
+    final map = await _progressSync.loadSessionProgress(
+      progressRef: _progressRef,
+      uid: widget.uid,
+      courseKey: widget.courseKey,
+      sessionId: widget.sessionId,
+    );
     final materialsCompleted = _asBool(map['materialsCompleted']);
     final durationMs = _controller?.value.duration.inMilliseconds ?? 0;
 
-    await _progressRef.update({
-      'videoCompleted': true,
-      'videoCompletedAt': ServerValue.timestamp,
-      'videoPositionMs': durationMs,
-      'videoDurationMs': durationMs,
-      'completed': materialsCompleted,
-      'lastOpenedAt': ServerValue.timestamp,
-      'updatedAt': ServerValue.timestamp,
-    });
+    await _progressSync.updateProgress(
+      progressRef: _progressRef,
+      uid: widget.uid,
+      courseKey: widget.courseKey,
+      sessionId: widget.sessionId,
+      patch: {
+        'videoCompleted': true,
+        'videoCompletedAt': ServerValue.timestamp,
+        'videoPositionMs': durationMs,
+        'videoDurationMs': durationMs,
+        'completed': materialsCompleted,
+        'lastOpenedAt': ServerValue.timestamp,
+        'updatedAt': ServerValue.timestamp,
+      },
+    );
 
     if (!mounted) return;
     setState(() {
@@ -652,13 +689,36 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         ? _lessonNotesRef.push()
         : _lessonNotesRef.child(existingNote.id);
 
-    await ref.set({
+    final noteData = {
       'positionMs': positionMs,
       'text': text,
       'createdAt': existingNote?.createdAt ?? now,
       'updatedAt': now,
       'deleted': false,
-    });
+    };
+
+    final savedId = await _progressSync.saveNote(
+      progressRef: _progressRef,
+      uid: widget.uid,
+      courseKey: widget.courseKey,
+      sessionId: widget.sessionId,
+      noteId: existingNote?.id ?? ref.key,
+      note: noteData,
+    );
+
+    final updatedNote = _LessonNoteItem.fromMap(savedId, noteData);
+    if (mounted) {
+      setState(() {
+        final next = _lessonNotes.where((n) => n.id != savedId).toList();
+        next.add(updatedNote);
+        next.sort((a, b) {
+          final cmp = a.positionMs.compareTo(b.positionMs);
+          if (cmp != 0) return cmp;
+          return a.createdAt.compareTo(b.createdAt);
+        });
+        _lessonNotes = next;
+      });
+    }
 
     if (!mounted) return;
     // ignore: use_build_context_synchronously
@@ -693,8 +753,17 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     );
 
     if (confirmed != true) return;
-    await _lessonNotesRef.child(note.id).remove();
+    await _progressSync.deleteNote(
+      progressRef: _progressRef,
+      uid: widget.uid,
+      courseKey: widget.courseKey,
+      sessionId: widget.sessionId,
+      noteId: note.id,
+    );
     if (!mounted) return;
+    setState(() {
+      _lessonNotes = _lessonNotes.where((item) => item.id != note.id).toList();
+    });
     AppToast.show(context, 'Note deleted.');
   }
 
@@ -1313,6 +1382,14 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   void _openCommentsScreen() {
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(
+        context,
+        'Comments need internet. Your lesson notes still work offline.',
+        type: AppToastType.info,
+      );
+      return;
+    }
     final lessonTitle = widget.sessionTitle.trim().isEmpty
         ? 'Comments'
         : widget.sessionTitle.trim();
@@ -1338,6 +1415,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Widget _buildCommentsPreviewSection() {
     final visible = _comments.take(2).toList();
     final accent = const Color(0xFFF97316);
+    final commentsOffline = AppConnectivity.instance.isOffline;
 
     return Container(
       width: double.infinity,
@@ -1379,7 +1457,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       ),
                     ),
                     Text(
-                      _commentsBusy
+                      commentsOffline
+                          ? 'Online discussion unavailable offline'
+                          : _commentsBusy
                           ? 'Loading discussion...'
                           : '${_comments.length} comments',
                       style: const TextStyle(
@@ -1413,7 +1493,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
-                onPressed: _openCommentsScreen,
+                onPressed: commentsOffline ? null : _openCommentsScreen,
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
@@ -1449,6 +1529,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               child: Text(
                 _commentsBusy
                     ? 'Loading discussion...'
+                    : commentsOffline
+                    ? 'Comments need internet. Use Lesson Notes above while offline.'
                     : _comments.isEmpty
                     ? 'No comments yet. Open discussion to start the conversation.'
                     : 'Tap Expand to preview ${_comments.length} comments.',
@@ -1467,6 +1549,24 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                         width: 22,
                         height: 22,
                         child: CircularProgressIndicator(strokeWidth: 2.2),
+                      ),
+                    ),
+                  )
+                : commentsOffline
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: accent.withValues(alpha: 0.16)),
+                    ),
+                    child: const Text(
+                      'Comments are online-only. Lesson notes are saved offline and sync later.',
+                      style: TextStyle(
+                        color: Color(0xFF475569),
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
                       ),
                     ),
                   )
@@ -1637,6 +1737,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   Future<void> _loadComments() async {
+    if (AppConnectivity.instance.isOffline) return;
     setState(() => _commentsBusy = true);
     try {
       final mergedById = <String, LessonCommentItem>{};

@@ -49,6 +49,8 @@ import '../shared/shared_pdf_reader_screen.dart';
 import '../services/course_feedback_service.dart';
 import '../services/learner_join_signal_service.dart';
 import '../services/push_dispatch_service.dart';
+import '../services/recorded_course_offline_cache_service.dart';
+import '../services/recorded_progress_sync_service.dart';
 import '../services/secure_window_service.dart';
 
 class LearnerCourseDetailScreen extends StatefulWidget {
@@ -77,6 +79,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   static const bookingProgressNode = 'booking_progress';
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final RecordedCourseOfflineCacheService _offlineCourseCache =
+      RecordedCourseOfflineCacheService.instance;
+  final RecordedProgressSyncService _progressSync =
+      RecordedProgressSyncService.instance;
   late final DatabaseReference _usersRef = _db.child(usersNode);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
   late final DatabaseReference _classesRef = _db.child(classesNode);
@@ -634,8 +640,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       } else {
         final courseId = _courseId;
         if (courseId.isEmpty) return out;
-        final snap =
-            await _coursesRef.child(courseId).child('instructors_map').get();
+        final snap = await _coursesRef
+            .child(courseId)
+            .child('instructors_map')
+            .get();
         if (snap.exists && snap.value is Map) {
           rawMap = (snap.value as Map).map((k, v) => MapEntry(k.toString(), v));
         }
@@ -2112,11 +2120,193 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       if (!mounted) return;
       setState(() => _busy = false);
     } catch (e) {
+      final loadedFromCache = await _loadRecordedDetailFromOfflineCache();
+      if (loadedFromCache) return;
       if (!mounted) return;
       setState(() {
         _error = toHumanError(e);
         _busy = false;
       });
+    }
+  }
+
+  Future<bool> _loadRecordedDetailFromOfflineCache() async {
+    final fallbackCourse = _course.isNotEmpty
+        ? _course
+        : Map<String, dynamic>.from(widget.courseData);
+    final cache = await _offlineCourseCache.load(
+      uid: _uid,
+      courseKey: widget.courseKey,
+    );
+    if (cache == null || cache.courseData.isEmpty) return false;
+
+    final looksRecorded =
+        resolveCourseDeliveryKey(fallbackCourse) == 'recorded' ||
+        resolveCourseDeliveryKey(cache.courseData) == 'recorded';
+    if (!looksRecorded) return false;
+
+    final course = Map<String, dynamic>.from(cache.courseData);
+    if (cache.recordedAccess.isNotEmpty) {
+      course['recorded_access'] = cache.recordedAccess;
+    }
+    if (cache.paymentSummary.isNotEmpty) {
+      course['payment_summary'] = cache.paymentSummary;
+    }
+
+    _applyRecordedSyllabusCache(cache.recordedSyllabus);
+    _coveredSessionIds = await _recordedCoveredFromCourse(course);
+    _attendanceAll = const [];
+    _onlineAttendance = const [];
+    _sessionReviewsByNo = {};
+    _paymentSummary = cache.paymentSummary;
+
+    if (!mounted) return true;
+    setState(() {
+      _course = course;
+      _payLoading = false;
+      _derivedSessionsPaidTotal = 0;
+      _derivedSessionsReady = true;
+      _privateMetaFuture = null;
+      _teacherProfile = null;
+      _error = null;
+      _busy = false;
+    });
+    return true;
+  }
+
+  Future<Set<String>> _recordedCoveredFromCourse(
+    Map<String, dynamic> course,
+  ) async {
+    final out = <String>{};
+    final raw = course['recorded_progress'];
+    bool asBool(dynamic v) {
+      if (v is bool) return v;
+      final s = (v ?? '').toString().trim().toLowerCase();
+      return s == 'true' || s == '1';
+    }
+
+    if (raw is Map) {
+      for (final entry in Map<String, dynamic>.from(raw).entries) {
+        final sid = entry.key.toString().trim();
+        final value = entry.value;
+        if (sid.isEmpty || value is! Map) continue;
+        final rec = Map<String, dynamic>.from(value);
+        if (asBool(rec['videoCompleted']) ||
+            asBool(rec['materialsCompleted'])) {
+          out.add(sid);
+        }
+      }
+    }
+
+    for (final row in _syllabiFlat) {
+      final sid = (row['sessionId'] ?? '').toString().trim();
+      if (sid.isEmpty) continue;
+      final pendingOrRemote = await _progressSync.loadSessionProgress(
+        progressRef: _usersRef
+            .child(_uid)
+            .child('courses')
+            .child(widget.courseKey)
+            .child('recorded_progress')
+            .child(sid),
+        uid: _uid,
+        courseKey: widget.courseKey,
+        sessionId: sid,
+      );
+      if (asBool(pendingOrRemote['videoCompleted']) ||
+          asBool(pendingOrRemote['materialsCompleted'])) {
+        out.add(sid);
+      }
+    }
+    return out;
+  }
+
+  void _applyRecordedSyllabusCache(Map<String, dynamic> syllabus) {
+    final flat = <Map<String, dynamic>>[];
+    final modules = syllabus['modules'];
+    if (modules is List) {
+      for (int mi = 0; mi < modules.length; mi++) {
+        final rawModule = modules[mi];
+        if (rawModule is! Map) continue;
+        final module = Map<String, dynamic>.from(rawModule);
+        final moduleLabel =
+            (module['otherTitle'] ?? '').toString().trim().isNotEmpty
+            ? (module['otherTitle'] ?? '').toString()
+            : ((module['title'] ?? '').toString().trim().isNotEmpty
+                  ? (module['title'] ?? '').toString()
+                  : 'Module ${mi + 1}');
+        final units = module['units'];
+        if (units is! List) continue;
+        for (final rawUnit in units) {
+          if (rawUnit is! Map) continue;
+          final unit = Map<String, dynamic>.from(rawUnit);
+          final lessons = unit['lessons'];
+          if (lessons is! List) continue;
+          for (final rawLesson in lessons) {
+            if (rawLesson is! Map) continue;
+            final sess = Map<String, dynamic>.from(rawLesson);
+            flat.add({
+              'unitOrder': unit['order'] ?? 0,
+              'unitId': (unit['id'] ?? '').toString(),
+              'unitTitle': (unit['title'] ?? '').toString(),
+              'unitDescription': (unit['description'] ?? '').toString(),
+              'unitOtherTitle': moduleLabel,
+              'order': sess['order'] ?? 0,
+              'sessionId': (sess['id'] ?? '').toString(),
+              'title': (sess['title'] ?? '').toString(),
+              'sessionNumber': sess['sessionNumber'] ?? 0,
+              'objective': (sess['objective'] ?? '').toString(),
+              'materialsUrl': (sess['materialsUrl'] ?? '').toString(),
+            });
+          }
+        }
+      }
+    } else {
+      final units = syllabus['units'];
+      if (units is List) {
+        for (final rawUnit in units) {
+          if (rawUnit is! Map) continue;
+          final unit = Map<String, dynamic>.from(rawUnit);
+          final sessions = unit['sessions'];
+          if (sessions is! List) continue;
+          for (final rawSession in sessions) {
+            if (rawSession is! Map) continue;
+            final sess = Map<String, dynamic>.from(rawSession);
+            flat.add({
+              'unitOrder': unit['order'] ?? 0,
+              'unitId': (unit['id'] ?? '').toString(),
+              'unitTitle': (unit['title'] ?? '').toString(),
+              'unitDescription': (unit['description'] ?? '').toString(),
+              'unitOtherTitle': (unit['otherTitle'] ?? '').toString(),
+              'order': sess['order'] ?? 0,
+              'sessionId': (sess['id'] ?? '').toString(),
+              'title': (sess['title'] ?? '').toString(),
+              'sessionNumber': sess['sessionNumber'] ?? 0,
+              'objective': (sess['objective'] ?? '').toString(),
+              'materialsUrl': (sess['materialsUrl'] ?? '').toString(),
+            });
+          }
+        }
+      }
+    }
+
+    int n(dynamic v) =>
+        (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+    flat.sort((a, b) {
+      final uo = n(a['unitOrder']).compareTo(n(b['unitOrder']));
+      if (uo != 0) return uo;
+      return n(a['order']).compareTo(n(b['order']));
+    });
+    _syllabiFlat = flat;
+    _sessionIdByNumber = {};
+    _sessionTitleByNumber = {};
+    for (final s in _syllabiFlat) {
+      final sn = _asInt(s['sessionNumber']);
+      final sid = (s['sessionId'] ?? '').toString().trim();
+      final title = (s['title'] ?? '').toString().trim();
+      if (sn > 0) {
+        if (sid.isNotEmpty) _sessionIdByNumber[sn] = sid;
+        if (title.isNotEmpty) _sessionTitleByNumber[sn] = title;
+      }
     }
   }
 

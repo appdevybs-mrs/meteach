@@ -2046,6 +2046,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
       final courses = v.map((k, vv) => MapEntry(k.toString(), vv));
 
+      final catalogSnap = await _db.child('courses').get();
+      final coursesCatalog = (catalogSnap.value is Map)
+          ? (catalogSnap.value as Map).map(
+              (k, vv) => MapEntry(k.toString(), vv),
+            )
+          : <String, dynamic>{};
+
       for (final entry in courses.entries) {
         final raw = entry.value;
         if (raw is! Map) continue;
@@ -2073,7 +2080,19 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           final title = (m['title'] ?? m['courseTitle'] ?? m['name'] ?? id)
               .toString()
               .trim();
-          out.add(_CourseChoice(id: id, title: title.isEmpty ? id : title));
+          final code = (m['course_code'] ?? '').toString();
+          final key = entry.key.toString();
+          final catalogNode = coursesCatalog[id] ?? coursesCatalog[key];
+          final catalogMap = (catalogNode is Map)
+              ? catalogNode.map((k, vv) => MapEntry(k.toString(), vv))
+              : <String, dynamic>{};
+          final thumb = (catalogMap['thumbnail'] ?? '').toString().trim();
+          out.add(_CourseChoice(
+            id: id,
+            title: title.isEmpty ? id : title,
+            courseCode: code,
+            thumbnailUrl: thumb,
+          ));
         }
       }
     } catch (_) {}
@@ -2088,93 +2107,296 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
 
   Future<String?> _showCourseChooser(List<_CourseChoice> courses) async {
     if (!mounted) return null;
-    return showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x33000000),
-                blurRadius: 24,
-                offset: Offset(0, 14),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Choose your course',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 20,
-                  color: primaryBlue,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Select the course you want to book a class for.',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade700,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: courses.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) {
-                    final c = courses[i];
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () => Navigator.pop(context, c.id),
-                      child: Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFFBF5),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: uiBorder),
+    final p = palette;
+    final isAr = lessonChoiceArabic;
+    final pageController = PageController(viewportFraction: 0.94);
+    var currentPage = 0;
+
+    try {
+      return showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 22,
+            ),
+            child: StatefulBuilder(
+              builder: (context, setDialogState) {
+                return ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 760,
+                    maxHeight: MediaQuery.of(context).size.height * 0.76,
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: p.appBg,
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: p.border.withValues(alpha: 0.9),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 26,
+                          offset: const Offset(0, 14),
                         ),
-                        child: Row(
+                      ],
+                    ),
+                    child: SafeArea(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(
-                              Icons.menu_book_rounded,
-                              color: primaryBlue,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                c.title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: primaryBlue,
-                                ),
+                            Text(
+                              isAr ? 'اختر دورة' : 'Choose course',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 18,
+                                color: p.primary,
                               ),
                             ),
-                            const Icon(
-                              Icons.arrow_forward_rounded,
-                              color: actionOrange,
+                            const SizedBox(height: 6),
+                            Text(
+                              isAr
+                                  ? 'اسحب لليسار أو اليمين لعرض جميع الدورات'
+                                  : 'Swipe left or right to view all courses',
+                              style: TextStyle(
+                                color: p.text.withValues(alpha: 0.64),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              height: 276,
+                              child: PageView.builder(
+                                controller: pageController,
+                                itemCount: courses.length,
+                                onPageChanged: (index) {
+                                  setDialogState(() => currentPage = index);
+                                },
+                                itemBuilder: (_, i) {
+                                  final c = courses[i];
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(20),
+                                      onTap: () =>
+                                          Navigator.pop(dialogCtx, c.id),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              p.cardBg,
+                                              p.soft.withValues(alpha: 0.9),
+                                            ],
+                                          ),
+                                          border: Border.all(
+                                            color: p.border.withValues(
+                                              alpha: 0.8,
+                                            ),
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.06,
+                                              ),
+                                              blurRadius: 14,
+                                              offset: const Offset(0, 8),
+                                            ),
+                                          ],
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Stack(
+                                              children: [
+                                                Container(
+                                                  width: double.infinity,
+                                                  height: 138,
+                                                  decoration: BoxDecoration(
+                                                    color: p.appBg,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          16,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: p.border
+                                                          .withValues(
+                                                            alpha: 0.9,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  clipBehavior:
+                                                      Clip.antiAlias,
+                                                  child:
+                                                      c.thumbnailUrl.isNotEmpty
+                                                          ? Image.network(
+                                                              c.thumbnailUrl,
+                                                              fit: BoxFit.cover,
+                                                              filterQuality:
+                                                                  FilterQuality
+                                                                      .low,
+                                                              errorBuilder:
+                                                                  (context,
+                                                                      error,
+                                                                      stackTrace) =>
+                                                                      Center(
+                                                                child: Icon(
+                                                                  Icons
+                                                                      .menu_book_rounded,
+                                                                  color:
+                                                                      p.primary,
+                                                                  size: 34,
+                                                                ),
+                                                              ),
+                                                            )
+                                                          : Center(
+                                                              child: Icon(
+                                                                Icons
+                                                                    .menu_book_rounded,
+                                                                color: p.primary,
+                                                                size: 34,
+                                                              ),
+                                                            ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              c.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: p.primary,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    c.courseCode.isEmpty
+                                                        ? 'Code: —'
+                                                        : 'Code: ${c.courseCode}',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color: p.text.withValues(
+                                                        alpha: 0.72,
+                                                      ),
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                FilledButton(
+                                                  style: FilledButton.styleFrom(
+                                                    backgroundColor: p.primary,
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    padding:
+                                                        const EdgeInsets
+                                                            .symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 8,
+                                                    ),
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        10,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  onPressed: () =>
+                                                      Navigator.pop(
+                                                    dialogCtx,
+                                                    c.id,
+                                                  ),
+                                                  child: Text(
+                                                    isAr
+                                                        ? 'احجز هذه الدورة'
+                                                        : 'Book this course',
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Center(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: List.generate(
+                                  courses.length,
+                                  (index) {
+                                    final selected = currentPage == index;
+                                    return AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 220),
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 3,
+                                      ),
+                                      width: selected ? 18 : 7,
+                                      height: 7,
+                                      decoration: BoxDecoration(
+                                        color: selected
+                                            ? p.primary
+                                            : p.border.withValues(alpha: 0.75),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      );
+    } finally {
+      pageController.dispose();
+    }
   }
 
   Future<String> _inferClassIdForCourse(String cid) async {
@@ -5169,96 +5391,107 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 44,
-              height: 5,
-              margin: const EdgeInsets.only(bottom: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFDDE4EA),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            Row(
-              children: [
-                Icon(Icons.menu_book_rounded,
-                    color: const Color(0xFF0E7C86), size: 24),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title.isEmpty
-                        ? 'Session $no'
-                        : 'Session $no — $title',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                      color: Color(0xFF0E7C86),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          child: SingleChildScrollView(
+            child: Directionality(
+              textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDDE4EA),
+                      borderRadius: BorderRadius.circular(999),
                     ),
                   ),
-                ),
-              ],
-            ),
-            if (objective.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Text(
-                isAr ? 'هدف الحصة' : 'Session Objective',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                objective,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A1A1A),
-                  height: 1.35,
-                ),
-              ),
-            ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFBF5D39),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  Row(
+                    textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+                    children: [
+                      Icon(Icons.menu_book_rounded,
+                          color: const Color(0xFF0E7C86), size: 24),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          title.isEmpty
+                              ? 'Session $no'
+                              : 'Session $no — $title',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            color: Color(0xFF0E7C86),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  setState(() {
-                    studyMode = 'custom';
-                    selectedLessonForFlow = no;
-                    selectedSessionNo = no;
-                    _resetScheduleSelections();
-                    flowStep = _BookingFlowStep.schedule;
-                  });
-                },
-                child: Text(
-                  isAr ? 'احجز هذه الحصة' : 'Book this session',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                  if (objective.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      isAr ? 'هدف الحصة' : 'Session Objective',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      objective,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1A1A1A),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFBF5D39),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        setState(() {
+                          studyMode = 'custom';
+                          selectedLessonForFlow = no;
+                          selectedSessionNo = no;
+                          _resetScheduleSelections();
+                          flowStep = _BookingFlowStep.schedule;
+                        });
+                      },
+                      child: Text(
+                        isAr ? 'احجز هذه الحصة' : 'Book this session',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -5342,38 +5575,16 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         const SizedBox(height: 20),
         Icon(Icons.auto_awesome_rounded, size: 36, color: palette.primary),
         const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              isAr ? 'ماذا تريد أن تتعلم؟' : 'What would you like to learn?',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-                color: palette.primary,
-              ),
+        Center(
+          child: Text(
+            isAr ? 'ماذا تريد أن تتعلم؟' : 'What would you like to learn?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              color: palette.primary,
             ),
-            const SizedBox(width: 10),
-            OutlinedButton.icon(
-              onPressed: () {
-                setState(() {
-                  lessonChoiceArabic = !lessonChoiceArabic;
-                });
-              },
-              icon: const Icon(Icons.translate_rounded, size: 18),
-              label: Text(isAr ? 'English' : 'العربية'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: palette.primary,
-                side: BorderSide(color: palette.border),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-              ),
-            ),
-          ],
+          ),
         ),
         const SizedBox(height: 8),
         Text(
@@ -5483,53 +5694,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     required String label,
     bool fullWidth = true,
   }) {
+    final isAr = lessonChoiceArabic;
     final selected = schedulePath == path;
-    final pill = InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: () {
-        if (schedulePath == path) return;
-        setState(() {
-          schedulePath = path;
-          _resetScheduleSelections();
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? palette.primary : Colors.white,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? palette.primary : uiBorder),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 18,
-              color: selected ? Colors.white : palette.primary,
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: selected ? Colors.white : palette.primary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (!fullWidth) return pill;
-    return Expanded(
-      child: InkWell(
+    Widget buildPill({required bool expand}) {
+      return InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: () {
           if (schedulePath == path) return;
@@ -5548,7 +5716,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             border: Border.all(color: selected ? palette.primary : uiBorder),
           ),
           child: Row(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
             children: [
               Icon(
                 icon,
@@ -5556,24 +5726,44 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 color: selected ? Colors.white : palette.primary,
               ),
               const SizedBox(width: 8),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: selected ? Colors.white : palette.primary,
+              if (expand)
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: selected ? Colors.white : palette.primary,
+                    ),
+                  ),
+                )
+              else
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: selected ? Colors.white : palette.primary,
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
-      ),
-    );
+      );
+    }
+
+    if (!fullWidth) return buildPill(expand: false);
+    return Expanded(child: buildPill(expand: true));
   }
 
   Widget _buildStepLabel(int no, String text) {
+    final isAr = lessonChoiceArabic;
     return Row(
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       children: [
         Container(
           width: 24,
@@ -5723,13 +5913,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _slotStateBadge(_SlotStatus status) {
+    final isAr = lessonChoiceArabic;
     final label = switch (status) {
-      _SlotStatus.joinSameSession => 'Join',
-      _SlotStatus.joinWithSessionChange => 'Join + switch',
-      _SlotStatus.booked => 'Booked',
-      _SlotStatus.unavailable => 'Unavailable',
-      _SlotStatus.closed => 'Closed',
-      _SlotStatus.availableBook => 'Book',
+      _SlotStatus.joinSameSession => isAr ? 'انضمام' : 'Join',
+      _SlotStatus.joinWithSessionChange => isAr ? 'انضمام + تبديل' : 'Join + switch',
+      _SlotStatus.booked => isAr ? 'محجوز' : 'Booked',
+      _SlotStatus.unavailable => isAr ? 'غير متاح' : 'Unavailable',
+      _SlotStatus.closed => isAr ? 'مغلق' : 'Closed',
+      _SlotStatus.availableBook => isAr ? 'احجز' : 'Book',
     };
     final bg = switch (status) {
       _SlotStatus.joinSameSession => peerBg,
@@ -5766,61 +5957,66 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildScheduleHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 8,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            courseTitle,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: primaryBlue,
-              fontSize: 18,
+    final isAr = lessonChoiceArabic;
+    return Directionality(
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: uiBorder),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D000000),
+              blurRadius: 8,
+              offset: Offset(0, 4),
             ),
-          ),
-          const SizedBox(height: 4),
-          _buildSessionLinePill(label: _sessionLabel(_flowLessonNo)),
-          const SizedBox(height: 3),
-          Text(
-            'Session $_flowLessonNo of $_effectiveTotalSessions',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Colors.grey.shade700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 8),
-          InkWell(
-            onTap: () =>
-                setState(() => flowStep = _BookingFlowStep.lessonChoice),
-            child: const Text(
-              'Change lesson',
-              style: TextStyle(
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              courseTitle,
+              style: const TextStyle(
                 fontWeight: FontWeight.w900,
-                color: actionOrange,
+                color: primaryBlue,
+                fontSize: 18,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 4),
+            _buildSessionLinePill(label: _sessionLabel(_flowLessonNo)),
+            const SizedBox(height: 3),
+            Text(
+              'Session $_flowLessonNo of $_effectiveTotalSessions',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () =>
+                  setState(() => flowStep = _BookingFlowStep.lessonChoice),
+              child: Text(
+                isAr ? 'تغيير الدرس' : 'Change lesson',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: actionOrange,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildByTeacherPath() {
+    final isAr = lessonChoiceArabic;
     final teachers = _teachersForCurrentLesson();
     final hasRecommendations = _recommendedMatchSlots().isNotEmpty;
     final shouldCollapseTeachers =
@@ -5835,7 +6031,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStepLabel(1, 'Choose a teacher'),
+        _buildStepLabel(1, isAr ? 'اختر معلم' : 'Choose a teacher'),
         const SizedBox(height: 8),
         if (shouldCollapseTeachers)
           _collapsedTeachersCard(teachers)
@@ -5957,8 +6153,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                           : null,
                       child: Text(
                         selected
-                            ? 'Selected'
-                            : (canSelect ? 'Select' : 'Locked'),
+                            ? (isAr ? 'مختار' : 'Selected')
+                            : (canSelect ? (isAr ? 'اختيار' : 'Select') : (isAr ? 'مقفول' : 'Locked')),
                       ),
                     ),
                   ],
@@ -5969,7 +6165,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         if (selectedTeacherFirstId != null) ...[
           SizedBox(key: _byTeacherSelectionKey),
           const SizedBox(height: 10),
-          _buildStepLabel(2, 'Choose a day'),
+          _buildStepLabel(2, isAr ? 'اختر يوم' : 'Choose a day'),
           const SizedBox(height: 6),
           SizedBox(
             height: 44,
@@ -6016,7 +6212,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ],
         if (selectedDay != null) ...[
           const SizedBox(height: 10),
-          _buildStepLabel(3, 'Choose a time'),
+          _buildStepLabel(3, isAr ? 'اختر وقت' : 'Choose a time'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -6118,7 +6314,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Suggested (same level)',
+                    isAr ? 'مقترح (نفس المستوى)' : 'Suggested (same level)',
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
                       color: Colors.lightBlue.shade800,
@@ -6218,7 +6414,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               flowStep = _BookingFlowStep.confirm;
             }),
             icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-            label: const Text('Continue to confirm'),
+            label: Text(isAr ? 'متابعة للتأكيد' : 'Continue to confirm'),
           ),
         ],
       ],
@@ -6226,6 +6422,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildByDayPath() {
+    final isAr = lessonChoiceArabic;
     final days = _availableDaysForLesson();
     final times = _availableTimesForDay();
     final teachers = _teachersForDayAndTime();
@@ -6233,7 +6430,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStepLabel(1, 'Choose a day'),
+        _buildStepLabel(1, isAr ? 'اختر يوم' : 'Choose a day'),
         const SizedBox(height: 6),
         SizedBox(
           height: 44,
@@ -6278,7 +6475,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ),
         if (selectedDay != null) ...[
           const SizedBox(height: 10),
-          _buildStepLabel(2, 'Choose a time'),
+          _buildStepLabel(2, isAr ? 'اختر وقت' : 'Choose a time'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -6404,7 +6601,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ],
         if (selectedTime != null) ...[
           const SizedBox(height: 10),
-          _buildStepLabel(3, 'Choose a teacher'),
+          _buildStepLabel(3, isAr ? 'اختر معلم' : 'Choose a teacher'),
           const SizedBox(height: 6),
           ...teachers.map((s) {
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
@@ -6510,7 +6707,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                             flowStep = _BookingFlowStep.confirm;
                           })
                         : null,
-                    child: Text(canSelect ? 'Select' : 'Locked'),
+                    child: Text(canSelect
+                        ? (isAr ? 'اختيار' : 'Select')
+                        : (isAr ? 'مقفول' : 'Locked')),
                   ),
                 ],
               ),
@@ -6522,8 +6721,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildScheduleStep() {
+    final isAr = lessonChoiceArabic;
     final recommended = _recommendedMatchSlots();
-    return Column(
+    return Directionality(
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildScheduleHeader(),
@@ -6686,22 +6888,22 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       children: [
                         SizedBox(
                           width: double.infinity,
-                          child: _buildSchedulePathPill(
-                            path: _SchedulePath.byTeacher,
-                            icon: Icons.person_search_rounded,
-                            label: 'By Teacher',
-                            fullWidth: false,
+                            child: _buildSchedulePathPill(
+                              path: _SchedulePath.byTeacher,
+                              icon: Icons.person_search_rounded,
+                              label: isAr ? 'حسب المعلم' : 'By Teacher',
+                              fullWidth: false,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          width: double.infinity,
-                          child: _buildSchedulePathPill(
-                            path: _SchedulePath.byDay,
-                            icon: Icons.calendar_month_rounded,
-                            label: 'By Day',
-                            fullWidth: false,
-                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: double.infinity,
+                            child: _buildSchedulePathPill(
+                              path: _SchedulePath.byDay,
+                              icon: Icons.calendar_month_rounded,
+                              label: isAr ? 'حسب التوقيت' : 'By Day',
+                              fullWidth: false,
+                            ),
                         ),
                       ],
                     )
@@ -6710,13 +6912,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                         _buildSchedulePathPill(
                           path: _SchedulePath.byTeacher,
                           icon: Icons.person_search_rounded,
-                          label: 'By Teacher',
+                          label: isAr ? 'حسب المعلم' : 'By Teacher',
                         ),
                         const SizedBox(width: 6),
                         _buildSchedulePathPill(
                           path: _SchedulePath.byDay,
                           icon: Icons.calendar_month_rounded,
-                          label: 'By Day',
+                          label: isAr ? 'حسب التوقيت' : 'By Day',
                         ),
                       ],
                     ),
@@ -6739,6 +6941,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                 ),
         ),
       ],
+    ),
     );
   }
 
@@ -6750,207 +6953,269 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         .where((e) => e.teacherId == selectedTeacherId)
         .toList();
     final slot = chosen.isEmpty ? null : chosen.first;
+    final isAr = lessonChoiceArabic;
     if (slot == null ||
         selectedDay == null ||
         selectedTime == null ||
         sessionNo <= 0) {
-      return const Text('Selection expired. Please choose again.');
+      return Text(isAr ? 'انتهت صلاحية الاختيار. اختر مرة أخرى.' : 'Selection expired. Please choose again.');
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Confirm your booking',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: primaryBlue,
-            fontSize: 22,
+    return Directionality(
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isAr ? 'تأكيد الحجز' : 'Confirm your booking',
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              color: primaryBlue,
+              fontSize: 22,
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: uiBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Course: $courseTitle'),
-              _buildSessionLinePill(
-                label: _sessionLabel(sessionNo),
-                compact: true,
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0E7C86), Color(0xFF0A5E66)],
               ),
-              Text('Day: ${_friendlyDate(selectedDay!)}'),
-              Text('Time: $selectedTime'),
-              const SizedBox(height: 10),
-              InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => _openTeacherProfileSheet(slot),
-                child: Row(
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0E7C86).withValues(alpha: 0.3),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
                   children: [
-                    ProfileAvatar(
-                      name: slot.teacherName,
-                      photoUrl: slot.teacherPhotoUrl,
-                      radius: 18,
-                      borderColor: uiBorder,
-                    ),
-                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Teacher: ${slot.teacherName}',
+                        courseTitle,
                         style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: primaryBlue,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white38),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () => setState(
+                        () => flowStep = _BookingFlowStep.schedule,
+                      ),
+                      child: Text(
+                        isAr ? 'تغيير الحصة' : 'Change session',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11,
                         ),
                       ),
                     ),
-                    if (slot.hasIntroVideo)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: primaryBlue.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'Video',
-                          style: TextStyle(
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _buildSessionLinePill(
+                  label: _sessionLabel(sessionNo),
+                  onPrimary: true,
+                  compact: true,
+                ),
+                const SizedBox(height: 10),
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _openTeacherProfileSheet(slot),
+                  child: Row(
+                    textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+                    children: [
+                      ProfileAvatar(
+                        name: slot.teacherName,
+                        photoUrl: slot.teacherPhotoUrl,
+                        radius: 18,
+                        borderColor: Colors.white.withValues(alpha: 0.6),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          slot.teacherName,
+                          style: const TextStyle(
                             fontWeight: FontWeight.w800,
-                            fontSize: 11,
-                            color: primaryBlue,
+                            color: Colors.white,
                           ),
                         ),
                       ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: () {
-                  setState(
-                    () => confirmSessionExpanded = !confirmSessionExpanded,
-                  );
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 2,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        _confirmDetailsLabel(confirmSessionExpanded),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: Colors.grey.shade700,
-                          fontSize: 12,
+                      if (slot.hasIntroVideo)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: const Text(
+                            'Video',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        confirmSessionExpanded
-                            ? Icons.keyboard_arrow_up_rounded
-                            : Icons.keyboard_arrow_down_rounded,
-                        color: Colors.grey.shade700,
-                      ),
                     ],
                   ),
                 ),
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                child: confirmSessionExpanded
-                    ? Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(top: 6),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: primaryBlue.withValues(alpha: 0.05),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: uiBorder),
+                const SizedBox(height: 8),
+                Text(
+                  '${_friendlyDate(selectedDay!)} • $selectedTime',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () {
+                    setState(
+                      () => confirmSessionExpanded = !confirmSessionExpanded,
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+                      children: [
+                        Text(
+                          _confirmDetailsLabel(confirmSessionExpanded),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontSize: 12,
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (_sessionTitleFor(sessionNo).isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          confirmSessionExpanded
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white.withValues(alpha: 0.8),
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  child: confirmSessionExpanded
+                      ? Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(top: 6),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_sessionTitleFor(sessionNo).isNotEmpty) ...[
+                                Text(
+                                  _sessionTitleFor(sessionNo),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                              ],
                               Text(
-                                _sessionTitleFor(sessionNo),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: primaryBlue,
+                                _confirmObjectiveLabel(),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                  fontSize: 12,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 4),
+                              Text(
+                                _sessionObjectiveFor(sessionNo).isEmpty
+                                    ? _cancelNoObjectiveLabel()
+                                    : _sessionObjectiveFor(sessionNo),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ],
-                            Text(
-                              _confirmObjectiveLabel(),
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: Colors.grey.shade800,
-                                fontSize: 12,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _sessionObjectiveFor(sessionNo).isEmpty
-                                  ? _cancelNoObjectiveLabel()
-                                  : _sessionObjectiveFor(sessionNo),
-                              style: TextStyle(
-                                color: Colors.grey.shade800,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+            children: [
+              OutlinedButton(
+                onPressed: () =>
+                    setState(() => flowStep = _BookingFlowStep.schedule),
+                child: Text(isAr ? 'رجوع' : 'Back'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: primaryBlue),
+                onPressed: limitReached
+                    ? null
+                    : () async {
+                        await _bookSlot(slot, sessionNo: sessionNo);
+                        if (!mounted) return;
+                        if (myBookedSlots.containsKey(slot.key)) {
+                          setState(() => flowStep = _BookingFlowStep.success);
+                        }
+                      },
+                child: Text(isAr ? 'تأكيد' : 'Confirm booking'),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            OutlinedButton(
-              onPressed: () =>
-                  setState(() => flowStep = _BookingFlowStep.schedule),
-              child: const Text('Back'),
-            ),
-            const SizedBox(width: 8),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: primaryBlue),
-              onPressed: limitReached
-                  ? null
-                  : () async {
-                      await _bookSlot(slot, sessionNo: sessionNo);
-                      if (!mounted) return;
-                      if (myBookedSlots.containsKey(slot.key)) {
-                        setState(() => flowStep = _BookingFlowStep.success);
-                      }
-                    },
-              child: const Text('Confirm booking'),
+          if (limitReached) ...[
+            const SizedBox(height: 10),
+            Text(
+              _bookingLimitNote(),
+              style: const TextStyle(
+                color: Color(0xFF8A3D27),
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ],
-        ),
-        if (limitReached) ...[
-          const SizedBox(height: 10),
-          Text(
-            _bookingLimitNote(),
-            style: const TextStyle(
-              color: Color(0xFF8A3D27),
-              fontWeight: FontWeight.w800,
-            ),
-          ),
         ],
-      ],
+      ),
     );
   }
 
@@ -7046,6 +7311,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             ),
           ),
           actions: [
+            IconButton(
+              tooltip: lessonChoiceArabic ? 'English' : 'العربية',
+              onPressed: () => setState(() => lessonChoiceArabic = !lessonChoiceArabic),
+              icon: Icon(Icons.translate_rounded, color: palette.primary),
+            ),
             IconButton(
               tooltip: 'How booking works',
               onPressed: _openHowBookingWorks,
@@ -7257,8 +7527,15 @@ enum _ChipMatchKind { none, matchDifferentSession, exact }
 class _CourseChoice {
   final String id;
   final String title;
+  final String courseCode;
+  final String thumbnailUrl;
 
-  const _CourseChoice({required this.id, required this.title});
+  const _CourseChoice({
+    required this.id,
+    required this.title,
+    this.courseCode = '',
+    this.thumbnailUrl = '',
+  });
 }
 
 class _BookingGate {

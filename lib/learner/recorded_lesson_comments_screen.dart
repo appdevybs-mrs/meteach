@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../shared/app_feedback.dart';
+import '../shared/app_connectivity.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/profile_avatar.dart';
@@ -96,6 +97,17 @@ class _RecordedLessonCommentsScreenState
   }
 
   Future<void> _loadComments({bool reset = true}) async {
+    if (AppConnectivity.instance.isOffline) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _loadingMore = false;
+        _hasMore = false;
+        _error =
+            'Comments need internet. Lesson notes are available offline in the video player.';
+      });
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -342,6 +354,14 @@ class _RecordedLessonCommentsScreenState
   }
 
   Future<void> _postComment() async {
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(
+        context,
+        'Comments need internet. Use lesson notes while offline.',
+        type: AppToastType.info,
+      );
+      return;
+    }
     final text = _commentC.text.trim();
     if (text.isEmpty) {
       AppToast.show(
@@ -389,6 +409,14 @@ class _RecordedLessonCommentsScreenState
   }
 
   Future<void> _replyToComment(String commentId, String courseId) async {
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(
+        context,
+        'Replies need internet. Use lesson notes while offline.',
+        type: AppToastType.info,
+      );
+      return;
+    }
     final controller = TextEditingController();
     final submit = await showModalBottomSheet<bool>(
       context: context,
@@ -461,6 +489,10 @@ class _RecordedLessonCommentsScreenState
   }
 
   Future<void> _reportComment(String commentId, String courseId) async {
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(context, 'Reporting comments needs internet.');
+      return;
+    }
     await CourseFeedbackService.reportLessonComment(
       courseId: courseId,
       lessonId: widget.lessonId,
@@ -473,6 +505,10 @@ class _RecordedLessonCommentsScreenState
   }
 
   Future<void> _editComment(LessonCommentItem item, String courseId) async {
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(context, 'Editing comments needs internet.');
+      return;
+    }
     final controller = TextEditingController(text: item.text.trim());
     final submit = await showModalBottomSheet<bool>(
       context: context,
@@ -568,6 +604,10 @@ class _RecordedLessonCommentsScreenState
     LessonCommentItem item,
     String courseId,
   ) async {
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(context, 'Deleting comments needs internet.');
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -660,6 +700,7 @@ class _RecordedLessonCommentsScreenState
   }
 
   Widget _buildComposer() {
+    final offline = AppConnectivity.instance.isOffline;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
@@ -673,12 +714,15 @@ class _RecordedLessonCommentsScreenState
           TextField(
             controller: _commentC,
             focusNode: _commentFocus,
+            enabled: !offline,
             maxLength: 400,
             minLines: 1,
             maxLines: 3,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               counterText: '',
-              hintText: 'Write a comment...',
+              hintText: offline
+                  ? 'Comments need internet. Use lesson notes offline.'
+                  : 'Write a comment...',
               border: OutlineInputBorder(),
             ),
           ),
@@ -687,7 +731,7 @@ class _RecordedLessonCommentsScreenState
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _posting ? null : _postComment,
+                  onPressed: _posting || offline ? null : _postComment,
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF4F46E5),
                     foregroundColor: Colors.white,
@@ -698,7 +742,13 @@ class _RecordedLessonCommentsScreenState
                     textStyle: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   icon: const Icon(Icons.send_rounded),
-                  label: Text(_posting ? 'Posting...' : 'Post comment'),
+                  label: Text(
+                    offline
+                        ? 'Offline'
+                        : _posting
+                        ? 'Posting...'
+                        : 'Post comment',
+                  ),
                 ),
               ),
             ],

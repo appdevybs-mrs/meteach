@@ -919,13 +919,19 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           _toast('Booking canceled, but notifications failed.');
         }
       }
-      await _loadAllBookedSlots();
 
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
+          Navigator.of(detailsSheetContext).pop();
+        }
       }
+
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+
+      await _loadAllBookedSlots();
     } catch (e) {
       _toast('Cancel failed: $e');
     } finally {
@@ -1085,33 +1091,13 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return out;
   }
 
-  Future<List<_SessionChoiceInfo>> _loadCourseSessionChoices(
+  Future<_CourseSyllabus> _loadCourseSessionChoices(
     String courseId,
   ) async {
     final cid = courseId.trim();
-    if (cid.isEmpty) return const <_SessionChoiceInfo>[];
+    if (cid.isEmpty) return const _CourseSyllabus(units: []);
 
-    final out = <int, _SessionChoiceInfo>{};
-
-    void addSessionInfo(
-      int no, {
-      String title = '',
-      String skillType = '',
-      String objective = '',
-    }) {
-      if (no <= 0) return;
-      final existing = out[no];
-      out[no] = _SessionChoiceInfo(
-        sessionNo: no,
-        title: title.trim().isNotEmpty ? title.trim() : (existing?.title ?? ''),
-        skillType: skillType.trim().isNotEmpty
-            ? skillType.trim()
-            : (existing?.skillType ?? ''),
-        objective: objective.trim().isNotEmpty
-            ? objective.trim()
-            : (existing?.objective ?? ''),
-      );
-    }
+    final units = <_SyllabusUnit>[];
 
     try {
       final flexibleSnap = await _db.child('syllabi/$cid/flexible').get();
@@ -1120,82 +1106,90 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           (k, v) => MapEntry(k.toString(), v),
         );
 
-        int fallbackNo = 1;
-        final units = root['units'];
-        if (units is List) {
-          for (final unitRaw in units) {
+        int globalNo = 1;
+        final rawUnits = root['units'];
+        if (rawUnits is List) {
+          for (final unitRaw in rawUnits) {
             if (unitRaw is! Map) continue;
             final unit = unitRaw.map((k, v) => MapEntry(k.toString(), v));
-            final sessions = unit['sessions'];
-            if (sessions is! List) continue;
+            final rawSessions = unit['sessions'];
+            if (rawSessions is! List) continue;
 
-            for (final sessionRaw in sessions) {
+            final unitSessions = <_SessionChoiceInfo>[];
+            for (final sessionRaw in rawSessions) {
               if (sessionRaw is! Map) continue;
               final session = sessionRaw.map(
                 (k, v) => MapEntry(k.toString(), v),
               );
-              int no = _toInt(session['sessionNumber'], fallback: 0);
-              if (no <= 0) no = _toInt(session['sessionNo'], fallback: 0);
-              if (no <= 0) no = _toInt(session['order'], fallback: 0);
-              if (no <= 0) no = fallbackNo;
-              addSessionInfo(
-                no,
+              unitSessions.add(_SessionChoiceInfo(
+                sessionNo: globalNo,
                 title: (session['sessionTitle'] ?? session['title'] ?? '')
-                    .toString(),
-                skillType: (session['skillType'] ?? '').toString(),
-                objective: (session['objective'] ?? '').toString(),
-              );
-              fallbackNo += 1;
+                    .toString()
+                    .trim(),
+                skillType: (session['skillType'] ?? '').toString().trim(),
+                objective: (session['objective'] ?? '').toString().trim(),
+              ));
+              globalNo += 1;
+            }
+
+            if (unitSessions.isNotEmpty) {
+              units.add(_SyllabusUnit(
+                id: (unit['id'] ?? '').toString(),
+                title: (unit['title'] ?? 'Unit').toString(),
+                description: (unit['description'] ?? '').toString().trim(),
+                order: _toInt(unit['order'], fallback: 0),
+                sessions: unitSessions,
+              ));
             }
           }
         }
-
-        for (final entry in root.entries) {
-          final keyNo = int.tryParse(entry.key) ?? 0;
-          final raw = entry.value;
-          if (raw is! Map) continue;
-          final m = raw.map((k, v) => MapEntry(k.toString(), v));
-          int no = _toInt(m['sessionNo'], fallback: 0);
-          if (no <= 0) no = _toInt(m['sessionNumber'], fallback: 0);
-          if (no <= 0) no = _toInt(m['order'], fallback: 0);
-          if (no <= 0) no = keyNo;
-          addSessionInfo(
-            no,
-            title: (m['sessionTitle'] ?? m['title'] ?? '').toString(),
-            skillType: (m['skillType'] ?? '').toString(),
-            objective: (m['objective'] ?? '').toString(),
-          );
-        }
       }
 
-      final snap = await _db.child('booking_curriculum/$cid/sessions').get();
-      if (snap.exists && snap.value is Map) {
-        final root = (snap.value as Map).map(
+      // booking_curriculum extras (sessions not in flexible syllabus)
+      final curricSnap =
+          await _db.child('booking_curriculum/$cid/sessions').get();
+      if (curricSnap.exists && curricSnap.value is Map) {
+        final root = (curricSnap.value as Map).map(
           (k, v) => MapEntry(k.toString(), v),
         );
+        final existingNos = <int>{};
+        for (final u in units) {
+          for (final s in u.sessions) {
+            existingNos.add(s.sessionNo);
+          }
+        }
+        final extra = <_SessionChoiceInfo>[];
         for (final entry in root.entries) {
           final keyNo = int.tryParse(entry.key.toString()) ?? 0;
           final raw = entry.value;
           if (raw is! Map) continue;
-
           final m = raw.map((k, v) => MapEntry(k.toString(), v));
           int no = _toInt(m['sessionNo'], fallback: 0);
           if (no <= 0) no = _toInt(m['sessionNumber'], fallback: 0);
           if (no <= 0) no = _toInt(m['order'], fallback: 0);
           if (no <= 0) no = keyNo;
-          addSessionInfo(
-            no,
-            title: (m['sessionTitle'] ?? m['title'] ?? '').toString(),
-            skillType: (m['skillType'] ?? '').toString(),
-            objective: (m['objective'] ?? '').toString(),
-          );
+          if (no <= 0 || existingNos.contains(no)) continue;
+          extra.add(_SessionChoiceInfo(
+            sessionNo: no,
+            title: (m['sessionTitle'] ?? m['title'] ?? '').toString().trim(),
+            skillType: (m['skillType'] ?? '').toString().trim(),
+            objective: (m['objective'] ?? '').toString().trim(),
+          ));
+        }
+        if (extra.isNotEmpty) {
+          extra.sort((a, b) => a.sessionNo.compareTo(b.sessionNo));
+          units.add(_SyllabusUnit(
+            id: '',
+            title: 'Other sessions',
+            sessions: extra,
+            order: 9999,
+          ));
         }
       }
     } catch (_) {}
 
-    final sorted = out.values.toList()
-      ..sort((a, b) => a.sessionNo.compareTo(b.sessionNo));
-    return sorted;
+    units.sort((a, b) => a.order.compareTo(b.order));
+    return _CourseSyllabus(units: units);
   }
 
   List<_SessionChoiceInfo> _ensureSessionChoiceIncluded(
@@ -1214,21 +1208,16 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   Future<int?> _showSessionChoiceSheet({
     required String title,
     required String description,
-    required List<_SessionChoiceInfo> sessionChoices,
+    required _CourseSyllabus syllabus,
     required int selectedSessionNo,
     String? helperText,
   }) async {
-    if (sessionChoices.isEmpty) return null;
+    final flat = syllabus.allChoices;
+    if (flat.isEmpty) return null;
 
-    final initialIndex = sessionChoices.indexWhere(
-      (choice) => choice.sessionNo == selectedSessionNo,
-    );
-    final startIndex = initialIndex >= 0 ? initialIndex : 0;
-    final controller = PageController(
-      viewportFraction: 0.9,
-      initialPage: startIndex,
-    );
-    int activeIndex = startIndex;
+    int selectedNo = flat.any((s) => s.sessionNo == selectedSessionNo)
+        ? selectedSessionNo
+        : flat.first.sessionNo;
 
     final chosen = await showModalBottomSheet<int>(
       context: context,
@@ -1241,223 +1230,178 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       builder: (_) {
         return StatefulBuilder(
           builder: (context, setInner) {
-            final active = sessionChoices[activeIndex];
             final maxSheetHeight = MediaQuery.of(context).size.height * 0.88;
             return SafeArea(
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: maxSheetHeight),
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      14,
-                      8,
-                      14,
-                      MediaQuery.of(context).padding.bottom + 24,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 15,
-                            color: primaryBlue,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          description,
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.w600,
-                            height: 1.35,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 400,
-                          child: PageView.builder(
-                            controller: controller,
-                            itemCount: sessionChoices.length,
-                            onPageChanged: (index) {
-                              setInner(() => activeIndex = index);
-                            },
-                            itemBuilder: (_, index) {
-                              final choice = sessionChoices[index];
-                              final isActive = index == activeIndex;
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                margin: EdgeInsets.only(
-                                  right: index == sessionChoices.length - 1
-                                      ? 0
-                                      : 10,
-                                  top: isActive ? 0 : 8,
-                                  bottom: isActive ? 0 : 8,
-                                ),
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: isActive
-                                      ? actionOrange.withValues(alpha: 0.10)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: isActive
-                                        ? actionOrange.withValues(alpha: 0.50)
-                                        : uiBorder,
-                                    width: isActive ? 1.4 : 1,
-                                  ),
-                                  boxShadow: isActive
-                                      ? [
-                                          BoxShadow(
-                                            color: actionOrange.withValues(
-                                              alpha: 0.10,
-                                            ),
-                                            blurRadius: 14,
-                                            offset: const Offset(0, 8),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isActive
-                                            ? actionOrange.withValues(
-                                                alpha: 0.16,
-                                              )
-                                            : const Color(0xFFF4F7F9),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        _sessionLabel(choice.sessionNo),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          color: isActive
-                                              ? actionOrange
-                                              : primaryBlue,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      _sessionFieldText(
-                                        choice.title,
-                                        'No title',
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 16,
-                                        color: primaryBlue,
-                                        height: 1.2,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: successGreen.withValues(
-                                          alpha: 0.10,
-                                        ),
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        _sessionFieldText(
-                                          choice.skillType,
-                                          'Skill not set',
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          color: successGreen,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      'Objective',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12,
-                                        color: Colors.grey.shade700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Expanded(
-                                      child: Text(
-                                        _sessionFieldText(
-                                          choice.objective,
-                                          'No objective added',
-                                        ),
-                                        maxLines: 6,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          height: 1.35,
-                                          color: Colors.grey.shade800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(sessionChoices.length, (
-                            index,
-                          ) {
-                            final isActive = index == activeIndex;
-                            return AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              margin: const EdgeInsets.symmetric(horizontal: 3),
-                              width: isActive ? 18 : 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: isActive ? actionOrange : uiBorder,
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: () =>
-                                Navigator.pop(context, active.sessionNo),
-                            icon: const Icon(Icons.check_rounded),
-                            label: const Text(
-                              'Continue',
-                              style: TextStyle(fontWeight: FontWeight.w900),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                              color: primaryBlue,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          Text(
+                            description,
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                          if (helperText != null) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              helperText,
+                              style: TextStyle(
+                                color: actionOrange,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        children: [
+                          for (final unit in syllabus.units) ...[
+                            if (unit.title.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: primaryBlue.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    unit.title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryBlue,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ...unit.sessions.map((session) {
+                              final isSelected =
+                                  session.sessionNo == selectedNo;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 3),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () =>
+                                      setInner(() => selectedNo = session.sessionNo),
+                                  child: AnimatedContainer(
+                                    duration:
+                                        const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? actionOrange.withValues(alpha: 0.10)
+                                          : Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isSelected
+                                            ? actionOrange
+                                                .withValues(alpha: 0.50)
+                                            : uiBorder.withValues(alpha: 0.30),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 22,
+                                          height: 22,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: isSelected
+                                                ? actionOrange
+                                                : Colors.white,
+                                            border: Border.all(
+                                              color: isSelected
+                                                  ? actionOrange
+                                                  : uiBorder,
+                                              width: 2,
+                                            ),
+                                          ),
+                                          child: isSelected
+                                              ? const Icon(
+                                                  Icons.check,
+                                                  size: 14,
+                                                  color: Colors.white,
+                                                )
+                                              : null,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            'S${session.sessionNo}  ${session.title.isNotEmpty ? session.title : 'No title'}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              fontSize: 13,
+                                              color: isSelected
+                                                  ? actionOrange
+                                                  : primaryBlue,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 6),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        14,
+                        8,
+                        14,
+                        MediaQuery.of(context).padding.bottom + 16,
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () =>
+                              Navigator.pop(context, selectedNo),
+                          icon: const Icon(Icons.check_rounded),
+                          label: const Text(
+                            'Continue',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -1466,7 +1410,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       },
     );
 
-    controller.dispose();
     return chosen;
   }
 
@@ -1497,7 +1440,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     }
 
     final available = await _buildAvailableSlotsForCourse(sourceSlot.courseId);
-    var sessionChoices = await _loadCourseSessionChoices(sourceSlot.courseId);
+    var syllabus = await _loadCourseSessionChoices(sourceSlot.courseId);
 
     if (!mounted) return null;
 
@@ -1516,8 +1459,8 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return true;
     }).toList();
 
-    sessionChoices = _ensureSessionChoiceIncluded(
-      sessionChoices,
+    var choices = _ensureSessionChoiceIncluded(
+      syllabus.allChoices,
       sourceSlot.sessionNo,
     );
 
@@ -1529,7 +1472,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     String query = '';
     int selectedSessionNo = sourceSlot.sessionNo > 0
         ? sourceSlot.sessionNo
-        : sessionChoices.first.sessionNo;
+        : choices.first.sessionNo;
 
     return showModalBottomSheet<_RescheduleChoice>(
       context: context,
@@ -1585,7 +1528,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                           title: 'Choose Session',
                           description:
                               'Swipe through the session cards, then keep the current session or choose another one before picking the new slot.',
-                          sessionChoices: sessionChoices,
+                          syllabus: syllabus,
                           selectedSessionNo: selectedSessionNo,
                           helperText: selectedSessionNo == sourceSlot.sessionNo
                               ? 'Currently keeping the same session number.'
@@ -1893,13 +1836,18 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         }
       }
 
-      await _loadAllBookedSlots();
-
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
+          Navigator.of(detailsSheetContext).pop();
+        }
       }
+
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+
+      await _loadAllBookedSlots();
     } catch (e) {
       _toast('Reschedule failed: $e');
     } finally {
@@ -1923,11 +1871,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return;
     }
 
-    var sessionChoices = await _loadCourseSessionChoices(slot.courseId);
+    var syllabus = await _loadCourseSessionChoices(slot.courseId);
     if (!mounted) return;
 
-    sessionChoices = _ensureSessionChoiceIncluded(
-      sessionChoices,
+    var choices = _ensureSessionChoiceIncluded(
+      syllabus.allChoices,
       slot.sessionNo,
     );
 
@@ -1935,10 +1883,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       title: 'Change Session Only',
       description:
           'Keep date, time, and teacher the same. Only the session number will change.',
-      sessionChoices: sessionChoices,
+      syllabus: syllabus,
       selectedSessionNo: slot.sessionNo > 0
           ? slot.sessionNo
-          : sessionChoices.first.sessionNo,
+          : choices.first.sessionNo,
     );
 
     if (chosen == null || chosen == slot.sessionNo) return;
@@ -2031,13 +1979,18 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       } catch (e) {
         _toast('Session updated, but notifications failed.');
       }
-      await _loadAllBookedSlots();
 
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
         Navigator.of(detailsSheetContext).pop();
       }
+
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+
+      await _loadAllBookedSlots();
     } catch (e) {
       _toast('Session change failed: $e');
     } finally {
@@ -2090,11 +2043,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return;
     }
 
-    var sessionChoices = await _loadCourseSessionChoices(slot.courseId);
+    var syllabus = await _loadCourseSessionChoices(slot.courseId);
     if (!mounted) return;
 
-    sessionChoices = _ensureSessionChoiceIncluded(
-      sessionChoices,
+    var choices = _ensureSessionChoiceIncluded(
+      syllabus.allChoices,
       slot.sessionNo,
     );
 
@@ -2102,10 +2055,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       title: 'Change Session for Group',
       description:
           'Keep date, time, and teacher the same. The session number will change for all learners in this slot.',
-      sessionChoices: sessionChoices,
+      syllabus: syllabus,
       selectedSessionNo: slot.sessionNo > 0
           ? slot.sessionNo
-          : sessionChoices.first.sessionNo,
+          : choices.first.sessionNo,
     );
 
     if (chosen == null || chosen == slot.sessionNo) return;
@@ -2197,13 +2150,18 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       } catch (e) {
         _toast('Group session updated, but notifications failed.');
       }
-      await _loadAllBookedSlots();
 
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
         Navigator.of(detailsSheetContext).pop();
       }
+
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+
+      await _loadAllBookedSlots();
     } catch (e) {
       _toast('Group session change failed: $e');
     } finally {
@@ -2412,13 +2370,17 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         }
       }
 
-      await _loadAllBookedSlots();
-
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
         Navigator.of(detailsSheetContext).pop();
       }
+
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+
+      await _loadAllBookedSlots();
     } catch (e) {
       _toast('Group cancel failed: $e');
     } finally {
@@ -2577,13 +2539,17 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         }
       }
 
-      await _loadAllBookedSlots();
-
       if (!mounted) return;
       if (detailsSheetContext.mounted &&
           Navigator.of(detailsSheetContext).canPop()) {
         Navigator.of(detailsSheetContext).pop();
       }
+
+      if (mounted) {
+        setState(() => busyAction = false);
+      }
+
+      await _loadAllBookedSlots();
     } catch (e) {
       _toast('Group reschedule failed: $e');
     } finally {
@@ -3071,6 +3037,12 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     final futureCount = filtered
         .where((s) => s.start.isAfter(DateTime.now()))
         .length;
+    final filteredCourses = _coursesForSelectedLevel();
+    String safeCourseId = selectedCourseId ?? 'all';
+    if (safeCourseId != 'all' &&
+        !filteredCourses.any((c) => c.id == safeCourseId)) {
+      safeCourseId = 'all';
+    }
     final webDesktop = isWebDesktop(context);
 
     return Scaffold(
@@ -3104,29 +3076,44 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 14),
                 children: [
-                  _Card(
-                    title: course == null
-                        ? 'All booked sessions (all courses)'
-                        : 'Booked sessions • ${course.title}',
+                  // Combined header, search & filters
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: uiBorder),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildCompactSelectors(),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                        // Title + stats inline
+                        Row(
                           children: [
+                            Expanded(
+                              child: Text(
+                                course == null
+                                    ? 'All booked sessions'
+                                    : '${course.title}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: primaryBlue,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
                             _StatPill(
                               label: 'Rows',
                               value: '${filtered.length}',
                               icon: Icons.table_rows_rounded,
                             ),
+                            const SizedBox(width: 4),
                             _StatPill(
                               label: 'Lrnrs',
                               value: '$totalLearners',
                               icon: Icons.people_alt_rounded,
                             ),
+                            const SizedBox(width: 4),
                             _StatPill(
                               label: 'Up',
                               value: '$futureCount',
@@ -3134,127 +3121,218 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _Card(
-                    title: 'Filters',
-                    child: Column(
-                      children: [
-                        TextField(
-                          controller: searchC,
-                          decoration: InputDecoration(
-                            hintText:
-                                'Search teacher / date / time / session / status',
-                            isDense: true,
-                            prefixIcon: const Icon(Icons.search_rounded),
-                            suffixIcon: searchC.text.trim().isEmpty
-                                ? null
-                                : IconButton(
-                                    onPressed: () => searchC.clear(),
-                                    icon: const Icon(Icons.close_rounded),
-                                  ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: uiBorder),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                        // Level chips
+                        _buildCompactSelectors(),
+                        const SizedBox(height: 6),
+                        // Course dropdown + Search
+                        Row(
                           children: [
-                            _smallDropdown(
-                              width: 160,
-                              value: teacherFilter,
-                              items: [
-                                const DropdownMenuItem(
-                                  value: 'all',
-                                  child: Text('All teachers'),
+                            Expanded(
+                              flex: 5,
+                              child: Container(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: uiBorder),
                                 ),
-                                ...teacherIds.map(
-                                  (id) => DropdownMenuItem(
-                                    value: id,
-                                    child: Text(
-                                      teacherMap[id] ?? 'Teacher',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                child: DropdownButton<String>(
+                                  value: safeCourseId,
+                                  isExpanded: true,
+                                  underline: const SizedBox.shrink(),
+                                  icon: const Icon(
+                                    Icons.expand_more_rounded,
+                                    color: primaryBlue,
+                                  ),
+                                  hint: const Text('All courses'),
+                                  items: [
+                                    const DropdownMenuItem(
+                                      value: 'all',
+                                      child: Text(
+                                        'All courses (booked first)',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          color: primaryBlue,
+                                          fontSize: 13,
+                                        ),
+                                      ),
                                     ),
+                                    ...filteredCourses.map(
+                                      (c) => DropdownMenuItem(
+                                        value: c.id,
+                                        child: Text(
+                                          _shortCourseLabel(c),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w900,
+                                            color: primaryBlue,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: filteredCourses.isEmpty
+                                      ? null
+                                      : (v) async {
+                                          if (v == null) return;
+                                          setState(() {
+                                            selectedCourseId =
+                                                v == 'all' ? null : v;
+                                            teacherFilter = 'all';
+                                          });
+                                        },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 3,
+                              child: TextField(
+                                controller: searchC,
+                                decoration: InputDecoration(
+                                  hintText: 'Search',
+                                  isDense: true,
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  prefixIcon: const Icon(
+                                    Icons.search_rounded,
+                                    size: 20,
+                                  ),
+                                  suffixIcon:
+                                      searchC.text.trim().isEmpty
+                                          ? null
+                                          : IconButton(
+                                              onPressed: () =>
+                                                  searchC.clear(),
+                                              icon: const Icon(
+                                                Icons.close_rounded,
+                                                size: 18,
+                                              ),
+                                            ),
+                                  border: OutlineInputBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(12),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(12),
+                                    borderSide:
+                                        BorderSide(color: uiBorder),
                                   ),
                                 ),
-                              ],
-                              onChanged: (v) {
-                                if (v == null) return;
-                                setState(() => teacherFilter = v);
-                              },
-                            ),
-                            _smallDropdown(
-                              width: 130,
-                              value: dateFilter,
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'all',
-                                  child: Text('All'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'today',
-                                  child: Text('Today'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'thisWeek',
-                                  child: Text('This week'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'future',
-                                  child: Text('Upcoming'),
-                                ),
-                              ],
-                              onChanged: (v) {
-                                if (v == null) return;
-                                setState(() => dateFilter = v);
-                              },
-                            ),
-                            _togglePill(
-                              label: 'Group only',
-                              value: onlyMultiLearner,
-                              onChanged: (v) =>
-                                  setState(() => onlyMultiLearner = v),
-                            ),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: primaryBlue,
-                                side: BorderSide(
-                                  color: primaryBlue.withValues(alpha: 0.20),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                              ),
-                              onPressed: _clearFilters,
-                              icon: const Icon(
-                                Icons.filter_alt_off_rounded,
-                                size: 18,
-                              ),
-                              label: const Text(
-                                'Clear',
-                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
                             ),
                           ],
                         ),
+                        const SizedBox(height: 6),
+                        // Filters row
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _smallDropdown(
+                                width: 140,
+                                value: teacherFilter,
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: 'all',
+                                    child: Text('All teachers'),
+                                  ),
+                                  ...teacherIds.map(
+                                    (id) => DropdownMenuItem(
+                                      value: id,
+                                      child: Text(
+                                        teacherMap[id] ?? 'Teacher',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setState(() => teacherFilter = v);
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _smallDropdown(
+                                width: 120,
+                                value: dateFilter,
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'all',
+                                    child: Text('All'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'today',
+                                    child: Text('Today'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'thisWeek',
+                                    child: Text('This week'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'future',
+                                    child: Text('Upcoming'),
+                                  ),
+                                ],
+                                onChanged: (v) {
+                                  if (v == null) return;
+                                  setState(() => dateFilter = v);
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _togglePill(
+                                label: 'Group only',
+                                value: onlyMultiLearner,
+                                onChanged: (v) =>
+                                    setState(() => onlyMultiLearner = v),
+                              ),
+                              const SizedBox(width: 6),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: primaryBlue,
+                                  side: BorderSide(
+                                    color: primaryBlue
+                                        .withValues(alpha: 0.20),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(999),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                ),
+                                onPressed: _clearFilters,
+                                icon: const Icon(
+                                  Icons.filter_alt_off_rounded,
+                                  size: 16,
+                                ),
+                                label: const Text(
+                                  'Clear',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   _Card(
                     title: 'All bookings',
                     child: loadingBookings
@@ -3721,115 +3799,36 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   Widget _buildCompactSelectors() {
     final levels = _levelOptionsWithBookingsOnly();
-    final filteredCourses = _coursesForSelectedLevel();
-
-    String safeCourseId = selectedCourseId ?? 'all';
-    if (safeCourseId != 'all' &&
-        !filteredCourses.any((c) => c.id == safeCourseId)) {
-      safeCourseId = 'all';
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    if (levels.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
       children: [
-        if (levels.isNotEmpty)
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _chip('All levels', levelFilter == 'all', () async {
-                setState(() {
-                  levelFilter = 'all';
-                  if (selectedCourseId != null &&
-                      !_coursesForSelectedLevel().any(
-                        (c) => c.id == selectedCourseId,
-                      )) {
-                    selectedCourseId = null;
-                  }
-                });
-              }),
-              ...levels.map(
-                (lvl) => _chip(lvl, levelFilter == lvl, () async {
-                  final matching = allCourses
-                      .where((c) => c.levelText == lvl)
-                      .toList();
+        _chip('All levels', levelFilter == 'all', () async {
+          setState(() {
+            levelFilter = 'all';
+            if (selectedCourseId != null &&
+                !_coursesForSelectedLevel().any(
+                  (c) => c.id == selectedCourseId,
+                )) {
+              selectedCourseId = null;
+            }
+          });
+        }),
+        ...levels.map(
+          (lvl) => _chip(lvl, levelFilter == lvl, () async {
+            final matching = allCourses
+                .where((c) => c.levelText == lvl)
+                .toList();
 
-                  setState(() {
-                    levelFilter = lvl;
-                    if (selectedCourseId != null &&
-                        !matching.any((c) => c.id == selectedCourseId)) {
-                      selectedCourseId = null;
-                    }
-                  });
-                }),
-              ),
-            ],
-          ),
-        if (levels.isNotEmpty) const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              flex: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: uiBorder),
-                ),
-                child: DropdownButton<String>(
-                  value: safeCourseId,
-                  isExpanded: true,
-                  underline: const SizedBox.shrink(),
-                  icon: const Icon(
-                    Icons.expand_more_rounded,
-                    color: primaryBlue,
-                  ),
-                  hint: const Text('All courses'),
-                  items: [
-                    const DropdownMenuItem(
-                      value: 'all',
-                      child: Text(
-                        'All courses (booked first)',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          color: primaryBlue,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    ...filteredCourses.map(
-                      (c) => DropdownMenuItem(
-                        value: c.id,
-                        child: Text(
-                          _shortCourseLabel(c),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: primaryBlue,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                  onChanged: filteredCourses.isEmpty
-                      ? null
-                      : (v) async {
-                          if (v == null) return;
-                          setState(() {
-                            selectedCourseId = v == 'all' ? null : v;
-                            teacherFilter = 'all';
-                          });
-                        },
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
+            setState(() {
+              levelFilter = lvl;
+              if (selectedCourseId != null &&
+                  !matching.any((c) => c.id == selectedCourseId)) {
+                selectedCourseId = null;
+              }
+            });
+          }),
         ),
       ],
     );
@@ -3865,7 +3864,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       borderRadius: BorderRadius.circular(999),
       onTap: tap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: on ? actionOrange.withValues(alpha: 0.12) : Colors.white,
           borderRadius: BorderRadius.circular(999),
@@ -4047,6 +4046,30 @@ class _SessionChoiceInfo {
   });
 }
 
+class _SyllabusUnit {
+  final String id;
+  final String title;
+  final String description;
+  final int order;
+  final List<_SessionChoiceInfo> sessions;
+
+  const _SyllabusUnit({
+    required this.id,
+    required this.title,
+    this.description = '',
+    this.order = 0,
+    required this.sessions,
+  });
+}
+
+class _CourseSyllabus {
+  final List<_SyllabusUnit> units;
+  List<_SessionChoiceInfo> get allChoices =>
+      units.expand((u) => u.sessions).toList();
+
+  const _CourseSyllabus({required this.units});
+}
+
 // ========================= Small UI Widgets =========================
 
 class _Card extends StatelessWidget {
@@ -4103,7 +4126,7 @@ class _StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(999),

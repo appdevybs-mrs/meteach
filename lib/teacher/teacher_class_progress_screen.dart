@@ -350,7 +350,9 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     return 'Session to review';
   }
 
-  List<Map<String, dynamic>> _computeSessionsToReview(Map<String, dynamic> att) {
+  List<Map<String, dynamic>> _computeSessionsToReview(
+    Map<String, dynamic> att,
+  ) {
     if (_syllabiFlat.isEmpty) return <Map<String, dynamic>>[];
 
     final list = <Map<String, dynamic>>[];
@@ -359,7 +361,10 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
       final rec = entry.value;
       if (rec is! Map) continue;
 
-      final record = <String, dynamic>{'id': entry.key, ...Map<String, dynamic>.from(rec)};
+      final record = <String, dynamic>{
+        'id': entry.key,
+        ...Map<String, dynamic>.from(rec),
+      };
       if (_recordHasSyllabusLink(record)) continue;
       list.add(record);
     }
@@ -1135,7 +1140,6 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -1185,7 +1189,6 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
               valueColor: AlwaysStoppedAnimation(progressColor),
             ),
           ),
-
         ],
       ),
     );
@@ -1598,10 +1601,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
             color: warningOrange.withValues(alpha: 0.14),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(
-            Icons.edit_note_rounded,
-            color: warningOrange,
-          ),
+          child: const Icon(Icons.edit_note_rounded, color: warningOrange),
         ),
         title: Text(
           title.isEmpty ? 'Session to review' : title,
@@ -1630,7 +1630,10 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
         trailing: IconButton(
           onPressed: sessionId.isEmpty
               ? null
-              : () => _openEditAttendance(record),
+              : () => _openEditAttendance(
+                  record,
+                  preserveExistingLearnerAttendanceOnly: true,
+                ),
           icon: const Icon(Icons.edit_rounded),
           color: vividEdit,
           tooltip: 'Edit session',
@@ -1900,7 +1903,10 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     return 0;
   }
 
-  Future<void> _openEditAttendance(Map<String, dynamic> record) async {
+  Future<void> _openEditAttendance(
+    Map<String, dynamic> record, {
+    bool preserveExistingLearnerAttendanceOnly = false,
+  }) async {
     final sessionId = (record['sessionId'] ?? record['id'] ?? '').toString();
     if (sessionId.isEmpty) return;
 
@@ -1915,6 +1921,8 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
               classData: widget.classData,
               existingSessionId: sessionId,
               existingRecord: record,
+              preserveExistingLearnerAttendanceOnly:
+                  preserveExistingLearnerAttendanceOnly,
             ),
           ),
         );
