@@ -676,14 +676,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
     final completed = _resolveCompleted(session, updated);
 
-    await _recordedProgressRef.child(session.id).update({
-      'videoCompleted': updated.videoCompleted,
-      'materialsCompleted': updated.materialsCompleted,
-      'videoCompletedAt': updated.videoCompletedAt,
-      'materialsCompletedAt': updated.materialsCompletedAt,
-      'completed': completed,
-      'updatedAt': ServerValue.timestamp,
-    });
+    await _progressSync.updateProgress(
+      progressRef: _recordedProgressRef,
+      uid: _uid,
+      courseKey: widget.courseKey,
+      sessionId: session.id,
+      patch: {
+        'videoCompleted': updated.videoCompleted,
+        'materialsCompleted': updated.materialsCompleted,
+        'videoCompletedAt': updated.videoCompletedAt,
+        'materialsCompletedAt': updated.materialsCompletedAt,
+        'completed': completed,
+        'updatedAt': ServerValue.timestamp,
+      },
+    );
 
     if (!mounted) return;
     setState(() {
@@ -746,6 +752,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           : session.title.trim(),
       videoUrl: url,
       expiresAt: _expiresAt,
+      materialsUrl: session.materialsUrl.trim(),
     );
   }
 
@@ -832,8 +839,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     AppToast.show(
       context,
       requests.length == 1
-          ? 'Video download started.'
-          : '${requests.length} video downloads queued.',
+          ? 'Download started.'
+          : '${requests.length} downloads queued.',
       type: AppToastType.success,
     );
   }
@@ -861,7 +868,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       builder: (_) => AlertDialog(
         title: Text(title),
         content: Text(
-          'Delete ${existing.length} offline video${existing.length == 1 ? '' : 's'} from this device?',
+          'Delete ${existing.length} offline session${existing.length == 1 ? '' : 's'} from this device?',
         ),
         actions: [
           TextButton(
@@ -880,7 +887,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (!mounted) return;
     AppToast.show(
       context,
-      'Offline videos deleted.',
+      'Offline content deleted.',
       type: AppToastType.success,
     );
   }
@@ -913,42 +920,69 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       return;
     }
 
-    if (AppConnectivity.instance.isOffline) {
+    final localPath = await _offlineVideos.localMaterialsPathFor(
+      uid: _uid,
+      courseKey: widget.courseKey,
+      sessionId: session.id,
+    );
+
+    if (localPath != null) {
+      if (!mounted) return;
+      await OfflineActionGuard.runExclusive(
+        context,
+        'learner.recorded.read.${widget.courseKey}.${session.id}',
+        () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MaterialWebViewScreen.fromUrl(
+                title: session.title.isEmpty
+                    ? 'Session Reading'
+                    : session.title,
+                url: Uri.file(localPath).toString(),
+              ),
+            ),
+          );
+        },
+      );
+    } else if (AppConnectivity.instance.isOffline) {
       AppToast.show(
         context,
         'Reading materials need internet. Download them beforehand to read offline.',
         type: AppToastType.info,
       );
       return;
-    }
-
-    final isMissing = await _isLessonAssetMissingOnServer(url: url);
-    if (isMissing) {
-      _snack(
-        _lessonUnavailableMessage(
-          lessonType: 'Reading lesson',
-          session: session,
-        ),
-      );
-      return;
-    }
-    if (!mounted) return;
-
-    await OfflineActionGuard.runExclusive(
-      context,
-      'learner.recorded.read.${widget.courseKey}.${session.id}',
-      () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => MaterialWebViewScreen.fromUrl(
-              title: session.title.isEmpty ? 'Session Reading' : session.title,
-              url: url,
-            ),
+    } else {
+      final isMissing = await _isLessonAssetMissingOnServer(url: url);
+      if (isMissing) {
+        _snack(
+          _lessonUnavailableMessage(
+            lessonType: 'Reading lesson',
+            session: session,
           ),
         );
-      },
-    );
+        return;
+      }
+      if (!mounted) return;
+
+      await OfflineActionGuard.runExclusive(
+        context,
+        'learner.recorded.read.${widget.courseKey}.${session.id}',
+        () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MaterialWebViewScreen.fromUrl(
+                title: session.title.isEmpty
+                    ? 'Session Reading'
+                    : session.title,
+                url: url,
+              ),
+            ),
+          );
+        },
+      );
+    }
 
     if (!mounted) return;
 
@@ -2871,7 +2905,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     IconData icon = Icons.download_rounded;
     Color color = const Color(0xFF0284C7);
-    String tooltip = 'Download video';
+    String tooltip = 'Download video & reading';
     VoidCallback? onTap = () => _downloadVideos([
       request,
     ], emptyMessage: 'No video available to download.');
@@ -2964,7 +2998,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${summary.downloaded}/${summary.total} offline videos',
+                    '${summary.downloaded}/${summary.total} offline',
                     style: const TextStyle(
                       color: Color(0xFF334155),
                       fontWeight: FontWeight.w800,
@@ -3176,11 +3210,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     ),
                   ),
                 ),
-              if (requiresVideo)
-                _buildSessionDownloadButton(
-                  session: session,
-                  isNarrow: isNarrow,
-                ),
               if (requiresMaterials)
                 Padding(
                   padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
@@ -3210,6 +3239,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       ),
                     ),
                   ),
+                ),
+              if (requiresVideo || requiresMaterials)
+                _buildSessionDownloadButton(
+                  session: session,
+                  isNarrow: isNarrow,
                 ),
             ],
           ),

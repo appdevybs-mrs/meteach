@@ -25,6 +25,7 @@ class RecordedVideoDownloadRequest {
     required this.sessionTitle,
     required this.videoUrl,
     required this.expiresAt,
+    this.materialsUrl = '',
   });
 
   final String uid;
@@ -34,6 +35,7 @@ class RecordedVideoDownloadRequest {
   final String sessionTitle;
   final String videoUrl;
   final int expiresAt;
+  final String materialsUrl;
 }
 
 class RecordedVideoDownloadInfo {
@@ -51,6 +53,8 @@ class RecordedVideoDownloadInfo {
     this.downloadedAt = 0,
     this.expiresAt = 0,
     this.error = '',
+    this.materialsUrl = '',
+    this.materialsFilePath = '',
   });
 
   final String uid;
@@ -66,6 +70,8 @@ class RecordedVideoDownloadInfo {
   final int downloadedAt;
   final int expiresAt;
   final String error;
+  final String materialsUrl;
+  final String materialsFilePath;
 
   double get progress {
     if (status == RecordedDownloadStatus.downloaded) return 1;
@@ -85,6 +91,8 @@ class RecordedVideoDownloadInfo {
     String? error,
     String? videoUrl,
     String? sessionTitle,
+    String? materialsUrl,
+    String? materialsFilePath,
   }) {
     return RecordedVideoDownloadInfo(
       uid: uid,
@@ -100,6 +108,8 @@ class RecordedVideoDownloadInfo {
       downloadedAt: downloadedAt ?? this.downloadedAt,
       expiresAt: expiresAt ?? this.expiresAt,
       error: error ?? this.error,
+      materialsUrl: materialsUrl ?? this.materialsUrl,
+      materialsFilePath: materialsFilePath ?? this.materialsFilePath,
     );
   }
 
@@ -117,6 +127,8 @@ class RecordedVideoDownloadInfo {
     'downloadedAt': downloadedAt,
     'expiresAt': expiresAt,
     'error': error,
+    'materialsUrl': materialsUrl,
+    'materialsFilePath': materialsFilePath,
   };
 
   factory RecordedVideoDownloadInfo.fromJson(Map<String, dynamic> json) {
@@ -139,6 +151,8 @@ class RecordedVideoDownloadInfo {
       downloadedAt: _asInt(json['downloadedAt']),
       expiresAt: _asInt(json['expiresAt']),
       error: (json['error'] ?? '').toString(),
+      materialsUrl: (json['materialsUrl'] ?? '').toString(),
+      materialsFilePath: (json['materialsFilePath'] ?? '').toString(),
     );
   }
 
@@ -231,6 +245,21 @@ class RecordedOfflineVideoService extends ChangeNotifier {
     return null;
   }
 
+  Future<String?> localMaterialsPathFor({
+    required String uid,
+    required String courseKey,
+    required String sessionId,
+  }) async {
+    await ensureLoaded();
+    final info = infoFor(uid: uid, courseKey: courseKey, sessionId: sessionId);
+    if (info == null || !info.isDownloaded) return null;
+    final path = info.materialsFilePath.trim();
+    if (path.isEmpty) return null;
+    final file = File(path);
+    if (await file.exists()) return path;
+    return null;
+  }
+
   Future<void> enqueueAll(List<RecordedVideoDownloadRequest> requests) async {
     await ensureLoaded();
     for (final request in requests) {
@@ -267,6 +296,7 @@ class RecordedOfflineVideoService extends ChangeNotifier {
         videoUrl: request.videoUrl,
         status: RecordedDownloadStatus.queued,
         expiresAt: request.expiresAt,
+        materialsUrl: request.materialsUrl,
       );
       _queue.add(request);
     }
@@ -296,6 +326,9 @@ class RecordedOfflineVideoService extends ChangeNotifier {
     if (info != null) {
       await _deleteFileIfExists(info.filePath);
       await _deleteFileIfExists('${info.filePath}.part');
+      if (info.materialsFilePath.trim().isNotEmpty) {
+        await _deleteFileIfExists(info.materialsFilePath);
+      }
     }
     await _save();
     notifyListeners();
@@ -418,6 +451,37 @@ class RecordedOfflineVideoService extends ChangeNotifier {
       if (await out.exists()) await out.delete();
       await partFile.rename(out.path);
 
+      String? materialsFilePath;
+      if (request.materialsUrl.trim().isNotEmpty) {
+        final matOut = await _materialsTargetFile(request);
+        if (matOut != null) {
+          if (!await matOut.parent.exists()) {
+            await matOut.parent.create(recursive: true);
+          }
+          final matUri = Uri.tryParse(request.materialsUrl.trim());
+          if (matUri != null && matUri.hasScheme) {
+            final matClient = http.Client();
+            try {
+              final matResponse = await matClient
+                  .send(http.Request('GET', matUri))
+                  .timeout(const Duration(seconds: 30));
+              if (matResponse.statusCode >= 200 && matResponse.statusCode < 300) {
+                final matSink = matOut.openWrite();
+                try {
+                  await matSink.addStream(matResponse.stream);
+                  await matSink.flush();
+                } finally {
+                  await matSink.close();
+                }
+                materialsFilePath = matOut.path;
+              }
+            } finally {
+              matClient.close();
+            }
+          }
+        }
+      }
+
       _items[key] = (_items[key] ?? _infoFromRequest(request)).copyWith(
         status: RecordedDownloadStatus.downloaded,
         filePath: out.path,
@@ -426,6 +490,7 @@ class RecordedOfflineVideoService extends ChangeNotifier {
         downloadedAt: DateTime.now().millisecondsSinceEpoch,
         expiresAt: request.expiresAt,
         error: '',
+        materialsFilePath: materialsFilePath ?? '',
       );
       await _save();
       notifyListeners();
@@ -467,6 +532,7 @@ class RecordedOfflineVideoService extends ChangeNotifier {
       videoUrl: request.videoUrl,
       status: RecordedDownloadStatus.notDownloaded,
       expiresAt: request.expiresAt,
+      materialsUrl: request.materialsUrl,
     );
   }
 
@@ -477,6 +543,17 @@ class RecordedOfflineVideoService extends ChangeNotifier {
       '${base.path}/recorded_videos/${_safePart(request.uid)}/${_safePart(request.courseKey)}/${_safePart(request.sessionId)}',
     );
     return File('${dir.path}/video.$ext');
+  }
+
+  Future<File?> _materialsTargetFile(RecordedVideoDownloadRequest request) async {
+    final url = request.materialsUrl.trim();
+    if (url.isEmpty) return null;
+    final base = await getApplicationSupportDirectory();
+    final ext = _extensionFromUrl(url);
+    final dir = Directory(
+      '${base.path}/recorded_videos/${_safePart(request.uid)}/${_safePart(request.courseKey)}/${_safePart(request.sessionId)}',
+    );
+    return File('${dir.path}/materials.$ext');
   }
 
   String _extensionFromUrl(String raw) {
