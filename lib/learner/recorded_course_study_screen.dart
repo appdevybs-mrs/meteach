@@ -1536,6 +1536,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       context,
       'learner.recorded.video.${widget.courseKey}.${session.id}',
       () async {
+        final flatSessions = _flatSessions
+            .map((ref) => {
+                  'id': ref.session.id,
+                  'title': ref.session.title,
+                  'videoUrl': ref.session.videoUrl.trim(),
+                })
+            .toList();
+
         await Navigator.push(
           context,
           MaterialPageRoute(
@@ -1547,6 +1555,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               sessionTitle: session.title,
               videoUrl: videoUrl,
               localVideoPath: localPath,
+              flatSessions: flatSessions,
             ),
           ),
         );

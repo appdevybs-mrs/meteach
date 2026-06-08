@@ -1,10 +1,12 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show File;
 
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import '../services/recorded_offline_video_service.dart';
 import '../services/recorded_progress_sync_service.dart';
 import '../shared/app_connectivity.dart';
 import '../shared/app_feedback.dart';
@@ -25,6 +27,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
     required this.sessionTitle,
     required this.videoUrl,
     this.localVideoPath,
+    this.flatSessions,
   });
 
   final String uid;
@@ -34,6 +37,7 @@ class RecordedVideoPlayerScreen extends StatefulWidget {
   final String sessionTitle;
   final String videoUrl;
   final String? localVideoPath;
+  final List<Map<String, String>>? flatSessions;
 
   @override
   State<RecordedVideoPlayerScreen> createState() =>
@@ -73,6 +77,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Timer? _hideControlsTimer;
   bool _isDisposing = false;
   bool _lastLandscape = false;
+  double _playbackSpeed = 1.0;
   List<LessonCommentItem> _comments = const [];
   List<_LessonNoteItem> _lessonNotes = const [];
 
@@ -250,7 +255,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _debug('video uri=$uri');
 
       final localPath = widget.localVideoPath?.trim() ?? '';
-      final localFile = localPath.isEmpty ? null : File(localPath);
+      final localFile = (!kIsWeb && localPath.isNotEmpty)
+          ? File(localPath)
+          : null;
       final hasLocal = localFile != null && await localFile.exists();
       final controller = hasLocal
           ? VideoPlayerController.file(localFile)
@@ -525,6 +532,116 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _showControlsTemporarily();
   }
 
+  Future<void> _navigateToSession({
+    required String sessionId,
+    required String sessionTitle,
+    required String videoUrl,
+  }) async {
+    final localPath = await _getLocalPath(sessionId, videoUrl);
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecordedVideoPlayerScreen(
+          uid: widget.uid,
+          courseKey: widget.courseKey,
+          courseId: widget.courseId,
+          sessionId: sessionId,
+          sessionTitle: sessionTitle,
+          videoUrl: videoUrl,
+          localVideoPath: localPath,
+          flatSessions: widget.flatSessions,
+        ),
+      ),
+    );
+  }
+
+  Map<String, String>? _sessionAtOffset(int offset) {
+    final list = widget.flatSessions;
+    if (list == null) return null;
+    final index = list.indexWhere((m) => m['id'] == widget.sessionId);
+    if (index < 0) return null;
+    final target = index + offset;
+    if (target < 0 || target >= list.length) return null;
+    return list[target];
+  }
+
+  Future<String?> _getLocalPath(String sessionId, String videoUrl) async {
+    final localPath = await RecordedOfflineVideoService.instance.localPathFor(
+      uid: widget.uid,
+      courseKey: widget.courseKey,
+      sessionId: sessionId,
+      videoUrl: videoUrl,
+    );
+    return localPath;
+  }
+
+  void _showSpeedMenu() {
+    const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    showModalBottomSheet<double>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'Playback Speed',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                    ),
+                  ),
+                ),
+                for (final speed in speeds)
+                  ListTile(
+                    leading: Icon(
+                      speed == _playbackSpeed
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: speed == _playbackSpeed
+                          ? const Color(0xFF4F46E5)
+                          : null,
+                    ),
+                    title: Text(
+                      '${speed}x',
+                      style: TextStyle(
+                        fontWeight: speed == _playbackSpeed
+                            ? FontWeight.w900
+                            : FontWeight.w600,
+                        color: speed == _playbackSpeed
+                            ? const Color(0xFF4F46E5)
+                            : null,
+                      ),
+                    ),
+                    onTap: () => Navigator.pop(ctx, speed),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    ).then((speed) {
+      if (speed == null || !mounted) return;
+      final controller = _controller;
+      if (controller == null || !controller.value.isInitialized) return;
+      controller.setPlaybackSpeed(speed);
+      setState(() => _playbackSpeed = speed);
+      AppToast.show(
+        context,
+        'Speed: ${speed}x',
+        type: AppToastType.info,
+      );
+    });
+  }
+
   int _currentVideoPositionMs() {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) {
@@ -784,6 +901,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   void _startHideControlsTimer() {
     _hideControlsTimer?.cancel();
+    if (kIsWeb) return;
     if (!_isPlaying) return;
 
     _hideControlsTimer = Timer(const Duration(seconds: 4), () {
@@ -1140,7 +1258,31 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         ? BorderRadius.zero
         : BorderRadius.circular(isLandscape ? 16 : 20);
 
-    return GestureDetector(
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent) {
+          final key = event.logicalKey;
+          if (key == LogicalKeyboardKey.space) {
+            _togglePlayPause();
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.arrowLeft) {
+            _seekRelative(-5);
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.arrowRight) {
+            _seekRelative(5);
+            return KeyEventResult.handled;
+          }
+          if (key == LogicalKeyboardKey.keyF) {
+            _toggleFullscreen();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: GestureDetector(
       onTap: _showControlsTemporarily,
       child: Container(
         width: double.infinity,
@@ -1182,24 +1324,62 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                           padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                           child: Row(
                             children: [
-                              if (_isFullscreen)
+                              if (_sessionAtOffset(-1) case final prev?)
                                 IconButton(
-                                  onPressed: _toggleFullscreen,
-                                  color: Colors.white,
-                                  icon: const Icon(
-                                    Icons.fullscreen_exit_rounded,
+                                  onPressed: () => _navigateToSession(
+                                    sessionId: prev['id']!,
+                                    sessionTitle:
+                                        prev['title'] ?? '',
+                                    videoUrl: prev['videoUrl']!,
                                   ),
+                                  color: Colors.white,
+                                  iconSize: kIsWeb ? 30 : 24,
+                                  icon: const Icon(
+                                    Icons.skip_previous_rounded,
+                                  ),
+                                  tooltip: 'Previous session',
                                 ),
                               const Spacer(),
                               IconButton(
+                                onPressed: _showSpeedMenu,
+                                color: Colors.white,
+                                iconSize: kIsWeb ? 30 : 24,
+                                icon: Text(
+                                  '${_playbackSpeed}x',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                tooltip: 'Playback speed',
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
                                 onPressed: _toggleFullscreen,
                                 color: Colors.white,
+                                iconSize: kIsWeb ? 30 : 24,
                                 icon: Icon(
                                   _isFullscreen
                                       ? Icons.fullscreen_exit_rounded
                                       : Icons.fullscreen_rounded,
                                 ),
                               ),
+                              if (_sessionAtOffset(1) case final next?)
+                                IconButton(
+                                  onPressed: () => _navigateToSession(
+                                    sessionId: next['id']!,
+                                    sessionTitle:
+                                        next['title'] ?? '',
+                                    videoUrl: next['videoUrl']!,
+                                  ),
+                                  color: Colors.white,
+                                  iconSize: kIsWeb ? 30 : 24,
+                                  icon: const Icon(
+                                    Icons.skip_next_rounded,
+                                  ),
+                                  tooltip: 'Next session',
+                                ),
                             ],
                           ),
                         ),
@@ -1210,11 +1390,14 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                         children: [
                           IconButton(
                             onPressed: () => _seekRelative(-10),
-                            iconSize: isLandscape ? 30 : 34,
+                            iconSize: isLandscape
+                                ? (kIsWeb ? 36 : 30)
+                                : (kIsWeb ? 40 : 34),
                             color: Colors.white,
                             icon: const Icon(Icons.replay_10_rounded),
+                            tooltip: 'Rewind 10s',
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: kIsWeb ? 12 : 8),
                           Container(
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.16),
@@ -1222,21 +1405,28 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                             ),
                             child: IconButton(
                               onPressed: _togglePlayPause,
-                              iconSize: isLandscape ? 40 : 44,
+                              iconSize: isLandscape
+                                  ? (kIsWeb ? 48 : 40)
+                                  : (kIsWeb ? 52 : 44),
                               color: Colors.white,
                               icon: Icon(
                                 _isPlaying
                                     ? Icons.pause_circle_filled_rounded
                                     : Icons.play_circle_fill_rounded,
                               ),
+                              tooltip:
+                                  _isPlaying ? 'Pause' : 'Play',
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: kIsWeb ? 12 : 8),
                           IconButton(
                             onPressed: () => _seekRelative(10),
-                            iconSize: isLandscape ? 30 : 34,
+                            iconSize: isLandscape
+                                ? (kIsWeb ? 36 : 30)
+                                : (kIsWeb ? 40 : 34),
                             color: Colors.white,
                             icon: const Icon(Icons.forward_10_rounded),
+                            tooltip: 'Forward 10s',
                           ),
                         ],
                       ),
@@ -1297,6 +1487,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
               ),
           ],
         ),
+      ),
       ),
     );
   }
