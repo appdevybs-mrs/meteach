@@ -2004,65 +2004,76 @@ class _AdminSharedFilesDashCard extends StatelessWidget {
   }
 }
 
-class _CertificatesDashCard extends StatelessWidget {
+class _CertificatesDashCard extends StatefulWidget {
   final bool isReceptionistStyle;
 
   const _CertificatesDashCard({this.isReceptionistStyle = false});
 
-  int _countRecordedAchievements(dynamic usersValue) {
-    if (usersValue is! Map) return 0;
-    int count = 0;
-    usersValue.forEach((_, userRaw) {
-      if (userRaw is! Map) return;
-      final user = Map<dynamic, dynamic>.from(userRaw);
-      final recorded = user['recorded_certificates'];
-      if (recorded is Map) {
-        count += recorded.length;
-      }
-    });
-    return count;
+  @override
+  State<_CertificatesDashCard> createState() => _CertificatesDashCardState();
+}
+
+class _CertificatesDashCardState extends State<_CertificatesDashCard> {
+  int _adminCount = 0;
+  int _recordedCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCounts();
+  }
+
+  Future<void> _loadCounts() async {
+    final adminRef = FirebaseDatabase.instance.ref('admin_certificates');
+    final usersRef = FirebaseDatabase.instance.ref('users');
+
+    final adminSnap = await adminRef.get();
+    final adminCount =
+        (adminSnap.value is Map) ? (adminSnap.value as Map).length : 0;
+
+    final usersSnap = await usersRef.get();
+    final usersVal = usersSnap.value;
+    int rCount = 0;
+    if (usersVal is Map) {
+      usersVal.forEach((_, userRaw) {
+        if (userRaw is! Map) return;
+        final user = Map<dynamic, dynamic>.from(userRaw);
+        final recorded = user['recorded_certificates'];
+        if (recorded is Map) {
+          rCount += recorded.length;
+        }
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _adminCount = adminCount;
+        _recordedCount = rCount;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final manualRef = FirebaseDatabase.instance.ref('certificates');
-    final usersRef = FirebaseDatabase.instance.ref('users');
+    final totalCount = _adminCount + _recordedCount;
 
-    return StreamBuilder<DatabaseEvent>(
-      stream: manualRef.onValue,
-      builder: (context, manualSnap) {
-        final manualVal = manualSnap.data?.snapshot.value;
-        final manualCount = manualVal is Map ? manualVal.length : 0;
+    final subtitle = totalCount == 0
+        ? 'No certificates yet'
+        : '$totalCount total • $_recordedCount recorded achievement${_recordedCount == 1 ? '' : 's'}';
 
-        return StreamBuilder<DatabaseEvent>(
-          stream: usersRef.onValue,
-          builder: (context, usersSnap) {
-            final recordedCount = _countRecordedAchievements(
-              usersSnap.data?.snapshot.value,
-            );
-            final totalCount = manualCount + recordedCount;
-
-            final subtitle = totalCount == 0
-                ? 'No certificates yet'
-                : '$totalCount total • $recordedCount recorded achievement${recordedCount == 1 ? '' : 's'}';
-
-            return _DashCard(
-              title: 'Certificates',
-              subtitle: subtitle,
-              tags: ['Total $totalCount', 'Recorded $recordedCount'],
-              icon: Icons.workspace_premium_rounded,
-              color: AdminHome.accentIndigo,
-              badgeCount: totalCount,
-              isReceptionistStyle: isReceptionistStyle,
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AdminCertificatesScreen(),
-                ),
-              ),
-            );
-          },
-        );
-      },
+    return _DashCard(
+      title: 'Certificates',
+      subtitle: subtitle,
+      tags: ['Total $totalCount', 'Recorded $_recordedCount'],
+      icon: Icons.workspace_premium_rounded,
+      color: AdminHome.accentIndigo,
+      badgeCount: totalCount,
+      isReceptionistStyle: widget.isReceptionistStyle,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const AdminCertificatesScreen(),
+        ),
+      ),
     );
   }
 }
