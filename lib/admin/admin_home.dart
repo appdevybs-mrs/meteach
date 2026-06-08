@@ -2016,41 +2016,49 @@ class _CertificatesDashCard extends StatefulWidget {
 class _CertificatesDashCardState extends State<_CertificatesDashCard> {
   int _adminCount = 0;
   int _recordedCount = 0;
+  final DatabaseReference _adminRef =
+      FirebaseDatabase.instance.ref('admin_certificates');
+  final DatabaseReference _usersRef =
+      FirebaseDatabase.instance.ref('users');
+  late final List<StreamSubscription<DatabaseEvent>> _subscriptions;
 
   @override
   void initState() {
     super.initState();
-    _loadCounts();
+    _subscriptions = [
+      _adminRef.onValue.listen((event) {
+        if (!mounted) return;
+        final count =
+            (event.snapshot.value is Map)
+                ? (event.snapshot.value as Map).length
+                : 0;
+        setState(() => _adminCount = count);
+      }),
+      _usersRef.onValue.listen((event) {
+        if (!mounted) return;
+        final val = event.snapshot.value;
+        int rCount = 0;
+        if (val is Map) {
+          val.forEach((_, userRaw) {
+            if (userRaw is! Map) return;
+            final user = Map<dynamic, dynamic>.from(userRaw);
+            final recorded = user['recorded_certificates'];
+            if (recorded is Map) {
+              rCount += recorded.length;
+            }
+          });
+        }
+        setState(() => _recordedCount = rCount);
+      }),
+    ];
   }
 
-  Future<void> _loadCounts() async {
-    final adminRef = FirebaseDatabase.instance.ref('admin_certificates');
-    final usersRef = FirebaseDatabase.instance.ref('users');
-
-    final adminSnap = await adminRef.get();
-    final adminCount =
-        (adminSnap.value is Map) ? (adminSnap.value as Map).length : 0;
-
-    final usersSnap = await usersRef.get();
-    final usersVal = usersSnap.value;
-    int rCount = 0;
-    if (usersVal is Map) {
-      usersVal.forEach((_, userRaw) {
-        if (userRaw is! Map) return;
-        final user = Map<dynamic, dynamic>.from(userRaw);
-        final recorded = user['recorded_certificates'];
-        if (recorded is Map) {
-          rCount += recorded.length;
-        }
-      });
+  @override
+  void dispose() {
+    for (final sub in _subscriptions) {
+      sub.cancel();
     }
-
-    if (mounted) {
-      setState(() {
-        _adminCount = adminCount;
-        _recordedCount = rCount;
-      });
-    }
+    super.dispose();
   }
 
   @override

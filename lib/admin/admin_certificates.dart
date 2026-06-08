@@ -51,6 +51,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
 
   int _activeTab = 0;
   String _searchQuery = '';
+  String? _printingCertCvn;
 
 
 
@@ -143,6 +144,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       builder: (_) => _AdminCertViewSheet(
         certificate: cert,
         service: _adminService,
+        isPrinting: _printingCertCvn == cert.cvn,
         onDeleted: () {
           Navigator.pop(context);
           _loadAdminCerts();
@@ -398,6 +400,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                           onEdit: () => _showEditCertificateForm(cert),
                           onDelete: () => _deleteCertificate(cert),
                           onPrint: () => _printAdminCert(cert),
+                          isPrinting: _printingCertCvn == cert.cvn,
                         );
                       },
                     ),
@@ -963,6 +966,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   }
 
   Future<void> _printAdminCert(AdminCertificate cert) async {
+    if (_printingCertCvn == cert.cvn) return;
+    setState(() => _printingCertCvn = cert.cvn);
     try {
       final bytes = await _pdfService.generateAdminEflPdfBytes(cert);
       await Printing.layoutPdf(
@@ -982,6 +987,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         'Could not generate certificate PDF.',
         type: AppToastType.error,
       );
+    } finally {
+      if (mounted) setState(() => _printingCertCvn = null);
     }
   }
 
@@ -1062,8 +1069,10 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
 
   List<String> _suggestedNames = [];
   List<String> _suggestedSublines = [];
+  List<String> _suggestedDescriptions = [];
   bool _namesLoaded = false;
   bool _sublinesLoaded = false;
+  bool _descriptionsLoaded = false;
 
   bool get _isEditing => widget.certificate != null;
 
@@ -1120,6 +1129,11 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
       final sublines = await widget.service.getSuggestedSublines();
       if (mounted) setState(() => _suggestedSublines = sublines);
       _sublinesLoaded = true;
+    }
+    if (!_descriptionsLoaded) {
+      final descriptions = await widget.service.getSuggestedDescriptions();
+      if (mounted) setState(() => _suggestedDescriptions = descriptions);
+      _descriptionsLoaded = true;
     }
   }
 
@@ -1270,6 +1284,10 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
       }
       if (subline.isNotEmpty) {
         await widget.service.addSuggestedSubline(subline);
+      }
+      final desc = _descriptionC.text.trim();
+      if (desc.isNotEmpty) {
+        await widget.service.addSuggestedDescription(desc);
       }
 
       if (mounted) {
@@ -1681,13 +1699,10 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                 const SizedBox(height: 14),
 
                 // Description
-                TextFormField(
+                _SuggestionField(
+                  label: 'Description',
                   controller: _descriptionC,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Description',
-                    border: OutlineInputBorder(),
-                  ),
+                  suggestions: _suggestedDescriptions,
                 ),
                 const SizedBox(height: 14),
 
@@ -1864,7 +1879,8 @@ const SizedBox(height: 24),
     }
     final words = name.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     if (words.isEmpty) return;
-    final initials = words.map((w) => w[0].toUpperCase()).join();
+    final takeWords = words.take(3).toList();
+    final initials = takeWords.map((w) => w[0].toUpperCase()).join();
     final year = DateTime.now().year.toString();
     final random = (DateTime.now().millisecondsSinceEpoch % 1000)
         .toString()
@@ -1988,6 +2004,7 @@ class _AdminCertCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onPrint;
+  final bool isPrinting;
 
   const _AdminCertCard({
     required this.certificate,
@@ -1995,6 +2012,7 @@ class _AdminCertCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onPrint,
+    this.isPrinting = false,
   });
 
   void _showLongPressMenu(BuildContext context) {
@@ -2193,9 +2211,15 @@ class _AdminCertCard extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               IconButton(
-                icon: const Icon(Icons.print, size: 20, color: _softText),
+                icon: isPrinting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.print, size: 20, color: _softText),
                 tooltip: 'Print PDF',
-                onPressed: onPrint,
+                onPressed: isPrinting ? null : onPrint,
               ),
               const Icon(Icons.chevron_right, size: 18, color: _softText),
             ],
@@ -2245,6 +2269,7 @@ class _AdminCertViewSheet extends StatelessWidget {
   final VoidCallback onDeleted;
   final VoidCallback onEdited;
   final VoidCallback onPrint;
+  final bool isPrinting;
 
   const _AdminCertViewSheet({
     required this.certificate,
@@ -2252,6 +2277,7 @@ class _AdminCertViewSheet extends StatelessWidget {
     required this.onDeleted,
     required this.onEdited,
     required this.onPrint,
+    this.isPrinting = false,
   });
 
   String _formatDate(String v) {
@@ -2573,9 +2599,15 @@ class _AdminCertViewSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: onPrint,
-                        icon: const Icon(Icons.print, size: 18),
-                        label: const Text('Print'),
+                        onPressed: isPrinting ? null : onPrint,
+                        icon: isPrinting
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.print, size: 18),
+                        label: Text(isPrinting ? 'Printing...' : 'Print'),
                       ),
                     ),
                     const SizedBox(width: 8),

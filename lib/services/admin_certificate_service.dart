@@ -11,6 +11,7 @@ class AdminCertificateService {
   static const String _certPath = 'admin_certificates';
   static const String _nameSuggestPath = 'admin_certificate_names';
   static const String _sublineSuggestPath = 'admin_certificate_sublines';
+  static const String _descSuggestPath = 'admin_certificate_descriptions';
   static const String _uploadEndpoint = 'upload_certificate_id.php';
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
@@ -18,6 +19,7 @@ class AdminCertificateService {
   DatabaseReference get _certRef => _db.ref(_certPath);
   DatabaseReference get _nameRef => _db.ref(_nameSuggestPath);
   DatabaseReference get _sublineRef => _db.ref(_sublineSuggestPath);
+  DatabaseReference get _descRef => _db.ref(_descSuggestPath);
 
   Future<List<AdminCertificate>> getAll() async {
     final snap = await _certRef.get();
@@ -91,6 +93,28 @@ class AdminCertificateService {
     final existing = await getSuggestedSublines();
     if (existing.contains(trimmed)) return;
     await _sublineRef.push().set({'value': trimmed});
+  }
+
+  Future<List<String>> getSuggestedDescriptions() async {
+    final snap = await _descRef.get();
+    final list = <String>[];
+    if (snap.value != null && snap.value is Map) {
+      (snap.value as Map).forEach((_, value) {
+        if (value is Map) {
+          final v = (value['value'] ?? '').toString().trim();
+          if (v.isNotEmpty) list.add(v);
+        }
+      });
+    }
+    return list;
+  }
+
+  Future<void> addSuggestedDescription(String description) async {
+    final trimmed = description.trim();
+    if (trimmed.isEmpty) return;
+    final existing = await getSuggestedDescriptions();
+    if (existing.contains(trimmed)) return;
+    await _descRef.push().set({'value': trimmed});
   }
 
   Future<String> uploadIdImage({

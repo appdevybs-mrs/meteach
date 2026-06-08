@@ -465,9 +465,9 @@ class CertificatePdfService {
 
     final bool isPass = ['A', 'B', 'C'].contains(cert.grade.toUpperCase());
     final PdfColor gradeColor = isPass
-        ? PdfColor.fromInt(0xFFD35400)
+        ? PdfColor.fromInt(0xFFD4AF37)
         : PdfColor.fromInt(0xFFE74C3C);
-    const PdfColor black = PdfColor.fromInt(0xFF000000);
+    const PdfColor deepBlue = PdfColor.fromInt(0xFF0D1B2A);
 
     String fmtDdMmYyyy(String v) {
       if (v.isEmpty) return '';
@@ -505,14 +505,14 @@ class CertificatePdfService {
                       fontSize: 24,
                       fontWeight: pw.FontWeight.bold,
                       font: pw.Font.helveticaBold(),
-                      color: black,
+                      color: deepBlue,
                     ),
                   ),
                 ),
               ),
               pw.Positioned(
                 left: 111,
-                top: 308.2,
+                top: 332.2,
                 child: pw.SizedBox(
                   width: 320,
                   height: 36,
@@ -528,8 +528,8 @@ class CertificatePdfService {
                 ),
               ),
               pw.Positioned(
-                left: 196,
-                top: 393.2,
+                left: 156,
+                top: 277,
                 child: pw.SizedBox(
                   width: 320,
                   height: 36,
@@ -539,15 +539,15 @@ class CertificatePdfService {
                       fontSize: 15,
                       fontWeight: pw.FontWeight.bold,
                       font: pw.Font.helveticaBold(),
-                      color: gradeColor,
+                      color: deepBlue,
                     ),
                   ),
                 ),
               ),
               if (cert.subline.isNotEmpty)
                 pw.Positioned(
-                  left: 150,
-                  top: 444.6,
+                  left: 156,
+                  top: 313,
                   child: pw.SizedBox(
                     width: 320,
                     height: 36,
@@ -557,15 +557,15 @@ class CertificatePdfService {
                         fontSize: 12,
                         fontWeight: pw.FontWeight.bold,
                         font: pw.Font.helveticaBold(),
-                        color: gradeColor,
+                        color: deepBlue,
                       ),
                     ),
                   ),
                 ),
               if (cert.description.isNotEmpty)
                 pw.Positioned(
-                  left: 150,
-                  top: 484,
+                  left: 156,
+                  top: 361,
                   child: pw.SizedBox(
                     width: 320,
                     height: 40,
@@ -574,14 +574,14 @@ class CertificatePdfService {
                       style: pw.TextStyle(
                         fontSize: 10,
                         font: pw.Font.helvetica(),
-                        color: black,
+                        color: deepBlue,
                       ),
                     ),
                   ),
                 ),
               pw.Positioned(
                 left: 475,
-                top: 751.3,
+                top: 775.3,
                 child: pw.SizedBox(
                   width: 320,
                   height: 36,
@@ -591,15 +591,15 @@ class CertificatePdfService {
                       fontSize: 10,
                       fontWeight: pw.FontWeight.bold,
                       font: pw.Font.helveticaBold(),
-                      color: black,
+                      color: deepBlue,
                     ),
                   ),
                 ),
               ),
               if (cert.cvn.isNotEmpty)
                 pw.Positioned(
-                  left: 218,
-                  top: 637,
+                  left: 217,
+                  top: 635,
                   child: pw.SizedBox(
                     width: 160,
                     height: 20,
@@ -609,7 +609,7 @@ class CertificatePdfService {
                         fontSize: 7,
                         fontWeight: pw.FontWeight.bold,
                         font: pw.Font.helveticaBold(),
-                        color: black,
+                        color: deepBlue,
                       ),
                     ),
                   ),
