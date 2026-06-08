@@ -1544,16 +1544,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Future<Map<String, String>> _learnerIdentity() async {
     final out = <String, String>{'fullName': 'Learner', 'nationalIdNumber': ''};
-    final snap = await _usersRef.child(_uid).get();
-    if (!snap.exists || snap.value is! Map) return out;
-    final m = Map<String, dynamic>.from(snap.value as Map);
-    final first = (m['first_name'] ?? '').toString().trim();
-    final last = (m['last_name'] ?? '').toString().trim();
-    final full = '$first $last'.trim();
-    final nationalId = (m['national_id_number'] ?? m['nationalIdNumber'] ?? '')
-        .toString();
-    if (full.isNotEmpty) out['fullName'] = full;
-    out['nationalIdNumber'] = nationalId.trim();
+    try {
+      final snap = await _usersRef.child(_uid).get().timeout(
+        const Duration(seconds: 10),
+      );
+      if (!snap.exists || snap.value is! Map) return out;
+      final m = Map<String, dynamic>.from(snap.value as Map);
+      final first = (m['first_name'] ?? '').toString().trim();
+      final last = (m['last_name'] ?? '').toString().trim();
+      final full = '$first $last'.trim();
+      final nationalId = (m['national_id_number'] ?? m['nationalIdNumber'] ?? '')
+          .toString();
+      if (full.isNotEmpty) out['fullName'] = full;
+      out['nationalIdNumber'] = nationalId.trim();
+    } catch (_) {}
     return out;
   }
 
@@ -1858,7 +1862,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<String> _resolveInstructorName() async {
     try {
       if (_courseId.isNotEmpty) {
-        final byCourseId = await _coursesRef.child(_courseId).get();
+        final byCourseId = await _coursesRef
+            .child(_courseId)
+            .get()
+            .timeout(const Duration(seconds: 10));
         if (byCourseId.exists && byCourseId.value is Map) {
           final names = await _instructorNamesFromCourseMap(
             Map<String, dynamic>.from(byCourseId.value as Map),
@@ -1869,7 +1876,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       }
 
       if (widget.courseKey.trim().isNotEmpty) {
-        final byCourseKey = await _coursesRef.child(widget.courseKey).get();
+        final byCourseKey = await _coursesRef
+            .child(widget.courseKey)
+            .get()
+            .timeout(const Duration(seconds: 10));
         if (byCourseKey.exists && byCourseKey.value is Map) {
           final names = await _instructorNamesFromCourseMap(
             Map<String, dynamic>.from(byCourseKey.value as Map),
@@ -2308,6 +2318,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<void> _onCertificateTap() async {
+    if (AppConnectivity.instance.isOffline) {
+      _snack('Certificate generation needs internet. Come back online to generate your certificate.');
+      return;
+    }
     try {
       final certId = 'course_${_sanitizeIdPart(_courseId)}';
       final cert = await _issueRecordedCertificate(
@@ -2367,6 +2381,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }) async {
     final moduleKey = _moduleCertificateActionKey(moduleLabel, moduleIndex);
     if (_generatingModuleCertificateKeys.contains(moduleKey)) return;
+
+    if (AppConnectivity.instance.isOffline) {
+      _snack('Certificate generation needs internet. Come back online to generate your certificate.');
+      return;
+    }
 
     if (mounted) {
       setState(() {

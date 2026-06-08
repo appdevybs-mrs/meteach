@@ -26,6 +26,7 @@ import 'learner_course_detail_screen.dart';
 import 'learner_settings_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/offline_action_guard.dart';
+import '../shared/app_connectivity.dart';
 import '../shared/offline_notice_banner.dart';
 import '../shared/first_login_agreement.dart';
 import '../shared/learner_web_layout.dart';
@@ -866,6 +867,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     unawaited(_refreshJoinFabPayload());
     _progressRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
       if (!mounted) return;
+      if (AppConnectivity.instance.isOffline) return;
       setState(() {
         _progressFuture = _loadProgressItems().then((items) {
           _cachedProgressItems = items;
@@ -1482,7 +1484,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
     if ((planned <= 0) && classId.isNotEmpty) {
       try {
-        final snap = await _db.child('classes/$classId/schedule').get();
+        final snap = await _db.child('classes/$classId/schedule').get().timeout(
+          const Duration(seconds: 8),
+        );
         if (snap.exists && snap.value is Map) {
           final m = Map<String, dynamic>.from(snap.value as Map);
           final n = _toInt(
@@ -1501,7 +1505,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           syllabusRef = syllabusRef.child(variantKey);
         }
 
-        final sSnap = await syllabusRef.get();
+        final sSnap = await syllabusRef.get().timeout(
+          const Duration(seconds: 10),
+        );
         if (sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final modules = s['modules'];
@@ -1710,7 +1716,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       try {
         final syllabusSnap = await _db
             .child('syllabi/$courseId/recorded')
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 10));
         final Map<String, Map<String, dynamic>> sessionMetaById = {};
 
         List<Map<String, dynamic>> asListOfMaps(dynamic node) {
@@ -1792,7 +1799,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
         final progressSnap = await _db
             .child('users/$learnerUid/courses/$courseKey/recorded_progress')
-            .get();
+            .get()
+            .timeout(const Duration(seconds: 10));
 
         if (progressSnap.exists && progressSnap.value is Map) {
           final rawProgress = Map<String, dynamic>.from(
@@ -1841,7 +1849,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
           syllabusRef = syllabusRef.child(variantKey);
         }
 
-        final sSnap = await syllabusRef.get();
+        final sSnap = await syllabusRef.get().timeout(
+          const Duration(seconds: 10),
+        );
         if (sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final units = s['units'];
@@ -2048,7 +2058,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     if (uid.isEmpty) return [];
 
     try {
-      final snap = await _db.child('users/$uid/courses').get();
+      final snap = await _db.child('users/$uid/courses').get().timeout(
+        const Duration(seconds: 10),
+      );
       final v = snap.value;
       if (v is! Map) return [];
 
