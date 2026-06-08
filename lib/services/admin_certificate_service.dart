@@ -135,4 +135,26 @@ class AdminCertificateService {
 
     return (decoded['url'] ?? '').toString();
   }
+
+  Future<void> deleteIdImage(String url) async {
+    try {
+      final parsed = Uri.parse(url);
+      final segments = parsed.pathSegments;
+      // Expected: .../storage/certificates/{certName}/{fileName}
+      final certIdx = segments.indexOf('certificates');
+      if (certIdx < 0 || certIdx + 2 >= segments.length) return;
+      final certName = segments[certIdx + 1];
+      final fileName = segments[certIdx + 2];
+      final path = '$certName/$fileName';
+      final deleteUri = BackendApi.uri(
+        'delete_file_secure.php',
+      ).replace(queryParameters: {
+        'root': 'certificates',
+        'path': path,
+      });
+      await http.get(deleteUri);
+    } catch (_) {
+      // Silent — old file deletion is best-effort
+    }
+  }
 }

@@ -1040,19 +1040,25 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
   final _certNameC = TextEditingController();
   final _sublineC = TextEditingController();
   final _descriptionC = TextEditingController();
+  final List<TextEditingController> _allControllers = [];
 
   DateTime? _dateOfBirth;
   DateTime? _issueDate;
-  String _idType = 'national_id'; // 'national_id' or 'passport'
+  String _idType = 'national_id';
   String _cvn = '';
   String _grade = 'A';
 
-  PlatformFile? _frontIdFile;
-  PlatformFile? _backIdFile;
-  PlatformFile? _passportFile;
+  String? _frontIdUrl;
+  String? _backIdUrl;
+  String? _passportUrl;
+  String? _profilePicUrl;
+
+  bool _frontUploading = false;
+  bool _backUploading = false;
+  bool _passportUploading = false;
 
   bool _saving = false;
-  bool _uploading = false;
+  bool _hasUnsavedChanges = false;
 
   List<String> _suggestedNames = [];
   List<String> _suggestedSublines = [];
@@ -1064,6 +1070,13 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
   @override
   void initState() {
     super.initState();
+    _allControllers.addAll([
+      _fullNameC, _nationalIdC, _certNameC,
+      _sublineC, _descriptionC,
+    ]);
+    for (final c in _allControllers) {
+      c.addListener(_markUnsaved);
+    }
     if (_isEditing) {
       final cert = widget.certificate!;
       _fullNameC.text = cert.fullName;
@@ -1074,10 +1087,19 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
       _idType = cert.idType;
       _cvn = cert.cvn;
       _grade = cert.grade;
+      _frontIdUrl = cert.frontIdUrl;
+      _backIdUrl = cert.backIdUrl;
+      _passportUrl = cert.passportUrl;
+      _profilePicUrl = cert.profilePicUrl;
       _dateOfBirth = _tryParseDate(cert.dateOfBirth);
       _issueDate = _tryParseDate(cert.issueDate);
     }
+    _hasUnsavedChanges = false;
     _loadSuggestions();
+  }
+
+  void _markUnsaved() {
+    _hasUnsavedChanges = true;
   }
 
   DateTime? _tryParseDate(String v) {
@@ -1103,28 +1125,94 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
 
   @override
   void dispose() {
-    _fullNameC.dispose();
-    _nationalIdC.dispose();
-    _certNameC.dispose();
-    _sublineC.dispose();
-    _descriptionC.dispose();
+    for (final c in _allControllers) {
+      c.removeListener(_markUnsaved);
+      c.dispose();
+    }
+    _allControllers.clear();
     super.dispose();
   }
 
+  Future<void> _uploadFile({
+    required PlatformFile file,
+    required String certName,
+    required bool isFront,
+    required bool isBack,
+    String? existingUrl,
+  }) async {
+    final setUploading = isFront
+        ? (v) => _frontUploading = v
+        : isBack
+            ? (v) => _backUploading = v
+            : (v) => _passportUploading = v;
+    final setUrl = isFront
+        ? (String? v) => _frontIdUrl = v
+        : isBack
+            ? (String? v) => _backIdUrl = v
+            : (String? v) => _passportUrl = v;
+
+    setState(() => setUploading(true));
+
+    try {
+      if (existingUrl != null) {
+        await widget.service.deleteIdImage(existingUrl);
+      }
+      final url = await widget.service.uploadIdImage(
+        file: file,
+        certificateName: certName,
+      );
+      setState(() {
+        setUrl(url);
+        setUploading(false);
+        if (isFront || (!isFront && !isBack)) {
+          _profilePicUrl = url;
+        }
+        _hasUnsavedChanges = true;
+      });
+    } catch (e) {
+      setState(() => setUploading(false));
+      if (mounted) {
+        AppToast.show(
+          context,
+          'Upload failed: $e',
+          type: AppToastType.error,
+        );
+      }
+    }
+  }
+
   Future<void> _pickFile({required bool isFront, required bool isBack}) async {
+    final uploading = isFront
+        ? _frontUploading
+        : isBack
+            ? _backUploading
+            : _passportUploading;
+    if (uploading) return;
+
     final result = await FilePicker.platform.pickFiles(
       withData: true,
       type: FileType.custom,
       allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
     );
     if (result == null || result.files.isEmpty) return;
-    if (isFront) {
-      setState(() => _frontIdFile = result.files.first);
-    } else if (isBack) {
-      setState(() => _backIdFile = result.files.first);
-    } else {
-      setState(() => _passportFile = result.files.first);
-    }
+
+    final file = result.files.first;
+    final certName = _certNameC.text.trim().isNotEmpty
+        ? _certNameC.text.trim()
+        : 'Certificate';
+    final existingUrl = isFront
+        ? _frontIdUrl
+        : isBack
+            ? _backIdUrl
+            : _passportUrl;
+
+    await _uploadFile(
+      file: file,
+      certName: certName,
+      isFront: isFront,
+      isBack: isBack,
+      existingUrl: existingUrl,
+    );
   }
 
   Future<void> _save() async {
@@ -1150,48 +1238,6 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
           ? _sublineC.text.trim()
           : '';
 
-      String? frontIdUrl;
-      String? backIdUrl;
-      String? passportUrl;
-      String? profilePicUrl;
-
-      // Upload images
-      setState(() => _uploading = true);
-
-      if (_idType == 'national_id') {
-        if (_frontIdFile != null) {
-          frontIdUrl = await widget.service.uploadIdImage(
-            file: _frontIdFile!,
-            certificateName: certName,
-          );
-          profilePicUrl = frontIdUrl;
-        } else if (_isEditing && widget.certificate!.frontIdUrl != null) {
-          frontIdUrl = widget.certificate!.frontIdUrl;
-          profilePicUrl = frontIdUrl;
-        }
-        if (_backIdFile != null) {
-          backIdUrl = await widget.service.uploadIdImage(
-            file: _backIdFile!,
-            certificateName: certName,
-          );
-        } else if (_isEditing) {
-          backIdUrl = widget.certificate!.backIdUrl;
-        }
-      } else {
-        if (_passportFile != null) {
-          passportUrl = await widget.service.uploadIdImage(
-            file: _passportFile!,
-            certificateName: certName,
-          );
-          profilePicUrl = passportUrl;
-        } else if (_isEditing && widget.certificate!.passportUrl != null) {
-          passportUrl = widget.certificate!.passportUrl;
-          profilePicUrl = passportUrl;
-        }
-      }
-
-      setState(() => _uploading = false);
-
       final dobStr = DateFormat('yyyy-MM-dd').format(_dateOfBirth!);
       final issueStr = DateFormat('yyyy-MM-dd').format(_issueDate!);
 
@@ -1207,10 +1253,10 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
         subline: subline,
         description: _descriptionC.text.trim(),
         issueDate: issueStr,
-        frontIdUrl: frontIdUrl,
-        backIdUrl: backIdUrl,
-        passportUrl: passportUrl,
-        profilePicUrl: profilePicUrl,
+        frontIdUrl: _frontIdUrl,
+        backIdUrl: _backIdUrl,
+        passportUrl: _passportUrl,
+        profilePicUrl: _profilePicUrl,
       );
 
       if (_isEditing) {
@@ -1219,7 +1265,6 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
         await widget.service.save(cert);
       }
 
-      // Save suggestions
       if (certName.isNotEmpty) {
         await widget.service.addSuggestedName(certName);
       }
@@ -1235,6 +1280,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
               : 'Certificate created successfully',
           type: AppToastType.success,
         );
+        _hasUnsavedChanges = false;
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -1248,28 +1294,58 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      child: DraggableScrollableSheet(
-        initialChildSize: 0.92,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (_, scrollController) => Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+    final anyUploading = _frontUploading || _backUploading || _passportUploading;
+    return Stack(
+      children: [
+        Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
           ),
-          child: Form(
-            key: _formKey,
-            child: ListView(
-              controller: scrollController,
-              children: [
+          child: PopScope(
+            canPop: !_hasUnsavedChanges,
+            onPopInvokedWithResult: (didPop, _) async {
+              if (didPop) return;
+              final discard = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Discard changes?'),
+                  content: const Text(
+                    'You have unsaved changes. Are you sure you want to discard them?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('Keep editing'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      child: const Text('Discard'),
+                    ),
+                  ],
+                ),
+              );
+              if (discard == true && context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: DraggableScrollableSheet(
+              initialChildSize: 0.92,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (_, scrollController) => Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: ListView(
+                    controller: scrollController,
+                    children: [
                 Center(
                   child: Container(
                     width: 40,
@@ -1388,30 +1464,36 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                       if (_idType == 'national_id') ...[
                         _buildFilePickerTile(
                           label: 'Front ID *',
-                          fileName: _frontIdFile?.name ??
-                              (_isEditing && widget.certificate!.frontIdUrl != null
+                          fileName: _frontIdUrl != null
+                              ? 'Uploaded'
+                              : (_isEditing && widget.certificate!.frontIdUrl != null
                                   ? 'Uploaded'
                                   : null),
                           onPick: () => _pickFile(isFront: true, isBack: false),
+                          uploading: _frontUploading,
                         ),
                         const SizedBox(height: 8),
                         _buildFilePickerTile(
                           label: 'Back ID',
-                          fileName: _backIdFile?.name ??
-                              (_isEditing && widget.certificate!.backIdUrl != null
+                          fileName: _backIdUrl != null
+                              ? 'Uploaded'
+                              : (_isEditing && widget.certificate!.backIdUrl != null
                                   ? 'Uploaded'
                                   : null),
                           onPick: () => _pickFile(isFront: false, isBack: true),
+                          uploading: _backUploading,
                         ),
                       ] else ...[
                         _buildFilePickerTile(
                           label: 'Passport *',
-                          fileName: _passportFile?.name ??
-                              (_isEditing && widget.certificate!.passportUrl != null
+                          fileName: _passportUrl != null
+                              ? 'Uploaded'
+                              : (_isEditing && widget.certificate!.passportUrl != null
                                   ? 'Uploaded'
                                   : null),
                           onPick: () =>
                               _pickFile(isFront: false, isBack: false),
+                          uploading: _passportUploading,
                         ),
                       ],
                     ],
@@ -1478,6 +1560,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                             ],
                             onChanged: (v) {
                               if (v != null) setState(() => _grade = v);
+                              _markUnsaved();
                             },
                           ),
                         ),
@@ -1627,16 +1710,16 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+const SizedBox(height: 24),
 
-                // Save Button
+                // Save Button                // Save Button
                 FilledButton(
-                  onPressed: (_saving || _uploading) ? null : _save,
+                  onPressed: (_saving || anyUploading) ? null : _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: _actionOrange,
                     minimumSize: const Size(double.infinity, 50),
                   ),
-                  child: (_saving || _uploading)
+                  child: (_saving || anyUploading)
                       ? const SizedBox(
                           width: 20,
                           height: 20,
@@ -1653,7 +1736,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
                           ),
-                        ),
+                        ), // Text
                 ),
                 const SizedBox(height: 12),
               ],
@@ -1661,6 +1744,26 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
           ),
         ),
       ),
+      ),
+      ),
+      if (_saving)
+        Container(
+          color: Colors.black54,
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Colors.white),
+                SizedBox(height: 16),
+                Text(
+                  'Saving certificate...',
+                  style: TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ],
     );
   }
 
@@ -1668,40 +1771,61 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
     required String label,
     String? fileName,
     required VoidCallback onPick,
+    bool uploading = false,
   }) {
-    return InkWell(
-      onTap: onPick,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: uploading ? null : onPick,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: _uiBorder),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              fileName != null
-                  ? Icons.check_circle_outline
-                  : Icons.image_outlined,
-              size: 20,
-              color: fileName != null ? Colors.green : _softText,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: uploading ? Colors.orange : _uiBorder),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                fileName != null ? '$label: $fileName' : 'Tap to pick $label',
-                style: TextStyle(
-                  color: fileName != null ? Colors.black87 : _softText,
-                  fontSize: 13,
+            child: Row(
+              children: [
+                Icon(
+                  uploading
+                      ? Icons.hourglass_top
+                      : fileName != null
+                          ? Icons.check_circle_outline
+                          : Icons.image_outlined,
+                  size: 20,
+                  color: uploading
+                      ? Colors.orange
+                      : fileName != null
+                          ? Colors.green
+                          : _softText,
                 ),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    uploading
+                        ? 'Uploading $label...'
+                        : fileName != null
+                            ? '$label: $fileName'
+                            : 'Tap to pick $label',
+                    style: TextStyle(
+                      color: fileName != null ? Colors.black87 : _softText,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                if (!uploading) const Icon(Icons.upload_file, size: 18, color: _softText),
+              ],
             ),
-            const Icon(Icons.upload_file, size: 18, color: _softText),
-          ],
+          ),
         ),
-      ),
+        if (uploading)
+          const LinearProgressIndicator(
+            minHeight: 3,
+            backgroundColor: Colors.transparent,
+          ),
+      ],
     );
   }
 
@@ -1712,17 +1836,23 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
       firstDate: DateTime(1950),
       lastDate: DateTime.now(),
     );
-    if (picked != null) setState(() => _dateOfBirth = picked);
+    if (picked != null) {
+      setState(() => _dateOfBirth = picked);
+      _markUnsaved();
+    }
   }
 
   Future<void> _pickIssueDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _issueDate ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
+      firstDate: DateTime(2026, 6, 1),
+      lastDate: DateTime.now(),
     );
-    if (picked != null) setState(() => _issueDate = picked);
+    if (picked != null) {
+      setState(() => _issueDate = picked);
+      _markUnsaved();
+    }
   }
 
   void _generateCvn() {
@@ -1742,6 +1872,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
     setState(() {
       _cvn = 'DZ01SB-$year-$initials$random';
     });
+    _markUnsaved();
   }
 }
 
