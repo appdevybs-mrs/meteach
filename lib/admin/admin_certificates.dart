@@ -102,7 +102,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         if (q.isEmpty) return true;
         return c.fullName.toLowerCase().contains(q) ||
             c.certificateName.toLowerCase().contains(q) ||
-            c.nationalIdNumber.contains(q);
+            c.nationalIdNumber.contains(q) ||
+            c.cvn.toLowerCase().contains(q);
       }).toList();
     });
   }
@@ -149,6 +150,10 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         onEdited: () {
           Navigator.pop(context);
           _loadAdminCerts();
+        },
+        onPrint: () {
+          Navigator.pop(context);
+          _printAdminCert(cert);
         },
       ),
     );
@@ -392,6 +397,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                           onTap: () => _showViewCertificate(cert),
                           onEdit: () => _showEditCertificateForm(cert),
                           onDelete: () => _deleteCertificate(cert),
+                          onPrint: () => _printAdminCert(cert),
                         );
                       },
                     ),
@@ -956,6 +962,29 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     }
   }
 
+  Future<void> _printAdminCert(AdminCertificate cert) async {
+    try {
+      final bytes = await _pdfService.generateAdminEflPdfBytes(cert);
+      await Printing.layoutPdf(
+        name: 'YBS_${cert.certificateName}_${cert.cvn}.pdf',
+        onLayout: (_) async => bytes,
+      );
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Certificate opened in print preview.',
+        type: AppToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Could not generate certificate PDF.',
+        type: AppToastType.error,
+      );
+    }
+  }
+
   Future<void> _printHardcopyCertificate(Certificate cert) async {
     final input = await _showHardcopyInputDialog(context);
     if (input == null) return;
@@ -1015,6 +1044,8 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
   DateTime? _dateOfBirth;
   DateTime? _issueDate;
   String _idType = 'national_id'; // 'national_id' or 'passport'
+  String _cvn = '';
+  String _grade = 'A';
 
   PlatformFile? _frontIdFile;
   PlatformFile? _backIdFile;
@@ -1041,6 +1072,8 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
       _sublineC.text = cert.subline;
       _descriptionC.text = cert.description;
       _idType = cert.idType;
+      _cvn = cert.cvn;
+      _grade = cert.grade;
       _dateOfBirth = _tryParseDate(cert.dateOfBirth);
       _issueDate = _tryParseDate(cert.issueDate);
     }
@@ -1164,6 +1197,8 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
 
       final cert = AdminCertificate(
         key: widget.certificate?.key,
+        cvn: _cvn,
+        grade: _grade,
         fullName: _fullNameC.text.trim(),
         dateOfBirth: dobStr,
         nationalIdNumber: _nationalIdC.text.trim(),
@@ -1394,6 +1429,166 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                 ),
                 const SizedBox(height: 14),
 
+                // Grade
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _appBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _uiBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.grade,
+                            size: 18,
+                            color: _primaryBlue.withValues(alpha: 0.7),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Grade *',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: _primaryBlue.withValues(alpha: 0.8),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _uiBorder),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _grade,
+                            isExpanded: true,
+                            items: const [
+                              DropdownMenuItem(value: 'A', child: Text('A - Excellent')),
+                              DropdownMenuItem(value: 'B', child: Text('B - Good')),
+                              DropdownMenuItem(value: 'C', child: Text('C - Satisfactory')),
+                              DropdownMenuItem(value: 'F', child: Text('F - Fail')),
+                            ],
+                            onChanged: (v) {
+                              if (v != null) setState(() => _grade = v);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // CVN
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _appBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _uiBorder),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.tag, size: 18, color: _primaryBlue),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Certificate Verification Number (CVN)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: _primaryBlue,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _cvn.isNotEmpty
+                                      ? Colors.green
+                                      : _uiBorder,
+                                ),
+                              ),
+                              child: Text(
+                                _cvn.isNotEmpty ? _cvn : 'Not generated',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                  color: _cvn.isNotEmpty
+                                      ? _primaryBlue
+                                      : _softText,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.tonalIcon(
+                            onPressed: _generateCvn,
+                            icon: const Icon(Icons.auto_fix_high, size: 18),
+                            label: const Text('Generate'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(0, 44),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_cvn.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: _cvn));
+                            AppToast.show(
+                              context,
+                              'CVN copied',
+                              type: AppToastType.success,
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.copy,
+                                size: 14,
+                                color: _primaryBlue.withValues(alpha: 0.6),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Tap to copy',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _primaryBlue.withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
                 // Subline
                 _SuggestionField(
                   label: 'Subline',
@@ -1529,6 +1724,25 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
     );
     if (picked != null) setState(() => _issueDate = picked);
   }
+
+  void _generateCvn() {
+    final name = _certNameC.text.trim();
+    if (name.isEmpty) {
+      AppToast.show(context, 'Enter certificate name first',
+          type: AppToastType.error);
+      return;
+    }
+    final words = name.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return;
+    final initials = words.map((w) => w[0].toUpperCase()).join();
+    final year = DateTime.now().year.toString();
+    final random = (DateTime.now().millisecondsSinceEpoch % 1000)
+        .toString()
+        .padLeft(3, '0');
+    setState(() {
+      _cvn = 'DZ01SB-$year-$initials$random';
+    });
+  }
 }
 
 class _IdTypeOption extends StatelessWidget {
@@ -1642,16 +1856,58 @@ class _AdminCertCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onPrint;
 
   const _AdminCertCard({
     required this.certificate,
     required this.onTap,
     required this.onEdit,
     required this.onDelete,
+    required this.onPrint,
   });
+
+  void _showLongPressMenu(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_outlined, color: _primaryBlue),
+                title: const Text('Edit Certificate'),
+                subtitle: const Text('Modify certificate details'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onEdit();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: Colors.red[700]),
+                title: Text('Delete Certificate',
+                    style: TextStyle(color: Colors.red[700])),
+                subtitle: const Text('Remove this certificate permanently'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onDelete();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cvn = certificate.cvn;
+    final grade = certificate.grade;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -1662,6 +1918,7 @@ class _AdminCertCard extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
+        onLongPress: () => _showLongPressMenu(context),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -1690,13 +1947,42 @@ class _AdminCertCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      certificate.certificateName,
-                      style: const TextStyle(
-                        color: _actionOrange,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            certificate.certificateName,
+                            style: const TextStyle(
+                              color: _actionOrange,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (grade.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: grade == 'F'
+                                  ? Colors.red.withValues(alpha: 0.12)
+                                  : Colors.amber.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Grade $grade',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: grade == 'F'
+                                    ? Colors.red[800]
+                                    : const Color(0xFFB8860B),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     if (certificate.subline.isNotEmpty) ...[
                       const SizedBox(height: 2),
@@ -1706,7 +1992,7 @@ class _AdminCertCard extends StatelessWidget {
                             const TextStyle(color: _softText, fontSize: 12),
                       ),
                     ],
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         _MiniChip(
@@ -1722,26 +2008,65 @@ class _AdminCertCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (cvn.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: cvn));
+                          AppToast.show(
+                            context,
+                            'CVN copied to clipboard',
+                            type: AppToastType.success,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _primaryBlue.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.verified,
+                                size: 13,
+                                color: _primaryBlue.withValues(alpha: 0.7),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                cvn,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: _primaryBlue.withValues(alpha: 0.8),
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.copy,
+                                size: 12,
+                                color: _primaryBlue.withValues(alpha: 0.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: _softText),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'edit':
-                      onEdit();
-                      break;
-                    case 'delete':
-                      onDelete();
-                      break;
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete')),
-                ],
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.print, size: 20, color: _softText),
+                tooltip: 'Print PDF',
+                onPressed: onPrint,
               ),
+              const Icon(Icons.chevron_right, size: 18, color: _softText),
             ],
           ),
         ),
@@ -1788,12 +2113,14 @@ class _AdminCertViewSheet extends StatelessWidget {
   final AdminCertificateService service;
   final VoidCallback onDeleted;
   final VoidCallback onEdited;
+  final VoidCallback onPrint;
 
   const _AdminCertViewSheet({
     required this.certificate,
     required this.service,
     required this.onDeleted,
     required this.onEdited,
+    required this.onPrint,
   });
 
   String _formatDate(String v) {
@@ -1808,6 +2135,7 @@ class _AdminCertViewSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final picUrl = certificate.effectivePicUrl;
+    final cvn = certificate.cvn;
 
     return Container(
       decoration: const BoxDecoration(
@@ -1815,156 +2143,379 @@ class _AdminCertViewSheet extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       child: DraggableScrollableSheet(
-        initialChildSize: 0.7,
+        initialChildSize: 0.75,
         minChildSize: 0.4,
-        maxChildSize: 0.9,
+        maxChildSize: 0.95,
         expand: false,
         builder: (_, scrollController) => SingleChildScrollView(
           controller: scrollController,
-          padding: const EdgeInsets.all(20),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: _uiBorder,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Center(
-                child: CircleAvatar(
-                  radius: 48,
-                  backgroundColor: _appBg,
-                  backgroundImage:
-                      picUrl.isNotEmpty ? NetworkImage(picUrl) : null,
-                  child: picUrl.isEmpty
-                      ? const Icon(Icons.person, size: 48, color: _softText)
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Center(
-                child: Text(
-                  certificate.fullName,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: _primaryBlue,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Center(
-                child: Text(
-                  certificate.certificateName,
-                  style: const TextStyle(
-                    color: _actionOrange,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              if (certificate.subline.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Center(
-                  child: Text(
-                    certificate.subline,
-                    style: const TextStyle(color: _softText, fontSize: 14),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
-              _adminDetailRow('Date of Birth', _formatDate(certificate.dateOfBirth)),
-              _adminDetailRow('National ID', certificate.nationalIdNumber),
-              _adminDetailRow(
-                'ID Type',
-                certificate.idType == 'passport' ? 'Passport' : 'National ID',
-              ),
-              if (certificate.description.isNotEmpty)
-                _adminDetailRow('Description', certificate.description),
-              _adminDetailRow('Issue Date', _formatDate(certificate.issueDate)),
-              if (certificate.createdAt > 0)
-                _adminDetailRow(
-                  'Created',
-                  DateFormat('yyyy-MM-dd HH:mm').format(
-                    DateTime.fromMillisecondsSinceEpoch(certificate.createdAt),
-                  ),
-                ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        onEdited();
-                      },
-                      icon: const Icon(Icons.edit, size: 18),
-                      label: const Text('Edit'),
+              // Handle
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: _uiBorder,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
+                ),
+              ),
+
+              // CVN Banner
+              if (cvn.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        _primaryBlue.withValues(alpha: 0.1),
+                        _primaryBlue.withValues(alpha: 0.04),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _primaryBlue.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.verified,
+                        color: _primaryBlue.withValues(alpha: 0.8),
+                        size: 22,
                       ),
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (_) => AlertDialog(
-                            title: const Text('Delete Certificate'),
-                            content: Text(
-                              'Delete certificate for "${certificate.fullName}"?',
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Certificate Verification Number',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _primaryBlue.withValues(alpha: 0.6),
+                              ),
                             ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Cancel'),
+                            const SizedBox(height: 2),
+                            Text(
+                              cvn,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: _primaryBlue,
+                                letterSpacing: 1.5,
                               ),
-                              FilledButton(
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.red,
-                                ),
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text('Delete'),
-                              ),
-                            ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: cvn));
+                          AppToast.show(
+                            context,
+                            'CVN copied',
+                            type: AppToastType.success,
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: _primaryBlue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        );
-                        if (confirmed == true) {
-                          try {
-                            await service.delete(certificate.key!);
-                            if (context.mounted) {
-                              AppToast.show(
-                                context,
-                                'Certificate deleted',
-                                type: AppToastType.success,
-                              );
-                            }
-                            onDeleted();
-                          } catch (e) {
-                            if (context.mounted) {
-                              AppToast.show(
-                                context,
-                                'Error deleting',
-                                type: AppToastType.error,
-                              );
+                          child: Icon(
+                            Icons.copy,
+                            size: 18,
+                            color: _primaryBlue.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // Profile section
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                child: Column(
+                  children: [
+                    Center(
+                      child: CircleAvatar(
+                        radius: 48,
+                        backgroundColor: _appBg,
+                        backgroundImage:
+                            picUrl.isNotEmpty ? NetworkImage(picUrl) : null,
+                        child: picUrl.isEmpty
+                            ? const Icon(Icons.person, size: 48, color: _softText)
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Center(
+                      child: Text(
+                        certificate.fullName,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: _primaryBlue,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Center(
+                      child: Text(
+                        certificate.certificateName,
+                        style: const TextStyle(
+                          color: _actionOrange,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    if (certificate.subline.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Center(
+                        child: Text(
+                          certificate.subline,
+                          style: const TextStyle(
+                            color: _softText,
+                            fontSize: 14,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: certificate.grade == 'F'
+                              ? Colors.red.withValues(alpha: 0.1)
+                              : Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          'Grade ${certificate.grade}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: certificate.grade == 'F'
+                                ? Colors.red[800]
+                                : const Color(0xFFB8860B),
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Details card
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _appBg,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  children: [
+                    _detailRow(
+                      Icons.calendar_today,
+                      'Date of Birth',
+                      _formatDate(certificate.dateOfBirth),
+                    ),
+                    const Divider(height: 20),
+                    _detailRow(
+                      Icons.badge_outlined,
+                      'National ID',
+                      certificate.nationalIdNumber,
+                    ),
+                    const Divider(height: 20),
+                    _detailRow(
+                      Icons.assignment_ind_outlined,
+                      'ID Type',
+                      certificate.idType == 'passport' ? 'Passport' : 'National ID',
+                    ),
+                    if (certificate.description.isNotEmpty) ...[
+                      const Divider(height: 20),
+                      _detailRow(
+                        Icons.notes,
+                        'Description',
+                        certificate.description,
+                      ),
+                    ],
+                    const Divider(height: 20),
+                    _detailRow(
+                      Icons.event,
+                      'Issue Date',
+                      _formatDate(certificate.issueDate),
+                    ),
+                    if (certificate.createdAt > 0) ...[
+                      const Divider(height: 20),
+                      _detailRow(
+                        Icons.history,
+                        'Created',
+                        DateFormat('yyyy-MM-dd HH:mm').format(
+                          DateTime.fromMillisecondsSinceEpoch(
+                            certificate.createdAt,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Image urls
+              if (certificate.frontIdUrl?.isNotEmpty == true ||
+                  certificate.backIdUrl?.isNotEmpty == true ||
+                  certificate.passportUrl?.isNotEmpty == true) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Uploaded Documents',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: _primaryBlue,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (certificate.frontIdUrl?.isNotEmpty == true)
+                            _docThumbnail(
+                              context,
+                              'Front ID',
+                              certificate.frontIdUrl!,
+                            ),
+                          if (certificate.backIdUrl?.isNotEmpty == true)
+                            _docThumbnail(
+                              context,
+                              'Back ID',
+                              certificate.backIdUrl!,
+                            ),
+                          if (certificate.passportUrl?.isNotEmpty == true)
+                            _docThumbnail(
+                              context,
+                              'Passport',
+                              certificate.passportUrl!,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+
+              // Action buttons
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onPrint,
+                        icon: const Icon(Icons.print, size: 18),
+                        label: const Text('Print'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          onEdited();
+                        },
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: const Text('Edit'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                        ),
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text('Delete Certificate'),
+                              content: Text(
+                                'Delete certificate for "${certificate.fullName}"?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                FilledButton(
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                  ),
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Delete'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) {
+                            try {
+                              await service.delete(certificate.key!);
+                              if (context.mounted) {
+                                AppToast.show(
+                                  context,
+                                  'Certificate deleted',
+                                  type: AppToastType.success,
+                                );
+                              }
+                              onDeleted();
+                            } catch (e) {
+                              if (context.mounted) {
+                                AppToast.show(
+                                  context,
+                                  'Error deleting',
+                                  type: AppToastType.error,
+                                );
+                              }
                             }
                           }
-                        }
-                      },
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const Text('Delete'),
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Delete'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -1973,30 +2524,126 @@ class _AdminCertViewSheet extends StatelessWidget {
     );
   }
 
-  Widget _adminDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: _softText,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: _primaryBlue.withValues(alpha: 0.6)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: _primaryBlue.withValues(alpha: 0.6),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: _primaryBlue,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _docThumbnail(
+    BuildContext context,
+    String label,
+    String url,
+  ) {
+    return GestureDetector(
+      onTap: () => _showImagePreview(context, label, url),
+      child: Container(
+        width: 100,
+        height: 100,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _uiBorder),
+          image: DecorationImage(
+            image: NetworkImage(url),
+            fit: BoxFit.cover,
+          ),
+        ),
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.5),
+            ],
+          ),
+        ),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: _primaryBlue,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  void _showImagePreview(
+    BuildContext context,
+    String label,
+    String url,
+  ) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
             ),
-          ),
-        ],
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Container(
+                  height: 200,
+                  color: Colors.black26,
+                  child: const Center(
+                    child: Icon(Icons.broken_image, color: Colors.white54),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

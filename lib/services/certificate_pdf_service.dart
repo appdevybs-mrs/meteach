@@ -6,6 +6,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../models/admin_certificate_model.dart';
 import '../models/certificate_model.dart';
 
 class HardcopyCertificateInput {
@@ -446,6 +447,173 @@ class CertificatePdfService {
                   ),
                 ),
               ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc.save();
+  }
+
+  Future<Uint8List> generateAdminEflPdfBytes(AdminCertificate cert) async {
+    final doc = pw.Document();
+    final template = await _loadPdfTemplate('assets/images/cpd.pdf');
+
+    const double pageWidth = 596;
+    const double pageHeight = 842;
+
+    final bool isPass = ['A', 'B', 'C'].contains(cert.grade.toUpperCase());
+    final PdfColor gradeColor = isPass
+        ? PdfColor.fromInt(0xFFD35400)
+        : PdfColor.fromInt(0xFFE74C3C);
+    const PdfColor black = PdfColor.fromInt(0xFF000000);
+
+    String fmtDdMmYyyy(String v) {
+      if (v.isEmpty) return '';
+      try {
+        final parts = v.split('-');
+        if (parts.length != 3) return v;
+        final d = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+        String two(int n) => n.toString().padLeft(2, '0');
+        return '${two(d.day)}-${two(d.month)}-${d.year}';
+      } catch (_) {
+        return v;
+      }
+    }
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(pageWidth, pageHeight),
+        margin: pw.EdgeInsets.zero,
+        build: (_) {
+          return pw.Stack(
+            children: [
+              if (template != null)
+                pw.Positioned.fill(
+                  child: pw.Image(template, fit: pw.BoxFit.fill),
+                ),
+              pw.Positioned(
+                left: 64,
+                top: 241,
+                child: pw.SizedBox(
+                  width: 320,
+                  height: 36,
+                  child: pw.Text(
+                    cert.fullName.trim().toUpperCase(),
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                      font: pw.Font.helveticaBold(),
+                      color: black,
+                    ),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 111,
+                top: 308.2,
+                child: pw.SizedBox(
+                  width: 320,
+                  height: 36,
+                  child: pw.Text(
+                    cert.grade.toUpperCase(),
+                    style: pw.TextStyle(
+                      fontSize: 15,
+                      fontWeight: pw.FontWeight.bold,
+                      font: pw.Font.helveticaBold(),
+                      color: gradeColor,
+                    ),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 196,
+                top: 393.2,
+                child: pw.SizedBox(
+                  width: 320,
+                  height: 36,
+                  child: pw.Text(
+                    cert.certificateName,
+                    style: pw.TextStyle(
+                      fontSize: 15,
+                      fontWeight: pw.FontWeight.bold,
+                      font: pw.Font.helveticaBold(),
+                      color: gradeColor,
+                    ),
+                  ),
+                ),
+              ),
+              if (cert.subline.isNotEmpty)
+                pw.Positioned(
+                  left: 150,
+                  top: 444.6,
+                  child: pw.SizedBox(
+                    width: 320,
+                    height: 36,
+                    child: pw.Text(
+                      cert.subline,
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                        font: pw.Font.helveticaBold(),
+                        color: gradeColor,
+                      ),
+                    ),
+                  ),
+                ),
+              if (cert.description.isNotEmpty)
+                pw.Positioned(
+                  left: 150,
+                  top: 484,
+                  child: pw.SizedBox(
+                    width: 320,
+                    height: 40,
+                    child: pw.Text(
+                      cert.description,
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        font: pw.Font.helvetica(),
+                        color: black,
+                      ),
+                    ),
+                  ),
+                ),
+              pw.Positioned(
+                left: 475,
+                top: 751.3,
+                child: pw.SizedBox(
+                  width: 320,
+                  height: 36,
+                  child: pw.Text(
+                    fmtDdMmYyyy(cert.issueDate),
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold,
+                      font: pw.Font.helveticaBold(),
+                      color: black,
+                    ),
+                  ),
+                ),
+              ),
+              if (cert.cvn.isNotEmpty)
+                pw.Positioned(
+                  left: 218,
+                  top: 637,
+                  child: pw.SizedBox(
+                    width: 160,
+                    height: 20,
+                    child: pw.Text(
+                      cert.cvn,
+                      style: pw.TextStyle(
+                        fontSize: 7,
+                        fontWeight: pw.FontWeight.bold,
+                        font: pw.Font.helveticaBold(),
+                        color: black,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },

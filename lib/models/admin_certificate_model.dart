@@ -1,5 +1,7 @@
 class AdminCertificate {
   final String? key;
+  final String cvn;
+  final String grade;
   final String fullName;
   final String dateOfBirth;
   final String nationalIdNumber;
@@ -17,6 +19,8 @@ class AdminCertificate {
 
   AdminCertificate({
     this.key,
+    this.cvn = '',
+    this.grade = 'A',
     required this.fullName,
     required this.dateOfBirth,
     required this.nationalIdNumber,
@@ -35,6 +39,8 @@ class AdminCertificate {
 
   Map<String, dynamic> toMap() {
     return {
+      'cvn': cvn,
+      'grade': grade,
       'fullName': fullName,
       'dateOfBirth': dateOfBirth,
       'nationalIdNumber': nationalIdNumber,
@@ -55,6 +61,8 @@ class AdminCertificate {
   factory AdminCertificate.fromMap(Map<dynamic, dynamic> map, {String? key}) {
     return AdminCertificate(
       key: key,
+      cvn: (map['cvn'] ?? '').toString(),
+      grade: (map['grade'] ?? 'A').toString(),
       fullName: (map['fullName'] ?? '').toString(),
       dateOfBirth: (map['dateOfBirth'] ?? '').toString(),
       nationalIdNumber: (map['nationalIdNumber'] ?? '').toString(),
@@ -81,6 +89,8 @@ class AdminCertificate {
 
   AdminCertificate copyWith({
     String? key,
+    String? cvn,
+    String? grade,
     String? fullName,
     String? dateOfBirth,
     String? nationalIdNumber,
@@ -98,6 +108,8 @@ class AdminCertificate {
   }) {
     return AdminCertificate(
       key: key ?? this.key,
+      cvn: cvn ?? this.cvn,
+      grade: grade ?? this.grade,
       fullName: fullName ?? this.fullName,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       nationalIdNumber: nationalIdNumber ?? this.nationalIdNumber,

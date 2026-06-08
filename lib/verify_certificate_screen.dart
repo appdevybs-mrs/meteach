@@ -44,9 +44,6 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
   final CertificateService _service = CertificateService();
   final CertificatePdfService _pdfService = CertificatePdfService();
   final _cvnController = TextEditingController();
-  final _fullNameController = TextEditingController();
-  final _trainingDateController = TextEditingController();
-  final _last4Controller = TextEditingController();
 
   int _currentStep = 1;
   bool _loading = false;
@@ -63,9 +60,6 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
   @override
   void dispose() {
     _cvnController.dispose();
-    _fullNameController.dispose();
-    _trainingDateController.dispose();
-    _last4Controller.dispose();
     super.dispose();
   }
 
@@ -135,7 +129,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
       } else {
         setState(() {
           _foundCertificate = result.certificate;
-          _currentStep = 2;
+          _currentStep = 3;
           _loading = false;
         });
       }
@@ -147,73 +141,10 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
     }
   }
 
-  Future<void> _step2Verify() async {
-    if (_isLocked) {
-      setState(() {
-        _error = 'Too many attempts. Please wait $_remainingLockTime.';
-      });
-      return;
-    }
-
-    final enteredLast4 = _last4Controller.text.trim();
-
-    if (enteredLast4.length != 4) {
-      setState(() {
-        _error = 'Please enter exactly 4 digits';
-      });
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      await Future.delayed(const Duration(milliseconds: 800));
-
-      final cert = _foundCertificate!;
-      final storedLast4 = cert.nationalIdNumber.substring(
-        cert.nationalIdNumber.length - 4,
-      );
-
-      final last4Match = enteredLast4 == storedLast4;
-
-      if (last4Match) {
-        setState(() {
-          _currentStep = 3;
-          _loading = false;
-        });
-      } else {
-        _attemptCount++;
-        if (_attemptCount >= _maxAttempts) {
-          setState(() {
-            _lockedUntil = DateTime.now().add(_lockDuration);
-            _error = 'Too many failed attempts. Please try again in 1 hour.';
-            _loading = false;
-          });
-        } else {
-          setState(() {
-            _currentStep = 3;
-            _loading = false;
-          });
-        }
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Verification failed. Please try again.';
-        _loading = false;
-      });
-    }
-  }
-
   void _reset() {
     setState(() {
       _currentStep = 1;
       _cvnController.clear();
-      _fullNameController.clear();
-      _trainingDateController.clear();
-      _last4Controller.clear();
       _foundCertificate = null;
       _error = null;
       _attemptCount = 0;
@@ -222,15 +153,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
   }
 
   void _goBack() {
-    if (_currentStep == 2) {
-      setState(() {
-        _currentStep = 1;
-        _fullNameController.clear();
-        _trainingDateController.clear();
-        _last4Controller.clear();
-        _error = null;
-      });
-    } else if (_currentStep == 3) {
+    if (_currentStep == 3) {
       _reset();
     }
   }
@@ -318,7 +241,6 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
                 _buildStepIndicator(),
                 const SizedBox(height: 24),
                 if (_currentStep == 1) _buildStep1(),
-                if (_currentStep == 2) _buildStep2(),
                 if (_currentStep == 3) _buildStep3(),
               ],
             ),
@@ -339,13 +261,6 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
           ),
         ),
         _buildStepDot(2),
-        Expanded(
-          child: Container(
-            height: 2,
-            color: _currentStep >= 3 ? _actionOrange : _uiBorder,
-          ),
-        ),
-        _buildStepDot(3),
       ],
     );
   }
@@ -506,150 +421,6 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildStep2() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Card(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: _uiBorder),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _primaryBlue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.verified_user,
-                        color: _primaryBlue,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Step 2: Verify Ownership',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: _primaryBlue,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Enter last 4 digits of your National ID',
-                            style: TextStyle(fontSize: 12, color: _softText),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: _last4Controller,
-                  maxLength: 4,
-                  keyboardType: TextInputType.number,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: 'Last 4 Digits of National ID',
-                    hintText: '1234',
-                    counterText: '',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _uiBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: _primaryBlue, width: 2),
-                    ),
-                  ),
-                  onSubmitted: (_) => _step2Verify(),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: Colors.red.shade700,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: TextStyle(
-                              color: Colors.red.shade700,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _loading || _isLocked ? null : _step2Verify,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _actionOrange,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'Verify Certificate',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 
