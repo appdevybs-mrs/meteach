@@ -128,7 +128,10 @@ class _AuthGateState extends State<AuthGate> {
               );
 
               return FutureBuilder<List<DataSnapshot>>(
-                future: Future.wait([delRef.get(), blkRef.get()]),
+                future: Future.wait([
+                  delRef.get().timeout(const Duration(seconds: 8)),
+                  blkRef.get().timeout(const Duration(seconds: 8)),
+                ]).catchError((_) => <DataSnapshot>[]),
                 builder: (context, checks) {
                   if (!checks.hasData) {
                     return const Scaffold(
@@ -140,8 +143,17 @@ class _AuthGateState extends State<AuthGate> {
                     );
                   }
 
-                  final delSnap = checks.data![0];
-                  final blkSnap = checks.data![1];
+                  final result = checks.data!;
+                  if (result.length < 2) {
+                    return DeletedActionScreen(
+                      uid: uid,
+                      deleteAuth: true,
+                      selfDeleteDone: false,
+                    );
+                  }
+
+                  final delSnap = result[0];
+                  final blkSnap = result[1];
 
                   if (delSnap.exists) {
                     // Read flags
@@ -206,7 +218,8 @@ class _AuthGateState extends State<AuthGate> {
               _deletedCheckUid = uid;
               _deletedCheckFuture = FirebaseDatabase.instance
                   .ref('users_deleted/$uid')
-                  .get();
+                  .get()
+                  .timeout(const Duration(seconds: 8));
             }
 
             return FutureBuilder<DataSnapshot>(
@@ -224,7 +237,8 @@ class _AuthGateState extends State<AuthGate> {
                 }
 
                 final deletedSnap = delSnapEarly.data;
-                if (deletedSnap == null) {
+                if (deletedSnap == null &&
+                    delSnapEarly.connectionState == ConnectionState.waiting) {
                   return const Scaffold(
                     body: Center(
                       child: BrandedInlineLoader(
@@ -234,8 +248,8 @@ class _AuthGateState extends State<AuthGate> {
                   );
                 }
 
-                if (deletedSnap.exists) {
-                  final rawDel = deletedSnap.value;
+                if (deletedSnap?.exists == true) {
+                  final rawDel = deletedSnap!.value;
                   final mm = rawDel is Map
                       ? rawDel.map((k, v) => MapEntry(k.toString(), v))
                       : <String, dynamic>{};
@@ -268,9 +282,17 @@ class _AuthGateState extends State<AuthGate> {
                   );
 
                   return FutureBuilder<DataSnapshot>(
-                    future: blkRef.get(),
+                    future: blkRef.get().timeout(const Duration(seconds: 8)),
                     builder: (context, snap2) {
                       if (!snap2.hasData) {
+                        if (snap2.connectionState == ConnectionState.done) {
+                          // Offline/timeout — skip blocked check
+                          return const BlockedActionScreen(
+                            uid: '',
+                            deleteAuth: true,
+                            selfDeleteDone: false,
+                          );
+                        }
                         return const Scaffold(
                           body: Center(
                             child: BrandedInlineLoader(

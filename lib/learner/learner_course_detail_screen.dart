@@ -35,6 +35,7 @@ import 'learner_booking_screen.dart';
 import 'learner_mail_thread_screen.dart';
 import 'recorded_course_study_screen.dart';
 import '../shared/offline_action_guard.dart';
+import '../shared/app_connectivity.dart';
 import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/ui_constants.dart';
@@ -1556,6 +1557,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
 
+      // Offline: skip Firebase and try cached recorded course data
+      if (AppConnectivity.instance.isOffline &&
+          resolveCourseDeliveryKey(widget.courseData) == 'recorded') {
+        final loaded = await _loadRecordedDetailFromOfflineCache();
+        if (loaded) return;
+      }
+
       // ✅ start payment listener (safe: one listener only)
       await _paySub?.cancel();
       _payLoading = true;
@@ -1582,12 +1590,20 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         },
       );
 
+      // Offline: skip Firebase and try cached recorded course data
+      if (AppConnectivity.instance.isOffline &&
+          resolveCourseDeliveryKey(widget.courseData) == 'recorded') {
+        final loaded = await _loadRecordedDetailFromOfflineCache();
+        if (loaded) return;
+      }
+
       // Reload course live (so it reflects new attendance/payment_summary)
       final snap = await _usersRef
           .child(_uid)
           .child('courses')
           .child(widget.courseKey)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 12));
       if (!snap.exists || snap.value == null || snap.value is! Map) {
         throw Exception('Course not found.');
       }
@@ -1663,7 +1679,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         DataSnapshot? sSnap;
 
         for (final key in variantCandidates) {
-          final testSnap = await rootSyllabusRef.child(key).get();
+          final testSnap = await rootSyllabusRef
+              .child(key)
+              .get()
+              .timeout(const Duration(seconds: 10));
           if (testSnap.exists &&
               testSnap.value != null &&
               testSnap.value is Map) {
@@ -1672,7 +1691,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           }
         }
 
-        sSnap ??= await rootSyllabusRef.get();
+        sSnap ??= await rootSyllabusRef
+            .get()
+            .timeout(const Duration(seconds: 10));
 
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
@@ -3584,6 +3605,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             ),
           );
         },
+        requireOnline: false,
       ),
     );
   }

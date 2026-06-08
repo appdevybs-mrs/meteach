@@ -41,7 +41,10 @@ class _AdminVocabWordsListsScreenState
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final snaps = await Future.wait([_coursesRef.get(), _listsRef.get()]);
+      final snaps = await Future.wait([
+        _coursesRef.get().timeout(const Duration(seconds: 10)),
+        _listsRef.get().timeout(const Duration(seconds: 10)),
+      ]);
       final coursesSnap = snaps[0];
       final listsSnap = snaps[1];
 

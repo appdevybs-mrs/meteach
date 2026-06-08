@@ -157,12 +157,18 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         throw Exception('Missing recorded course id.');
       }
 
+      if (AppConnectivity.instance.isOffline) {
+        final loaded = await _loadFromOfflineCourseCache();
+        if (loaded) return;
+        throw Exception('No network and no cached data available.');
+      }
+
       final results = await Future.wait<dynamic>([
         _recordedAccessRef.get(),
         _recordedProgressRef.get(),
         _paymentSummaryRef.get(),
         _syllabiRef.child(_courseId).child('recorded').get(),
-      ]);
+      ]).timeout(const Duration(seconds: 12));
 
       final DataSnapshot accessSnap = results[0] as DataSnapshot;
       final DataSnapshot progressSnap = results[1] as DataSnapshot;
@@ -903,6 +909,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           lessonType: 'Reading lesson',
           session: session,
         ),
+      );
+      return;
+    }
+
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(
+        context,
+        'Reading materials need internet. Download them beforehand to read offline.',
+        type: AppToastType.info,
       );
       return;
     }
@@ -3941,15 +3956,36 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         titleSpacing: 0,
-        title: Text(
-          _title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
-            fontWeight: FontWeight.w900,
-            fontSize: 17,
-          ),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                _title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 17,
+                ),
+              ),
+            ),
+            if (_usingOfflineCourseCache) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(
+                  Icons.cloud_off_rounded,
+                  size: 16,
+                  color: Color(0xFF92400E),
+                ),
+              ),
+            ],
+          ],
         ),
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
         actions: [
