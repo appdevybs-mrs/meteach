@@ -528,6 +528,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return -1;
   }
 
+  int _nextIncompleteFlatIndex() {
+    for (int i = 0; i < _flatSessions.length; i++) {
+      final session = _flatSessions[i].session;
+      if (_isSessionUnlocked(i) && !_isSessionCompleted(session)) return i;
+    }
+    return -1;
+  }
+
   _RecordedProgress _progressOf(String sessionId) {
     return _progressBySessionId[sessionId] ?? const _RecordedProgress();
   }
@@ -986,31 +994,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     if (!mounted) return;
 
-    final bool? finished = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Finished this reading?'),
-        content: const Text(
-          'Mark this only if you completed the reading content.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Not yet'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('✓ Mark complete'),
-          ),
-        ],
-      ),
-    );
-
-    if (finished == true) {
-      await _markMaterialsCompleted(session);
-      if (!mounted) return;
-      _snack('Great work! Session completed ✅');
-    }
+    await _markMaterialsCompleted(session);
+    _snack('Reading marked complete ✅');
   }
 
   Widget _buildTopOverviewCard() {
@@ -2574,6 +2559,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required int moduleIndex,
   }) {
     final completed = _isModuleCompleted(moduleUnits);
+    if (!completed) return const SizedBox.shrink();
     final moduleActionKey = _moduleCertificateActionKey(
       moduleLabel,
       moduleIndex,
@@ -2589,7 +2575,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         color: const Color(0xFFFFF7ED),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: completed ? _kYbsDeepOrange : const Color(0xFFF3D3B4),
+          color: _kYbsDeepOrange,
         ),
       ),
       child: Padding(
@@ -3093,6 +3079,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         ? session.sessionNumber
         : (flatIndex + 1);
 
+    final isNextIncomplete = flatIndex == _nextIncompleteFlatIndex();
+
     Color dotColor = const Color(0xFF94A3B8);
     if (isCompleted) {
       dotColor = const Color(0xFF16A34A);
@@ -3100,7 +3088,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       dotColor = const Color(0xFF4F46E5);
     }
 
-    return Container(
+    Widget card = Container(
       margin: EdgeInsets.only(top: isNarrow ? 6 : 7),
       padding: EdgeInsets.symmetric(
         horizontal: isNarrow ? 9 : 10,
@@ -3281,6 +3269,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         ],
       ),
     );
+
+    if (isNextIncomplete) {
+      card = _PulseWidget(child: card);
+    }
+
+    return card;
   }
 
   Widget _buildUnitsList() {
@@ -3992,9 +3986,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       _buildUnitsList(),
                     ],
                   ),
-          ],
-        ),
-      );
+        ],
+      ),
+    );
     }
 
     if (widget.embedded) {
@@ -4293,6 +4287,52 @@ class _ExpiryStyle {
   final Color fg;
   final String label;
   final IconData icon;
+}
+
+class _PulseWidget extends StatefulWidget {
+  const _PulseWidget({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_PulseWidget> createState() => _PulseWidgetState();
+}
+
+class _PulseWidgetState extends State<_PulseWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _animation = Tween<double>(begin: 1.0, end: 1.035).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _controller.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (_, child) => Transform.scale(
+        scale: _animation.value,
+        child: child,
+      ),
+      child: widget.child,
+    );
+  }
 }
 
 class _SessionRef {
