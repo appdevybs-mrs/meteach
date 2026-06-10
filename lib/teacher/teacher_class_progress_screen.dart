@@ -25,8 +25,8 @@ class TeacherClassProgressScreen extends StatefulWidget {
       _TeacherClassProgressScreenState();
 }
 
-class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
-    with SingleTickerProviderStateMixin {
+class _TeacherClassProgressScreenState
+    extends State<TeacherClassProgressScreen> {
   static const Color successGreen = Color(0xFF10B981);
   static const Color warningOrange = Color(0xFFF59E0B);
   static const Color dangerRed = Color(0xFFEF4444);
@@ -35,19 +35,19 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
 
   static const String classesNode = "classes";
   static const String syllabiNode = "syllabi";
+  static const String usersNode = "users";
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _classRef = _db
       .child(classesNode)
       .child(widget.classId);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
+  late final DatabaseReference _usersRef = _db.child(usersNode);
 
   StreamSubscription<DatabaseEvent>? _classSub;
 
   bool _busy = true;
   String? _error;
-
-  late final TabController _groupTabController;
 
   Map<String, dynamic> _attendance = {};
   Map<String, dynamic> _learners = {};
@@ -60,7 +60,8 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
   int _classProgressPct = 0;
 
   String? _selectedLearnerUid;
-  bool _learnerView = false;
+
+  Map<String, Map<String, dynamic>> _paymentSummaries = {};
 
   AppPalette get palette => appThemeController.palette;
 
@@ -68,18 +69,12 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
-    _groupTabController = TabController(length: 3, vsync: this);
-    _groupTabController.addListener(() {
-      if (!mounted) return;
-      setState(() {});
-    });
     _boot();
   }
 
   @override
   void dispose() {
     appThemeController.removeListener(_onThemeChanged);
-    _groupTabController.dispose();
     _classSub?.cancel();
     super.dispose();
   }
@@ -100,6 +95,9 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     (widget.classData['variantKey'] ?? widget.classData['variant'] ?? '')
         .toString(),
   );
+
+  bool get _hasLearnerSelected =>
+      _selectedLearnerUid != null && _selectedLearnerUid!.isNotEmpty;
 
   Future<void> _boot() async {
     setState(() {
@@ -151,9 +149,10 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
             _sessionsToReview = reviewSessions;
             _classProgressPct = pct;
             _selectedLearnerUid = selected;
-            if (_learners.isEmpty) _learnerView = false;
             _busy = false;
           });
+
+          _loadPaymentSummaries(learners, _courseId);
         },
         onError: (e) {
           if (!mounted) return;
@@ -170,6 +169,50 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
         _busy = false;
       });
     }
+  }
+
+  Future<void> _loadPaymentSummaries(
+    Map<String, dynamic> learners,
+    String courseId,
+  ) async {
+    final uids = learners.keys.map((e) => e.toString()).toList();
+    if (uids.isEmpty) return;
+
+    final summaries = <String, Map<String, dynamic>>{};
+    final futures = <Future<void>>[];
+
+    for (final uid in uids) {
+      futures.add(_loadLearnerPaymentSummary(uid, courseId, summaries));
+    }
+
+    await Future.wait(futures);
+    if (!mounted) return;
+    setState(() {
+      _paymentSummaries = summaries;
+    });
+  }
+
+  Future<void> _loadLearnerPaymentSummary(
+    String uid,
+    String courseId,
+    Map<String, Map<String, dynamic>> summaries,
+  ) async {
+    try {
+      final snap = await _usersRef.child('$uid/courses').get();
+      if (!snap.exists || snap.value is! Map) return;
+      final courses = Map<String, dynamic>.from(snap.value as Map);
+      for (final entry in courses.entries) {
+        if (entry.value is! Map) continue;
+        final course = Map<String, dynamic>.from(entry.value as Map);
+        final cid = (course['id'] ?? '').toString().trim();
+        if (cid == courseId && course['payment_summary'] is Map) {
+          summaries[uid] = Map<String, dynamic>.from(
+            course['payment_summary'] as Map,
+          );
+          return;
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadSyllabus() async {
@@ -382,12 +425,6 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     return list;
   }
 
-  int _effectiveGroupIndex() {
-    return _sessionsToReview.isNotEmpty || _groupTabController.index != 2
-        ? _groupTabController.index
-        : 1;
-  }
-
   Set<String> _computeCoveredForLearner(String learnerUid) {
     final Set<String> covered = {};
 
@@ -450,7 +487,40 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
       }
     }
 
-    return _LearnerStats(sessionsHeld: held, present: present, absent: absent);
+    final v = _normalizeVariantKey(_variantKey);
+    int consumed;
+    if (v == 'private') {
+      consumed = present + (absent > 2 ? absent - 2 : 0);
+    } else {
+      consumed = held;
+    }
+
+    final summary = _paymentSummaries[learnerUid];
+    final paid = _asInt(summary?['sessionsPaidTotal']);
+    final left = paid > 0 ? (paid - consumed).clamp(0, paid) : 0;
+
+    return _LearnerStats(
+      sessionsHeld: held,
+      present: present,
+      absent: absent,
+      consumed: consumed,
+      paid: paid,
+      left: left,
+    );
+  }
+
+  String _normalizeVariantKey(String raw) {
+    final v = raw.trim().toLowerCase();
+    if (v == 'inclass' || v == 'private' || v == 'flexible' || v == 'recorded') {
+      return v;
+    }
+    return 'inclass';
+  }
+
+  int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
   }
 
   String _learnerName(String uid) {
@@ -693,13 +763,13 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                       children: [
                         _headerHeroCard(p),
                         const SizedBox(height: 12),
-                        _viewModeCard(p),
-                        const SizedBox(height: 12),
-                        if (_learners.isNotEmpty && _learnerView) ...[
-                          _learnerPickerCard(p),
+                        if (_sessionsToReview.isNotEmpty) ...[
+                          _reviewBanner(p),
                           const SizedBox(height: 12),
                         ],
-                        _currentGroupContent(p),
+                        _unitsProgressCard(p),
+                        const SizedBox(height: 12),
+                        _timelineSection(p),
                       ],
                     ),
             ],
@@ -709,8 +779,199 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     );
   }
 
+  Widget _reviewBanner(AppPalette p) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: warningOrange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: warningOrange.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: warningOrange, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${_sessionsToReview.length} session(s) need syllabus check',
+              style: TextStyle(
+                color: warningOrange,
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _openSessionsToReview(p),
+            style: TextButton.styleFrom(
+              foregroundColor: warningOrange,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Review',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openSessionsToReview(AppPalette p) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: p.cardBg,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) {
+        final groups = <String, List<Map<String, dynamic>>>{};
+        for (final r in _sessionsToReview) {
+          final d = (r['date'] ?? 'No date').toString();
+          groups.putIfAbsent(d, () => []);
+          groups[d]!.add(r);
+        }
+        final sortedDates = groups.keys.toList()..sort((a, b) => b.compareTo(a));
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sessions to Review',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'These sessions need a syllabus lesson selected.',
+                  style: TextStyle(
+                    color: p.text.withValues(alpha: 0.72),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView(
+                    children: sortedDates.map((date) {
+                      final records = groups[date]!;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              date,
+                              style: TextStyle(
+                                color: p.primary,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            ...records.map((record) {
+                              final title = _reviewRecordLabel(record);
+                              final sid = (record['sessionId'] ?? record['id'] ?? '').toString();
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: warningOrange.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: p.border.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        title,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: p.text,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_rounded, size: 20),
+                                      color: vividEdit,
+                                      onPressed: sid.isEmpty
+                                          ? null
+                                          : () {
+                                              Navigator.pop(ctx);
+                                              _openEditAttendance(
+                                                record,
+                                                preserveExistingLearnerAttendanceOnly: true,
+                                              );
+                                            },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _headerHeroCard(AppPalette p) {
     final learnersCount = _learners.length;
+    final learnerUids = _learners.keys.map((e) => e.toString()).toList();
+
+    Set<String> coveredSet = _classCoveredSessionIds;
+    int pct = _classProgressPct;
+    int lessonsCovered = coveredSet.length;
+    _LearnerStats stats = _LearnerStats.zero();
+    int totalPaid = 0;
+    int totalConsumed = 0;
+    int totalPresent = 0;
+    int totalAbsent = 0;
+
+    if (_hasLearnerSelected && learnerUids.contains(_selectedLearnerUid)) {
+      final uid = _selectedLearnerUid!;
+      stats = _statsForLearner(uid);
+      coveredSet = _computeCoveredForLearner(uid);
+      lessonsCovered = coveredSet.length;
+      pct = _totalSyllabusSessions <= 0
+          ? 0
+          : ((lessonsCovered / _totalSyllabusSessions) * 100).round().clamp(0, 100);
+    }
+
+    for (final uid in learnerUids) {
+      final s = _statsForLearner(uid);
+      totalPaid += s.paid;
+      totalConsumed += s.consumed;
+      totalPresent += s.present;
+      totalAbsent += s.absent;
+    }
+
+    final displayPaid = _hasLearnerSelected ? stats.paid : totalPaid;
+    final displayConsumed = _hasLearnerSelected ? stats.consumed : totalConsumed;
+    final displayLeft = displayPaid > 0 ? (displayPaid - displayConsumed).clamp(0, displayPaid) : 0;
+    final displayPresent = _hasLearnerSelected ? stats.present : totalPresent;
+    final displayAbsent = _hasLearnerSelected ? stats.absent : totalAbsent;
+
+    final progressColor = _progressColor(pct);
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -763,17 +1024,127 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                         height: 1.15,
                       ),
                     ),
-
-                    _heroChip(label: 'Learners $learnersCount'),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        _heroChip(label: 'Learners $learnersCount'),
+                        const SizedBox(width: 8),
+                        _heroChip(label: '${_attendance.length} sessions'),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          _progressOverviewCard(p, compactInHero: true),
+          const SizedBox(height: 16),
+          if (learnerUids.isNotEmpty) ...[
+            _heroLearnerDropdown(p, learnerUids),
+            const SizedBox(height: 14),
+          ],
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Lessons covered: $lessonsCovered / ${_totalSyllabusSessions <= 0 ? '-' : _totalSyllabusSessions}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '$pct%',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: _totalSyllabusSessions <= 0
+                        ? 0
+                        : (lessonsCovered / _totalSyllabusSessions).clamp(0, 1),
+                    minHeight: 9,
+                    backgroundColor: Colors.white.withValues(alpha: 0.20),
+                    valueColor: AlwaysStoppedAnimation(progressColor),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    _compactStat(
+                      label: _hasLearnerSelected ? 'Used' : 'Sessions',
+                      value: '$displayConsumed',
+                    ),
+                    if (displayPaid > 0) ...[
+                      const _DivDot(color: Colors.white54),
+                      _compactStat(
+                        label: 'Paid',
+                        value: '$displayPaid',
+                      ),
+                      const _DivDot(color: Colors.white54),
+                      _compactStat(
+                        label: 'Left',
+                        value: '$displayLeft',
+                      ),
+                    ],
+                    const _DivDot(color: Colors.white54),
+                    _compactStat(
+                      label: 'Present',
+                      value: '$displayPresent',
+                    ),
+                    const _DivDot(color: Colors.white54),
+                    _compactStat(
+                      label: 'Absent',
+                      value: '$displayAbsent',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _compactStat({required String label, required String value}) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.72),
+            fontWeight: FontWeight.w800,
+            fontSize: 10,
+          ),
+        ),
+      ],
     );
   }
 
@@ -796,210 +1167,10 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     );
   }
 
-  Widget _viewModeCard(AppPalette p) {
-    final canUseLearnerView = _learners.isNotEmpty;
-    final hasReview = _sessionsToReview.isNotEmpty;
-    final activeIndex = _effectiveGroupIndex();
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: p.border.withValues(alpha: 0.9)),
-              color: p.primary.withValues(alpha: 0.04),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _toggleBtn(
-                    p,
-                    label: 'Class',
-                    selected: !_learnerView,
-                    onTap: () {
-                      setState(() => _learnerView = false);
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: _toggleBtn(
-                    p,
-                    label: 'Learner (${_learners.length})',
-                    selected: _learnerView,
-                    onTap: canUseLearnerView
-                        ? () {
-                            setState(() => _learnerView = true);
-                          }
-                        : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (!canUseLearnerView)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                'Learner view is disabled because there are no learners in this class.',
-                style: TextStyle(
-                  color: p.text.withValues(alpha: 0.75),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          const SizedBox(height: 12),
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: p.border.withValues(alpha: 0.9)),
-              color: p.primary.withValues(alpha: 0.04),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _toggleBtn(
-                    p,
-                    label: 'Per Unit',
-                    selected: activeIndex == 0,
-                    onTap: () {
-                      _groupTabController.animateTo(0);
-                      setState(() {});
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: _toggleBtn(
-                    p,
-                    label: 'By Date',
-                    selected: activeIndex == 1,
-                    onTap: () {
-                      _groupTabController.animateTo(1);
-                      setState(() {});
-                    },
-                  ),
-                ),
-                if (hasReview)
-                  Expanded(
-                    child: _toggleBtn(
-                      p,
-                      label: 'Check syllabus',
-                      selected: activeIndex == 2,
-                      onTap: () {
-                        _groupTabController.animateTo(2);
-                        setState(() {});
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _currentGroupContent(AppPalette p) {
-    final activeIndex = _effectiveGroupIndex();
-    if (activeIndex == 0) {
-      return _unitsProgressCard(p);
-    } else if (activeIndex == 1) {
-      return _attendanceByDateCard(p);
-    } else {
-      return _sessionsToReviewCard(p);
-    }
-  }
-
-  Widget _toggleBtn(
-    AppPalette p, {
-    required String label,
-    required bool selected,
-    VoidCallback? onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: selected ? p.primary : Colors.transparent,
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? Colors.white : p.primary.withValues(alpha: 0.7),
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _chip({
-    required IconData icon,
-    required String text,
-    required Color tint,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: tint.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: tint.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: tint),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: tint,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _learnerPickerCard(AppPalette p) {
-    final uids = _learners.keys.map((e) => e.toString()).toList();
-
-    if (uids.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: p.cardBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        ),
-        child: Text(
-          'No learners in this class.',
-          style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
-        ),
-      );
-    }
-
+  Widget _heroLearnerDropdown(
+    AppPalette p,
+    List<String> uids,
+  ) {
     final items = uids.map((uid) {
       final label = _dropdownLabelFor(uid);
       return DropdownMenuItem<String>(
@@ -1010,186 +1181,67 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
           ),
         ),
       );
     }).toList();
 
-    final selectedBuilder = uids.map((uid) {
-      final label = _dropdownLabelFor(uid);
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontWeight: FontWeight.w800, color: p.text),
+    final allItem = const DropdownMenuItem<String>(
+      value: '__all__',
+      child: Text(
+        'All learners',
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
         ),
-      );
-    }).toList();
+      ),
+    );
+
+    final currentValue = _hasLearnerSelected ? _selectedLearnerUid : '__all__';
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white24),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Learner',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: _selectedLearnerUid,
-            isExpanded: true,
-            selectedItemBuilder: (_) => selectedBuilder,
-            dropdownColor: p.cardBg,
-            iconEnabledColor: p.primary,
-            items: items,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: p.primary.withValues(alpha: 0.04),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: p.border.withValues(alpha: 0.9)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: p.accent, width: 2),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 12,
-              ),
-            ),
-            onChanged: (v) {
-              if (v == null) return;
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: currentValue,
+          isExpanded: true,
+          dropdownColor: p.primary,
+          iconEnabledColor: Colors.white,
+          items: [allItem, ...items],
+          onChanged: (v) {
+            if (v == '__all__') {
+              setState(() => _selectedLearnerUid = null);
+            } else {
               setState(() => _selectedLearnerUid = v);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _progressOverviewCard(AppPalette p, {bool compactInHero = false}) {
-    final totalS = _totalSyllabusSessions;
-
-    Set<String> coveredSet = _classCoveredSessionIds;
-    int pct = _classProgressPct;
-
-    _LearnerStats stats = const _LearnerStats(
-      sessionsHeld: 0,
-      present: 0,
-      absent: 0,
-    );
-
-    if (_learnerView &&
-        _selectedLearnerUid != null &&
-        _selectedLearnerUid!.isNotEmpty) {
-      final uid = _selectedLearnerUid!;
-      stats = _statsForLearner(uid);
-      coveredSet = _computeCoveredForLearner(uid);
-      pct = totalS <= 0
-          ? 0
-          : ((coveredSet.length / totalS) * 100).round().clamp(0, 100);
-    }
-
-    final coveredCount = coveredSet.length;
-    final progressColor = _progressColor(pct);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: compactInHero ? Colors.white : p.cardBg,
-        borderRadius: BorderRadius.circular(compactInHero ? 18 : 22),
-        border: Border.all(
-          color: compactInHero
-              ? Colors.white
-              : p.border.withValues(alpha: 0.85),
+            }
+          },
+          selectedItemBuilder: (ctx) {
+            return [allItem, ...uids.map((uid) {
+              final label = _dropdownLabelFor(uid);
+              return DropdownMenuItem<String>(
+                value: uid,
+                child: Text(
+                  _hasLearnerSelected ? label : 'All learners',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              );
+            })];
+          },
         ),
-        boxShadow: compactInHero
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _kpi(
-                p,
-                label: 'Progress',
-                value: '$pct%',
-                icon: Icons.insights_rounded,
-              ),
-              _kpi(
-                p,
-                label: 'Passed',
-                value: '$coveredCount/${totalS <= 0 ? '-' : totalS}',
-                icon: Icons.check_circle_rounded,
-              ),
-              if (_learnerView) ...[
-                _kpi(
-                  p,
-                  label: 'Present',
-                  value: '${stats.present}/${stats.sessionsHeld}',
-                  icon: Icons.event_available_rounded,
-                ),
-                _kpi(
-                  p,
-                  label: 'Absent',
-                  value: '${stats.absent}',
-                  icon: Icons.event_busy_rounded,
-                ),
-              ] else ...[
-                _kpi(
-                  p,
-                  label: 'Held',
-                  value: '${_attendance.length}',
-                  icon: Icons.calendar_month_rounded,
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: totalS <= 0 ? 0 : (coveredCount / totalS).clamp(0, 1),
-              minHeight: 10,
-              backgroundColor: progressColor.withValues(alpha: 0.12),
-              valueColor: AlwaysStoppedAnimation(progressColor),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1213,7 +1265,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     final units = _groupSyllabiByUnit();
 
     Set<String> coveredSet = _classCoveredSessionIds;
-    if (_learnerView &&
+    if (_hasLearnerSelected &&
         _selectedLearnerUid != null &&
         _selectedLearnerUid!.isNotEmpty) {
       coveredSet = _computeCoveredForLearner(_selectedLearnerUid!);
@@ -1237,7 +1289,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Syllabus Units',
+            'Course Units',
             style: TextStyle(
               color: p.primary,
               fontWeight: FontWeight.w900,
@@ -1246,9 +1298,9 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
           ),
           const SizedBox(height: 6),
           Text(
-            _learnerView
-                ? 'Sessions marked as Passed were taught and attended by the selected learner.'
-                : 'Sessions marked as Passed were already taught in class.',
+            _hasLearnerSelected
+                ? 'Lessons the selected learner attended.'
+                : 'Lessons taught in class.',
             style: TextStyle(
               color: p.text.withValues(alpha: 0.72),
               fontWeight: FontWeight.w700,
@@ -1320,7 +1372,7 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                 children: [
                   Expanded(
                     child: Text(
-                      'Passed: $unitPassed / $unitTotal',
+                      'Covered: $unitPassed / $unitTotal',
                       style: TextStyle(
                         color: p.text.withValues(alpha: 0.7),
                         fontWeight: FontWeight.w800,
@@ -1359,14 +1411,14 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     );
   }
 
-  Widget _attendanceByDateCard(AppPalette p) {
+  Widget _timelineSection(AppPalette p) {
     final groups = _groupAttendanceByDate(_classCoveredSessionIds);
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: p.cardBg,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: p.border.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(
@@ -1376,41 +1428,45 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Taught Lessons by Date',
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8),
+          initiallyExpanded: false,
+          title: Text(
+            'Lesson Timeline',
             style: TextStyle(
               color: p.primary,
               fontWeight: FontWeight.w900,
               fontSize: 16,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'All taught lessons across the class, grouped by the session date.',
+          subtitle: Text(
+            '${groups.length} date(s) — tap to expand',
             style: TextStyle(
               color: p.text.withValues(alpha: 0.72),
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
           ),
-          const SizedBox(height: 12),
-          if (groups.isEmpty)
-            Text(
-              'No taught lessons recorded yet.',
-              style: TextStyle(color: p.text, fontWeight: FontWeight.w800),
-            )
-          else
-            ...groups.map(
-              (group) => _attendanceDateGroupCard(
-                p,
-                dateLabel: (group['dateLabel'] ?? 'No date').toString(),
-                sessions: (group['sessions'] as List<Map<String, dynamic>>),
+          children: [
+            if (groups.isEmpty)
+              Text(
+                'No lessons recorded yet.',
+                style: TextStyle(color: p.text, fontWeight: FontWeight.w800),
+              )
+            else
+              ...groups.map(
+                (group) => _attendanceDateGroupCard(
+                  p,
+                  dateLabel: (group['dateLabel'] ?? 'No date').toString(),
+                  sessions:
+                      (group['sessions'] as List<Map<String, dynamic>>),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1448,200 +1504,6 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
     );
   }
 
-  List<Map<String, dynamic>> _groupSessionsToReviewByDate() {
-    final Map<String, Map<String, dynamic>> groups = {};
-    var order = 0;
-
-    DateTime? parseDate(String raw) {
-      final v = raw.trim();
-      if (v.isEmpty) return null;
-      return DateTime.tryParse(v);
-    }
-
-    for (final record in _sessionsToReview) {
-      final dateLabel = (record['date'] ?? '').toString().trim();
-      final key = dateLabel.isEmpty ? 'No date' : dateLabel;
-      final sortDate = parseDate(dateLabel);
-
-      groups.putIfAbsent(key, () {
-        return {
-          'dateLabel': key,
-          'sortDate': sortDate,
-          'order': order++,
-          'sessions': <Map<String, dynamic>>[],
-        };
-      });
-
-      (groups[key]!['sessions'] as List<Map<String, dynamic>>).add(record);
-    }
-
-    final list = groups.values.toList();
-    list.sort((a, b) {
-      final ad = a['sortDate'] as DateTime?;
-      final bd = b['sortDate'] as DateTime?;
-      if (ad != null && bd != null) {
-        final c = bd.compareTo(ad);
-        if (c != 0) return c;
-      } else if (ad != null) {
-        return -1;
-      } else if (bd != null) {
-        return 1;
-      }
-      return (a['order'] as int).compareTo(b['order'] as int);
-    });
-
-    return list;
-  }
-
-  Widget _sessionsToReviewCard(AppPalette p) {
-    final groups = _groupSessionsToReviewByDate();
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: p.cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Sessions to review',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'These sessions need a syllabus lesson selected before they can be saved.',
-            style: TextStyle(
-              color: p.text.withValues(alpha: 0.72),
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (groups.isEmpty)
-            Text(
-              'No sessions need review.',
-              style: TextStyle(color: p.text, fontWeight: FontWeight.w800),
-            )
-          else
-            ...groups.map(
-              (group) => _reviewDateGroupCard(
-                p,
-                dateLabel: (group['dateLabel'] ?? 'No date').toString(),
-                sessions: (group['sessions'] as List<Map<String, dynamic>>),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _reviewDateGroupCard(
-    AppPalette p, {
-    required String dateLabel,
-    required List<Map<String, dynamic>> sessions,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: warningOrange.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            dateLabel,
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 10),
-          ...sessions.map((record) => _reviewSessionCard(p, record)),
-        ],
-      ),
-    );
-  }
-
-  Widget _reviewSessionCard(AppPalette p, Map<String, dynamic> record) {
-    final title = _reviewRecordLabel(record);
-    final date = (record['date'] ?? '').toString().trim();
-    final sessionId = (record['sessionId'] ?? record['id'] ?? '').toString();
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: p.border.withValues(alpha: 0.85)),
-        color: p.cardBg,
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: warningOrange.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(Icons.edit_note_rounded, color: warningOrange),
-        ),
-        title: Text(
-          title.isEmpty ? 'Session to review' : title,
-          style: TextStyle(color: p.text, fontWeight: FontWeight.w900),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _chip(
-                icon: Icons.info_outline_rounded,
-                text: 'Needs syllabus check',
-                tint: warningOrange,
-              ),
-              if (date.isNotEmpty)
-                _chip(
-                  icon: Icons.calendar_month_rounded,
-                  text: date,
-                  tint: p.primary,
-                ),
-            ],
-          ),
-        ),
-        trailing: IconButton(
-          onPressed: sessionId.isEmpty
-              ? null
-              : () => _openEditAttendance(
-                  record,
-                  preserveExistingLearnerAttendanceOnly: true,
-                ),
-          icon: const Icon(Icons.edit_rounded),
-          color: vividEdit,
-          tooltip: 'Edit session',
-        ),
-      ),
-    );
-  }
-
   Widget _sessionExpansion(
     AppPalette p,
     Map<String, dynamic> s,
@@ -1660,12 +1522,11 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
         : '';
 
     final bool passed = sessionId.isNotEmpty && coveredSet.contains(sessionId);
-    final statusText = passed ? 'Passed' : 'Coming';
+    final statusText = passed ? 'Taught' : 'Pending';
     final statusColor = passed ? successGreen : warningOrange;
     final attendanceRecord = passed
         ? _attendanceRecordForSession(sessionId)
         : null;
-    final isByDateView = _effectiveGroupIndex() == 1;
 
     return GestureDetector(
       onLongPress: () => _copySessionCardDetails(
@@ -1758,21 +1619,19 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
                   ],
                 ],
               ),
-              subtitle: isByDateView
-                  ? null
-                  : Text(
-                      [
-                        if (skill.isNotEmpty) skill,
-                        statusText,
-                        if (passed && sessionDate.isNotEmpty) sessionDate,
-                      ].join(' • '),
-                      style: TextStyle(
-                        color: p.text.withValues(alpha: 0.7),
-                        fontWeight: FontWeight.w700,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+              subtitle: Text(
+                [
+                  if (skill.isNotEmpty) skill,
+                  statusText,
+                  if (passed && sessionDate.isNotEmpty) sessionDate,
+                ].join(' • '),
+                style: TextStyle(
+                  color: p.text.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w700,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
               children: [
                 Container(
                   width: double.infinity,
@@ -2243,14 +2102,45 @@ class _TeacherClassProgressScreenState extends State<TeacherClassProgressScreen>
   }
 }
 
+class _DivDot extends StatelessWidget {
+  final Color color;
+  const _DivDot({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Text(
+        '|',
+        style: TextStyle(color: color, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+}
+
 class _LearnerStats {
   final int sessionsHeld;
   final int present;
   final int absent;
+  final int consumed;
+  final int paid;
+  final int left;
 
   const _LearnerStats({
     required this.sessionsHeld,
     required this.present,
     required this.absent,
+    required this.consumed,
+    required this.paid,
+    required this.left,
   });
+
+  factory _LearnerStats.zero() => const _LearnerStats(
+    sessionsHeld: 0,
+    present: 0,
+    absent: 0,
+    consumed: 0,
+    paid: 0,
+    left: 0,
+  );
 }

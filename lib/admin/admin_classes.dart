@@ -2575,7 +2575,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     final heldSessions = _classHeldSessionsCount(cls);
     final coveredSessions = _classCoveredSessionIds(cls).length;
-    final currentSessions = max(heldSessions, coveredSessions);
+    final currentSessions = coveredSessions;
 
     var totalSessions = _classTotalSessionsFromScheduleOrCourse(cls);
     if (totalSessions <= 0 && courseId.isNotEmpty) {
