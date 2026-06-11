@@ -93,6 +93,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   final Set<String> _expandedModuleLabels = <String>{};
   final Map<String, String> _selectedUnitByModule = <String, String>{};
+  String? _openingMaterialsSessionId;
+  String? _openingVideoSessionId;
   final Set<String> _expandedUnitDetails = <String>{};
   final Set<String> _expandedLessonDetails = <String>{};
   final Set<String> _generatingModuleCertificateKeys = <String>{};
@@ -396,18 +398,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   void _ensureExpandedModules() {
-    final labels = <String>[];
-    for (final u in _units) {
-      final label = u.otherTitle.trim().isNotEmpty
-          ? u.otherTitle.trim()
-          : 'Module';
-      if (!labels.contains(label)) labels.add(label);
+    final moduleEntries = _unitsByModule.entries.toList();
+    if (moduleEntries.isEmpty) return;
+
+    String? currentModule;
+    for (final entry in moduleEntries) {
+      if (!_isModuleCompleted(entry.value)) {
+        currentModule = entry.key;
+        break;
+      }
     }
-    if (labels.isEmpty) return;
-    if (_expandedModuleLabels.isEmpty) {
-      _expandedModuleLabels.add(labels.first);
-    }
-    _expandedModuleLabels.removeWhere((label) => !labels.contains(label));
+    currentModule ??= moduleEntries.last.key;
+
+    _expandedModuleLabels.clear();
+    _expandedModuleLabels.add(currentModule);
   }
 
   void _ensureSelectedUnits() {
@@ -571,7 +575,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final requiresVideo = _sessionRequiresVideo(session);
     final requiresMaterials = _sessionRequiresMaterials(session);
 
-    if (!requiresVideo && !requiresMaterials) return false;
+    if (!requiresVideo && !requiresMaterials) return true;
 
     if (requiresVideo && requiresMaterials) {
       return p.videoCompleted || p.materialsCompleted;
@@ -718,7 +722,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final completed = _resolveCompleted(session, updated);
 
     await _progressSync.updateProgress(
-      progressRef: _recordedProgressRef,
+      progressRef: _recordedProgressRef.child(session.id),
       uid: _uid,
       courseKey: widget.courseKey,
       sessionId: session.id,
@@ -745,7 +749,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final requiresVideo = _sessionRequiresVideo(session);
     final requiresMaterials = _sessionRequiresMaterials(session);
 
-    if (!requiresVideo && !requiresMaterials) return false;
+    if (!requiresVideo && !requiresMaterials) return true;
 
     if (requiresVideo && requiresMaterials) {
       return progress.videoCompleted || progress.materialsCompleted;
@@ -949,53 +953,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<void> _openMaterials(_RecordedSession session) async {
-    final url = session.materialsUrl.trim();
-    _debug('openMaterials sessionId=${session.id} hasUrl=${url.isNotEmpty}');
-    if (!_isValidWebUrl(url)) {
-      _snack(
-        _lessonUnavailableMessage(
-          lessonType: 'Reading lesson',
-          session: session,
-        ),
-      );
-      return;
-    }
-
-    final localPath = await _offlineVideos.localMaterialsPathFor(
-      uid: _uid,
-      courseKey: widget.courseKey,
-      sessionId: session.id,
-    );
-
-    if (localPath != null) {
-      if (!mounted) return;
-      await OfflineActionGuard.runExclusive(
-        context,
-        'learner.recorded.read.${widget.courseKey}.${session.id}',
-        () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MaterialWebViewScreen.fromUrl(
-                title: session.title.isEmpty
-                    ? 'Session Reading'
-                    : session.title,
-                url: Uri.file(localPath).toString(),
-              ),
-            ),
-          );
-        },
-      );
-    } else if (AppConnectivity.instance.isOffline) {
-      AppToast.show(
-        context,
-        'Reading materials need internet. Download them beforehand to read offline.',
-        type: AppToastType.info,
-      );
-      return;
-    } else {
-      final isMissing = await _isLessonAssetMissingOnServer(url: url);
-      if (isMissing) {
+    setState(() => _openingMaterialsSessionId = session.id);
+    try {
+      final url = session.materialsUrl.trim();
+      _debug('openMaterials sessionId=${session.id} hasUrl=${url.isNotEmpty}');
+      if (!_isValidWebUrl(url)) {
         _snack(
           _lessonUnavailableMessage(
             lessonType: 'Reading lesson',
@@ -1004,31 +966,78 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         );
         return;
       }
-      if (!mounted) return;
 
-      await OfflineActionGuard.runExclusive(
-        context,
-        'learner.recorded.read.${widget.courseKey}.${session.id}',
-        () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => MaterialWebViewScreen.fromUrl(
-                title: session.title.isEmpty
-                    ? 'Session Reading'
-                    : session.title,
-                url: url,
+      final localPath = await _offlineVideos.localMaterialsPathFor(
+        uid: _uid,
+        courseKey: widget.courseKey,
+        sessionId: session.id,
+      );
+
+      if (localPath != null) {
+        if (!mounted) return;
+        await OfflineActionGuard.runExclusive(
+          context,
+          'learner.recorded.read.${widget.courseKey}.${session.id}',
+          () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MaterialWebViewScreen.fromUrl(
+                  title: session.title.isEmpty
+                      ? 'Session Reading'
+                      : session.title,
+                  url: Uri.file(localPath).toString(),
+                ),
               ),
+            );
+          },
+        );
+      } else if (AppConnectivity.instance.isOffline) {
+        AppToast.show(
+          context,
+          'Reading materials need internet. Download them beforehand to read offline.',
+          type: AppToastType.info,
+        );
+        return;
+      } else {
+        final isMissing = await _isLessonAssetMissingOnServer(url: url);
+        if (isMissing) {
+          _snack(
+            _lessonUnavailableMessage(
+              lessonType: 'Reading lesson',
+              session: session,
             ),
           );
-        },
-      );
+          return;
+        }
+        if (!mounted) return;
+
+        await OfflineActionGuard.runExclusive(
+          context,
+          'learner.recorded.read.${widget.courseKey}.${session.id}',
+          () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MaterialWebViewScreen.fromUrl(
+                  title: session.title.isEmpty
+                      ? 'Session Reading'
+                      : session.title,
+                  url: url,
+                ),
+              ),
+            );
+          },
+        );
+      }
+
+      if (!mounted) return;
+
+      await _markMaterialsCompleted(session);
+      _snack('Reading marked complete ✅');
+    } finally {
+      if (mounted) setState(() => _openingMaterialsSessionId = null);
     }
-
-    if (!mounted) return;
-
-    await _markMaterialsCompleted(session);
-    _snack('Reading marked complete ✅');
   }
 
   Widget _buildTopOverviewCard() {
@@ -1535,72 +1544,77 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<void> _openVideoPlaceholder(_RecordedSession session) async {
-    final openTimer = Stopwatch()..start();
-    final hasVideo = session.videoUrl.trim().isNotEmpty;
-    final videoUrl = session.videoUrl.trim();
-    _debug('openVideo sessionId=${session.id} hasVideo=$hasVideo');
-    if (!hasVideo || !_isValidWebUrl(videoUrl)) {
-      _snack(
-        _lessonUnavailableMessage(lessonType: 'Video lesson', session: session),
-      );
-      return;
-    }
-
-    if (_daysLeft < 0) {
-      AppToast.show(
-        context,
-        'Your recorded access is expired. Please renew to watch videos.',
-        type: AppToastType.error,
-      );
-      return;
-    }
-
-    final localPath = await _offlineVideos.localPathFor(
-      uid: _uid,
-      courseKey: widget.courseKey,
-      sessionId: session.id,
-      videoUrl: videoUrl,
-    );
-
-    _debug('openVideo routePushStart sessionId=${session.id}');
-    if (!mounted) return;
-
-    await OfflineActionGuard.runExclusive(
-      context,
-      'learner.recorded.video.${widget.courseKey}.${session.id}',
-      () async {
-        final flatSessions = _flatSessions
-            .map((ref) => {
-                  'id': ref.session.id,
-                  'title': ref.session.title,
-                  'videoUrl': ref.session.videoUrl.trim(),
-                })
-            .toList();
-
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => RecordedVideoPlayerScreen(
-              uid: _uid,
-              courseKey: widget.courseKey,
-              courseId: _courseId,
-              sessionId: session.id,
-              sessionTitle: session.title,
-              videoUrl: videoUrl,
-              localVideoPath: localPath,
-              flatSessions: flatSessions,
-            ),
-          ),
+    setState(() => _openingVideoSessionId = session.id);
+    try {
+      final openTimer = Stopwatch()..start();
+      final hasVideo = session.videoUrl.trim().isNotEmpty;
+      final videoUrl = session.videoUrl.trim();
+      _debug('openVideo sessionId=${session.id} hasVideo=$hasVideo');
+      if (!hasVideo || !_isValidWebUrl(videoUrl)) {
+        _snack(
+          _lessonUnavailableMessage(lessonType: 'Video lesson', session: session),
         );
-      },
-      requireOnline: localPath == null,
-    );
-    _debug(
-      'openVideo routeReturned sessionId=${session.id} elapsedMs=${openTimer.elapsedMilliseconds}',
-    );
+        return;
+      }
 
-    if (!mounted) return;
-    await _loadAll();
+      if (_daysLeft < 0) {
+        AppToast.show(
+          context,
+          'Your recorded access is expired. Please renew to watch videos.',
+          type: AppToastType.error,
+        );
+        return;
+      }
+
+      final localPath = await _offlineVideos.localPathFor(
+        uid: _uid,
+        courseKey: widget.courseKey,
+        sessionId: session.id,
+        videoUrl: videoUrl,
+      );
+
+      _debug('openVideo routePushStart sessionId=${session.id}');
+      if (!mounted) return;
+
+      await OfflineActionGuard.runExclusive(
+        context,
+        'learner.recorded.video.${widget.courseKey}.${session.id}',
+        () async {
+          final flatSessions = _flatSessions
+              .map((ref) => {
+                    'id': ref.session.id,
+                    'title': ref.session.title,
+                    'videoUrl': ref.session.videoUrl.trim(),
+                  })
+              .toList();
+
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RecordedVideoPlayerScreen(
+                uid: _uid,
+                courseKey: widget.courseKey,
+                courseId: _courseId,
+                sessionId: session.id,
+                sessionTitle: session.title,
+                videoUrl: videoUrl,
+                localVideoPath: localPath,
+                flatSessions: flatSessions,
+              ),
+            ),
+          );
+        },
+        requireOnline: localPath == null,
+      );
+      _debug(
+        'openVideo routeReturned sessionId=${session.id} elapsedMs=${openTimer.elapsedMilliseconds}',
+      );
+
+      if (!mounted) return;
+      await _loadAll();
+    } finally {
+      if (mounted) setState(() => _openingVideoSessionId = null);
+    }
   }
 
   Future<Map<String, String>> _learnerIdentity() async {
@@ -3074,6 +3088,37 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  Widget _buildSyncErrorBanner() {
+    if (_progressSync.failedSyncCount <= 0) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off_rounded, color: Color(0xFFB91C1C), size: 20),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Some progress couldn\'t be saved yet. It will sync when possible.',
+              style: TextStyle(
+                color: Color(0xFF991B1B),
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+                height: 1.25,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOfflineCacheBanner() {
     if (!_usingOfflineCourseCache) return const SizedBox.shrink();
     return Container(
@@ -3213,12 +3258,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
               if (requiresVideo)
                 Tooltip(
-                  message: progress.videoCompleted
-                      ? 'Rewatch video'
-                      : 'Watch video',
+                  message: _openingVideoSessionId == session.id
+                      ? 'Opening…'
+                      : progress.videoCompleted
+                          ? 'Rewatch video'
+                          : 'Watch video',
                   child: InkWell(
                     borderRadius: BorderRadius.circular(999),
-                    onTap: isUnlocked
+                    onTap: isUnlocked && _openingVideoSessionId == null
                         ? () => _openVideoPlaceholder(session)
                         : null,
                     child: Container(
@@ -3230,13 +3277,24 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             : const Color(0xFFF1F5F9),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        Icons.play_circle_fill_rounded,
-                        size: isNarrow ? 17 : 18,
-                        color: isUnlocked
-                            ? const Color(0xFF4F46E5)
-                            : const Color(0xFF94A3B8),
-                      ),
+                      child: _openingVideoSessionId == session.id
+                          ? SizedBox(
+                              width: 17,
+                              height: 17,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: isUnlocked
+                                    ? const Color(0xFF4F46E5)
+                                    : const Color(0xFF94A3B8),
+                              ),
+                            )
+                          : Icon(
+                              Icons.play_circle_fill_rounded,
+                              size: isNarrow ? 17 : 18,
+                              color: isUnlocked
+                                  ? const Color(0xFF4F46E5)
+                                  : const Color(0xFF94A3B8),
+                            ),
                     ),
                   ),
                 ),
@@ -3244,12 +3302,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 Padding(
                   padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
                   child: Tooltip(
-                    message: progress.materialsCompleted
-                        ? 'Open reading again'
-                        : 'Open reading',
+                    message: _openingMaterialsSessionId == session.id
+                        ? 'Opening…'
+                        : progress.materialsCompleted
+                            ? 'Open reading again'
+                            : 'Open reading',
                     child: InkWell(
                       borderRadius: BorderRadius.circular(999),
-                      onTap: isUnlocked ? () => _openMaterials(session) : null,
+                      onTap: isUnlocked && _openingMaterialsSessionId == null
+                          ? () => _openMaterials(session)
+                          : null,
                       child: Container(
                         width: isNarrow ? 28 : 30,
                         height: isNarrow ? 28 : 30,
@@ -3259,13 +3321,24 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                               : const Color(0xFFF1F5F9),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          Icons.menu_book_rounded,
-                          size: isNarrow ? 16 : 17,
-                          color: isUnlocked
-                              ? const Color(0xFFEA580C)
-                              : const Color(0xFF94A3B8),
-                        ),
+                        child: _openingMaterialsSessionId == session.id
+                            ? SizedBox(
+                                width: 17,
+                                height: 17,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: isUnlocked
+                                      ? const Color(0xFFEA580C)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              )
+                            : Icon(
+                                Icons.menu_book_rounded,
+                                size: isNarrow ? 16 : 17,
+                                color: isUnlocked
+                                    ? const Color(0xFFEA580C)
+                                    : const Color(0xFF94A3B8),
+                              ),
                       ),
                     ),
                   ),
@@ -4026,6 +4099,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             18,
                           ),
                           children: [
+                            _buildSyncErrorBanner(),
                             _buildOfflineCacheBanner(),
                             _buildUnitsList(),
                           ],
@@ -4047,6 +4121,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         _buildOfflineOverviewCard(),
                         const SizedBox(height: 10),
                       ],
+                      _buildSyncErrorBanner(),
                       _buildOfflineCacheBanner(),
                       _buildUnitsList(),
                     ],
@@ -4366,7 +4441,8 @@ class _PulseWidget extends StatefulWidget {
 class _PulseWidgetState extends State<_PulseWidget>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<double> _animation;
+  late final Animation<double> _scaleAnim;
+  late final Animation<Color?> _borderAnim;
 
   @override
   void initState() {
@@ -4375,9 +4451,13 @@ class _PulseWidgetState extends State<_PulseWidget>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _animation = Tween<double>(begin: 1.0, end: 1.035).animate(
+    _scaleAnim = Tween<double>(begin: 1.0, end: 1.06).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
+    _borderAnim = ColorTween(
+      begin: const Color(0xFFE2E8F0),
+      end: const Color(0xFF4F46E5),
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     _controller.repeat(reverse: true);
   }
 
@@ -4390,10 +4470,19 @@ class _PulseWidgetState extends State<_PulseWidget>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _animation,
+      animation: _controller,
       builder: (_, child) => Transform.scale(
-        scale: _animation.value,
-        child: child,
+        scale: _scaleAnim.value,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _borderAnim.value ?? const Color(0xFFE2E8F0),
+              width: 1.5,
+            ),
+          ),
+          child: child,
+        ),
       ),
       child: widget.child,
     );

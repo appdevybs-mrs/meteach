@@ -470,7 +470,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         'videoCompletedAt': ServerValue.timestamp,
         'videoPositionMs': durationMs,
         'videoDurationMs': durationMs,
-        'completed': materialsCompleted,
+        'completed': true,
         'lastOpenedAt': ServerValue.timestamp,
         'updatedAt': ServerValue.timestamp,
       },

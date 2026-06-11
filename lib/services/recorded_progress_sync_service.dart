@@ -24,6 +24,7 @@ class RecordedProgressSyncService {
   bool _loaded = false;
   bool _flushing = false;
   bool _listening = false;
+  int failedSyncCount = 0;
 
   Future<void> start() async {
     await ensureLoaded();
@@ -289,7 +290,9 @@ class RecordedProgressSyncService {
       await _updateMirror(key, mirrorPatch);
       _pending.remove(key);
       await _save();
+      failedSyncCount = 0;
     } catch (e) {
+      failedSyncCount++;
       if (kDebugMode) debugPrint('Recorded progress sync failed: $e');
     }
   }

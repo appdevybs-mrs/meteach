@@ -772,11 +772,12 @@ class _TeacherLearnerProfileScreenState
                         const SizedBox(height: 4),
                         for (final (label, key) in skillLabels) ...[
                           Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Row(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                SizedBox(
-                                  width: 130,
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 2),
                                   child: Text(
                                     label,
                                     style: const TextStyle(
@@ -785,49 +786,55 @@ class _TeacherLearnerProfileScreenState
                                     ),
                                   ),
                                 ),
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      activeTrackColor: scoreColor(
-                                        skills[key] ?? 50,
-                                      ),
-                                      inactiveTrackColor: scoreColor(
-                                        skills[key] ?? 50,
-                                      ).withAlpha(25),
-                                      thumbColor: scoreColor(
-                                        skills[key] ?? 50,
-                                      ),
-                                      overlayColor: scoreColor(
-                                        skills[key] ?? 50,
-                                      ).withAlpha(20),
-                                      trackHeight: 6,
-                                      thumbShape:
-                                          const RoundSliderThumbShape(
-                                        enabledThumbRadius: 8,
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: SliderTheme(
+                                        data:
+                                            SliderTheme.of(context).copyWith(
+                                          activeTrackColor: scoreColor(
+                                            skills[key] ?? 50,
+                                          ),
+                                          inactiveTrackColor: scoreColor(
+                                            skills[key] ?? 50,
+                                          ).withAlpha(25),
+                                          thumbColor: scoreColor(
+                                            skills[key] ?? 50,
+                                          ),
+                                          overlayColor: scoreColor(
+                                            skills[key] ?? 50,
+                                          ).withAlpha(20),
+                                          trackHeight: 6,
+                                          thumbShape:
+                                              const RoundSliderThumbShape(
+                                            enabledThumbRadius: 8,
+                                          ),
+                                        ),
+                                        child: Slider(
+                                          value: skills[key] ?? 50,
+                                          min: 0,
+                                          max: 100,
+                                          divisions: 100,
+                                          onChanged: (val) => setLocal(
+                                            () => skills[key] = val,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                    child: Slider(
-                                      value: skills[key] ?? 50,
-                                      min: 0,
-                                      max: 100,
-                                      divisions: 100,
-                                      onChanged: (val) => setLocal(
-                                        () => skills[key] = val,
+                                    SizedBox(
+                                      width: 48,
+                                      child: Text(
+                                        '${(skills[key] ?? 50).round()}%',
+                                        textAlign: TextAlign.right,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12,
+                                          color:
+                                              scoreColor(skills[key] ?? 50),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 48,
-                                  child: Text(
-                                    '${(skills[key] ?? 50).round()}%',
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
-                                      color: scoreColor(skills[key] ?? 50),
-                                    ),
-                                  ),
+                                  ],
                                 ),
                               ],
                             ),
