@@ -200,6 +200,23 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final progressById = _parseProgress(progressSnap.value);
       final units = _parseUnits(syllabusSnap.value);
 
+      for (final unit in units) {
+        for (final session in unit.sessions) {
+          final existing = progressById[session.id];
+          final merged = _progressSync.mergeWithLocalProgress(
+            uid: _uid,
+            courseKey: widget.courseKey,
+            sessionId: session.id,
+            firebaseProgress: existing != null
+                ? existing.toMap()
+                : const <String, dynamic>{},
+          );
+          if (merged.isNotEmpty) {
+            progressById[session.id] = _RecordedProgress.fromMap(merged);
+          }
+        }
+      }
+
       final accessMap = accessSnap.value is Map
           ? Map<String, dynamic>.from(accessSnap.value as Map)
           : <String, dynamic>{};
@@ -566,10 +583,26 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return false;
   }
 
+  bool _arePreviousModulesCompleted(int flatIndex) {
+    final sessionRef = _flatSessions[flatIndex];
+    final currentModule = _moduleLabelOf(sessionRef.unit);
+    final moduleEntries = _unitsByModule.entries.toList();
+    for (int i = 0; i < moduleEntries.length; i++) {
+      if (moduleEntries[i].key == currentModule) {
+        for (int j = 0; j < i; j++) {
+          if (!_isModuleCompleted(moduleEntries[j].value)) return false;
+        }
+        return true;
+      }
+    }
+    return true;
+  }
+
   bool _isSessionUnlocked(int flatIndex) {
     if (flatIndex <= 0) return true;
     final previous = _flatSessions[flatIndex - 1].session;
-    return _isSessionCompleted(previous);
+    if (!_isSessionCompleted(previous)) return false;
+    return _arePreviousModulesCompleted(flatIndex);
   }
 
   int get _totalSessions => _flatSessions.length;
@@ -3320,6 +3353,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             builder: (_) {
               final moduleLabel = moduleEntries[moduleIndex].key;
               final moduleUnits = moduleEntries[moduleIndex].value;
+              bool isModuleIndexLocked(int idx) {
+                if (idx <= 0) return false;
+                for (int k = 0; k < idx; k++) {
+                  if (!_isModuleCompleted(moduleEntries[k].value)) return true;
+                }
+                return false;
+              }
+              final moduleLocked = isModuleIndexLocked(moduleIndex);
               final moduleExpanded = _expandedModuleLabels.contains(
                 moduleLabel,
               );
@@ -3371,6 +3412,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         ),
                         child: Row(
                           children: [
+                            if (moduleLocked)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  right: isNarrow ? 5 : 6,
+                                ),
+                                child: Icon(
+                                  Icons.lock_rounded,
+                                  size: isNarrow ? 14 : 15,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                              ),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3378,7 +3430,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   Text(
                                     moduleLabel,
                                     style: TextStyle(
-                                      color: Color(0xFF0F172A),
+                                      color: moduleLocked
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF0F172A),
                                       fontWeight: FontWeight.w900,
                                       fontSize: isNarrow ? 14 : 14.5,
                                     ),
@@ -3387,7 +3441,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   Text(
                                     '$doneUnits/$totalUnits units • $doneLessons/$totalLessons lessons',
                                     style: TextStyle(
-                                      color: Color(0xFF64748B),
+                                      color: moduleLocked
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF64748B),
                                       fontWeight: FontWeight.w700,
                                       fontSize: isNarrow ? 11.2 : 11.8,
                                     ),
@@ -4416,6 +4472,14 @@ class _RecordedProgress {
       materialsCompletedAt: materialsCompletedAt ?? this.materialsCompletedAt,
     );
   }
+
+  Map<String, dynamic> toMap() => {
+    'videoCompleted': videoCompleted,
+    'materialsCompleted': materialsCompleted,
+    'completed': completed,
+    'videoCompletedAt': videoCompletedAt,
+    'materialsCompletedAt': materialsCompletedAt,
+  };
 
   factory _RecordedProgress.fromMap(Map<String, dynamic> map) {
     bool asBool(dynamic v) {

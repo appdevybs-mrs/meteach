@@ -109,6 +109,22 @@ class RecordedProgressSyncService {
     return out;
   }
 
+  Map<String, dynamic> mergeWithLocalProgress({
+    required String uid,
+    required String courseKey,
+    required String sessionId,
+    required Map<String, dynamic> firebaseProgress,
+  }) {
+    final key = keyFor(uid: uid, courseKey: courseKey, sessionId: sessionId);
+    var result = Map<String, dynamic>.from(firebaseProgress);
+    final pending = _pending[key];
+    if (pending != null) {
+      result = _mergePatch(result, pending.patch);
+      result['lessonNotes'] = _mergeNotes(result['lessonNotes'], pending.noteOps);
+    }
+    return result;
+  }
+
   Future<void> updateProgress({
     required DatabaseReference progressRef,
     required String uid,
