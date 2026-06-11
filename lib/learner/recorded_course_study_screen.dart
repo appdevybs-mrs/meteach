@@ -203,7 +203,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       for (final unit in units) {
         for (final session in unit.sessions) {
           final existing = progressById[session.id];
-          final merged = _progressSync.mergeWithLocalProgress(
+          final merged = await _progressSync.mergeWithLocalProgress(
             uid: _uid,
             courseKey: widget.courseKey,
             sessionId: session.id,
