@@ -2567,6 +2567,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       final unitTitle = (s['unitTitle'] ?? '').toString();
       final unitDesc = (s['unitDescription'] ?? '').toString();
       final unitOrder = n(s['unitOrder']);
+      final unitOtherTitle = (s['unitOtherTitle'] ?? '').toString();
 
       final key = unitId.isNotEmpty ? unitId : 'unit_$unitOrder|$unitTitle';
 
@@ -2575,6 +2576,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           'unitId': unitId,
           'unitTitle': unitTitle.isEmpty ? 'Unit' : unitTitle,
           'unitDescription': unitDesc,
+          'unitOtherTitle': unitOtherTitle.isEmpty ? 'Module' : unitOtherTitle,
           'unitOrder': unitOrder,
           'sessions': <Map<String, dynamic>>[],
         };
@@ -4028,24 +4030,24 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: EdgeInsets.symmetric(
-          vertical: compact ? 8 : 10,
+          vertical: compact ? 4 : 10,
           horizontal: 4,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: compact ? 46 : 52,
-              height: compact ? 46 : 52,
+              width: compact ? 38 : 52,
+              height: compact ? 38 : 52,
               decoration: BoxDecoration(
                 color: iconBg.withValues(alpha: 0.6),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: iconFg, size: compact ? 24 : 28),
+              child: Icon(icon, color: iconFg, size: compact ? 18 : 28),
             ),
-            SizedBox(height: compact ? 6 : 8),
+            SizedBox(height: compact ? 4 : 8),
             SizedBox(
-              height: compact ? 18 : 20,
+              height: compact ? 16 : 20,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
@@ -4055,14 +4057,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
-                    fontSize: compact ? 13 : 15,
+                    fontSize: compact ? 11 : 15,
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 2),
             SizedBox(
-              height: compact ? 14 : 16,
+              height: compact ? 12 : 16,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
@@ -4072,7 +4074,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.85),
                     fontWeight: FontWeight.w700,
-                    fontSize: compact ? 9.6 : 10.6,
+                    fontSize: compact ? 8.5 : 10.6,
                   ),
                 ),
               ),
@@ -4144,14 +4146,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       children: [
         Row(
           children: [
-            const Icon(Icons.track_changes_rounded, size: 16, color: Colors.white70),
+            const Icon(Icons.track_changes_rounded, size: 20, color: Colors.white70),
             const SizedBox(width: 6),
             Text(
               '$overallPct% complete',
               style: TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w900,
-                fontSize: compact ? 13 : 14,
+                fontSize: compact ? 16 : 17,
               ),
             ),
             const Spacer(),
@@ -4160,15 +4162,15 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               style: TextStyle(
                 color: Colors.white70,
                 fontWeight: FontWeight.w800,
-                fontSize: compact ? 11.5 : 12,
+                fontSize: compact ? 14 : 14.5,
               ),
             ),
           ],
         ),
-        SizedBox(height: compact ? 10 : 12),
+        SizedBox(height: compact ? 12 : 14),
         Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 5,
+          spacing: 6,
           runSpacing: 4,
           children: [
             ...moduleProgress.entries.map((entry) {
@@ -4187,9 +4189,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 }
               }
               return Container(
-                width: 12,
-                height: 12,
-                margin: const EdgeInsets.only(right: 1),
+                width: 14,
+                height: 14,
+                margin: const EdgeInsets.only(right: 2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: isDone ? const Color(0xFFFF9800) : Colors.transparent,
@@ -4205,12 +4207,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               style: TextStyle(
                 color: Colors.white70,
                 fontWeight: FontWeight.w700,
-                fontSize: compact ? 11.5 : 12,
+                fontSize: compact ? 14 : 14.5,
               ),
             ),
           ],
         ),
-        SizedBox(height: compact ? 10 : 12),
+        SizedBox(height: compact ? 12 : 14),
         InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: onTapPayment,
@@ -4218,14 +4220,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               children: [
-                const Icon(Icons.verified_rounded, size: 16, color: Color(0xFF4ADE80)),
+                const Icon(Icons.verified_rounded, size: 20, color: Color(0xFF4ADE80)),
                 const SizedBox(width: 6),
                 Text(
                   'Access active · $paymentLabel',
                   style: TextStyle(
                     color: const Color(0xFF4ADE80),
                     fontWeight: FontWeight.w700,
-                    fontSize: compact ? 11.5 : 12,
+                    fontSize: compact ? 14 : 14.5,
                   ),
                 ),
                 const Spacer(),
