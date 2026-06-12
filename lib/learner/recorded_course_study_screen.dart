@@ -1159,19 +1159,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Widget _buildUnitProgressTrack() {
     final moduleGroups = _unitsByModule.values.toList();
-    final totalModules = moduleGroups.length;
-    final doneModules = moduleGroups.where((units) {
-      return units.isNotEmpty && _moduleCompletedUnits(units) == units.length;
-    }).length;
     final totalUnits = _units.length;
     final doneUnits = _units.where(_isUnitCompleted).length;
     final allSessions = _flatSessions.map((e) => e.session).toList();
     final totalLessons = allSessions.length;
     final doneLessons = allSessions.where(_isSessionCompleted).length;
 
-    final modulesValue = totalModules == 0
-        ? 0.0
-        : (doneModules / totalModules).clamp(0.0, 1.0);
     final unitsValue = totalUnits == 0
         ? 0.0
         : (doneUnits / totalUnits).clamp(0.0, 1.0);
@@ -1192,22 +1185,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    CircularProgressIndicator(
-                      value: 1,
-                      strokeWidth: 11,
-                      backgroundColor: const Color(0xFFE2E8F0),
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFFE2E8F0),
-                      ),
-                    ),
-                    CircularProgressIndicator(
-                      value: modulesValue,
-                      strokeWidth: 11,
-                      backgroundColor: Colors.transparent,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFFEA580C),
-                      ),
-                    ),
                     Padding(
                       padding: const EdgeInsets.all(13),
                       child: CircularProgressIndicator(
@@ -1258,14 +1235,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '${(modulesValue * 100).round()}%',
-                            style: const TextStyle(
-                              color: Color(0xFFEA580C),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14,
-                            ),
-                          ),
-                          Text(
                             '${(unitsValue * 100).round()}%',
                             style: const TextStyle(
                               color: Color(0xFF0284C7),
@@ -1294,11 +1263,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               runSpacing: 6,
               alignment: WrapAlignment.center,
               children: [
-                _legendPill(
-                  label: 'Modules',
-                  pct: (modulesValue * 100).round(),
-                  color: const Color(0xFFEA580C),
-                ),
+                _buildModuleDots(moduleGroups),
                 _legendPill(
                   label: 'Units',
                   pct: (unitsValue * 100).round(),
@@ -1336,6 +1301,43 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           fontSize: 11.5,
         ),
       ),
+    );
+  }
+
+  Widget _buildModuleDots(List<List<_RecordedUnit>> moduleGroups) {
+    final doneModules = moduleGroups
+        .where((u) => u.isNotEmpty && _moduleCompletedUnits(u) == u.length)
+        .length;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ...moduleGroups.map((units) {
+          final isDone =
+              units.isNotEmpty && _moduleCompletedUnits(units) == units.length;
+          return Container(
+            width: 12,
+            height: 12,
+            margin: const EdgeInsets.only(right: 5),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isDone ? const Color(0xFFEA580C) : Colors.transparent,
+              border: Border.all(
+                color: const Color(0xFFEA580C),
+                width: 2,
+              ),
+            ),
+          );
+        }),
+        const SizedBox(width: 4),
+        Text(
+          'Modules $doneModules/${moduleGroups.length}',
+          style: const TextStyle(
+            color: Color(0xFFEA580C),
+            fontWeight: FontWeight.w800,
+            fontSize: 11.5,
+          ),
+        ),
+      ],
     );
   }
 

@@ -2906,26 +2906,15 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   Widget _recordedMergedBody() {
     final mq = MediaQuery.of(context);
     final compact = mq.size.width < 420;
-    final veryNarrow = mq.size.width < 370;
     final bottomPad = mq.viewPadding.bottom;
 
     final units = _groupSyllabiByUnit();
-    final totalUnits = units.length;
-    int doneUnits = 0;
     final moduleProgress = <String, List<Map<String, dynamic>>>{};
     for (final u in units) {
       final module = (u['unitOtherTitle'] ?? 'Module').toString().trim().isEmpty
           ? 'Module'
           : (u['unitOtherTitle'] ?? 'Module').toString().trim();
       moduleProgress.putIfAbsent(module, () => <Map<String, dynamic>>[]).add(u);
-      final sessions =
-          (u['sessions'] as List<Map<String, dynamic>>?) ?? const [];
-      int covered = 0;
-      for (final s in sessions) {
-        final sid = (s['sessionId'] ?? '').toString();
-        if (_coveredSessionIds.contains(sid)) covered++;
-      }
-      if (sessions.isNotEmpty && covered == sessions.length) doneUnits++;
     }
     final totalModules = moduleProgress.length;
     int doneModules = 0;
@@ -2950,16 +2939,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
     final totalLessons = _syllabiFlat.length;
     final doneLessons = _coveredSessionIds.length;
-
-    final modulePct = totalModules == 0
-        ? 0
-        : ((doneModules / totalModules) * 100).round();
-    final unitPct = totalUnits == 0
-        ? 0
-        : ((doneUnits / totalUnits) * 100).round();
-    final lessonPct = totalLessons == 0
-        ? 0
-        : ((doneLessons / totalLessons) * 100).round();
 
     final sum = _paymentSummary;
     final access = (_course['recorded_access'] is Map)
@@ -3022,44 +3001,19 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             ),
             child: Column(
               children: [
-                if (veryNarrow) ...[
-                  _recordedActionGrid(compact: true),
-                  const SizedBox(height: 10),
-                  _recordedProgressPanel(
-                    compact: compact,
-                    modulePct: modulePct,
-                    unitPct: unitPct,
-                    lessonPct: lessonPct,
-                    paymentPct: paymentPct,
-                    paymentLabel: paymentDaysLabel,
-                    onTapPayment: () =>
-                        _showRecordedPaymentDetails(paymentPct: paymentPct),
-                  ),
-                ] else
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.only(right: compact ? 8 : 12),
-                          child: _recordedActionGrid(compact: true),
-                        ),
-                      ),
-                      Expanded(
-                        child: _recordedProgressPanel(
-                          compact: compact,
-                          modulePct: modulePct,
-                          unitPct: unitPct,
-                          lessonPct: lessonPct,
-                          paymentPct: paymentPct,
-                          paymentLabel: paymentDaysLabel,
-                          onTapPayment: () => _showRecordedPaymentDetails(
-                            paymentPct: paymentPct,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                _recordedProgressPanel(
+                  compact: compact,
+                  totalModules: totalModules,
+                  doneModules: doneModules,
+                  moduleProgress: moduleProgress,
+                  totalSessions: totalLessons,
+                  doneSessions: doneLessons,
+                  paymentLabel: paymentDaysLabel,
+                  onTapPayment: () =>
+                      _showRecordedPaymentDetails(paymentPct: paymentPct),
+                ),
+                const SizedBox(height: 10),
+                _recordedActionGrid(compact: true),
               ],
             ),
           ),
@@ -4175,129 +4129,112 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   Widget _recordedProgressPanel({
     required bool compact,
-    required int modulePct,
-    required int unitPct,
-    required int lessonPct,
-    required int paymentPct,
+    required int totalModules,
+    required int doneModules,
+    required Map<String, List<Map<String, dynamic>>> moduleProgress,
+    required int totalSessions,
+    required int doneSessions,
     required String paymentLabel,
     required VoidCallback onTapPayment,
   }) {
+    final overallPct = totalSessions > 0
+        ? ((doneSessions / totalSessions) * 100).round()
+        : 0;
     return Column(
       children: [
-        _recordedProgressRow(
-          icon: Icons.inventory_2_rounded,
-          iconBg: const Color(0xFF0D3E7D),
-          iconColor: const Color(0xFF2CB2FF),
-          label: 'Modules',
-          pct: modulePct,
-          barColor: const Color(0xFF22B6FF),
-        ),
-        SizedBox(height: compact ? 10 : 12),
-        _recordedProgressRow(
-          icon: Icons.layers_rounded,
-          iconBg: const Color(0xFF0B5B78),
-          iconColor: const Color(0xFF22E0D2),
-          label: 'Units',
-          pct: unitPct,
-          barColor: const Color(0xFF20D6D0),
-        ),
-        SizedBox(height: compact ? 10 : 12),
-        _recordedProgressRow(
-          icon: Icons.track_changes_rounded,
-          iconBg: const Color(0xFF2F6B31),
-          iconColor: const Color(0xFF9AE63B),
-          label: 'Lessons',
-          pct: lessonPct,
-          barColor: const Color(0xFF8EDC3C),
-        ),
-        SizedBox(height: compact ? 10 : 12),
-        _recordedProgressRow(
-          icon: Icons.credit_card_rounded,
-          iconBg: const Color(0xFF6D471D),
-          iconColor: const Color(0xFFFF9A22),
-          label: 'Payment',
-          pct: null,
-          valueLabel: paymentLabel,
-          barColor: const Color(0xFFFF9800),
-          onTap: onTapPayment,
-        ),
-      ],
-    );
-  }
-
-  Widget _recordedProgressRow({
-    required IconData icon,
-    required Color iconBg,
-    required Color iconColor,
-    required String label,
-    int? pct,
-    required Color barColor,
-    String? valueLabel,
-    VoidCallback? onTap,
-  }) {
-    final row = Row(
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: iconBg,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: iconColor, size: 20),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    valueLabel ?? (pct != null ? '$pct%' : ''),
-                    style: TextStyle(
-                      color: barColor,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
+        Row(
+          children: [
+            const Icon(Icons.track_changes_rounded, size: 16, color: Colors.white70),
+            const SizedBox(width: 6),
+            Text(
+              '$overallPct% complete',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: compact ? 13 : 14,
               ),
-              if (pct != null) ...[
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    value: (pct / 100).clamp(0.0, 1.0),
-                    minHeight: 8,
-                    backgroundColor: Colors.white.withValues(alpha: 0.22),
-                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            ),
+            const Spacer(),
+            Text(
+              '$doneSessions/$totalSessions lessons',
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w800,
+                fontSize: compact ? 11.5 : 12,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 10 : 12),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 5,
+          runSpacing: 4,
+          children: [
+            ...moduleProgress.entries.map((entry) {
+              final list = entry.value;
+              bool isDone = list.isNotEmpty;
+              for (final u in list) {
+                final sessions = (u['sessions'] as List?) ?? const [];
+                int covered = 0;
+                for (final s in sessions) {
+                  final sid = (s['sessionId'] ?? '').toString();
+                  if (_coveredSessionIds.contains(sid)) covered++;
+                }
+                if (sessions.isEmpty || covered != sessions.length) {
+                  isDone = false;
+                  break;
+                }
+              }
+              return Container(
+                width: 12,
+                height: 12,
+                margin: const EdgeInsets.only(right: 1),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isDone ? const Color(0xFFFF9800) : Colors.transparent,
+                  border: Border.all(
+                    color: const Color(0xFFFF9800),
+                    width: 2,
                   ),
                 ),
+              );
+            }),
+            Text(
+              'Modules $doneModules/$totalModules done',
+              style: TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.w700,
+                fontSize: compact ? 11.5 : 12,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 10 : 12),
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTapPayment,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                const Icon(Icons.verified_rounded, size: 16, color: Color(0xFF4ADE80)),
+                const SizedBox(width: 6),
+                Text(
+                  'Access active · $paymentLabel',
+                  style: TextStyle(
+                    color: const Color(0xFF4ADE80),
+                    fontWeight: FontWeight.w700,
+                    fontSize: compact ? 11.5 : 12,
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white38),
               ],
-            ],
+            ),
           ),
         ),
       ],
-    );
-    if (onTap == null) return row;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: row,
-      ),
     );
   }
 
