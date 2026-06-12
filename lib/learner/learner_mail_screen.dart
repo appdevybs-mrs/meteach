@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -59,6 +60,17 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
     if (t.length <= max) return t;
     if (max <= 1) return '…';
     return '${t.substring(0, max - 1)}…';
+  }
+
+  String _reportPreview(String raw) {
+    try {
+      final parsed = jsonDecode(raw.trim());
+      if (parsed is Map) {
+        final month = (parsed['month'] ?? '').toString().trim();
+        if (month.isNotEmpty) return '📋 $month';
+      }
+    } catch (_) {}
+    return _short(raw, 90);
   }
 
   String _fmt(int ms) {
@@ -324,6 +336,7 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
   }
 
   bool _isHomeworkRow(_TopicRow r) {
+    if (r.type.trim().toLowerCase() == 'report') return false;
     final type = r.type.trim().toLowerCase();
     if (type == 'homework') return true;
     if (r.homeworkRef.trim().isNotEmpty) return true;
@@ -1065,12 +1078,16 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
                                                     ),
                                                   const SizedBox(height: 8),
                                                   Text(
-                                                    lastMessage.trim().isEmpty
-                                                        ? '—'
-                                                        : _short(
-                                                            lastMessage,
-                                                            90,
-                                                          ),
+                                                    isReport
+                                                        ? _reportPreview(
+                                                            lastMessage)
+                                                        : lastMessage.trim()
+                                                                .isEmpty
+                                                            ? '—'
+                                                            : _short(
+                                                                lastMessage,
+                                                                90,
+                                                              ),
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,

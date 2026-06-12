@@ -4033,18 +4033,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           children: [
             Expanded(
               child: _heroActionTile(
-                label: 'Book',
-                subtitle: 'Session',
-                icon: Icons.menu_book_rounded,
-                iconBg: const Color(0xFF0E4F8A),
-                iconFg: const Color(0xFF6FE8F1),
-                onTap: _openCourseBook,
-                compact: compact,
-              ),
-            ),
-            _heroDividerV(compact: compact),
-            Expanded(
-              child: _heroActionTile(
                 label: 'Review',
                 subtitle: 'Progress',
                 icon: Icons.reviews_rounded,
@@ -4054,20 +4042,19 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 compact: compact,
               ),
             ),
+            _heroDividerV(compact: compact),
+            Expanded(
+              child: _heroActionTile(
+                label: 'Message',
+                subtitle: 'Teacher',
+                icon: Icons.mail_rounded,
+                iconBg: const Color(0xFF4A2F77),
+                iconFg: const Color(0xFFD279FF),
+                onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+                compact: compact,
+              ),
+            ),
           ],
-        ),
-        _heroDividerH(),
-        SizedBox(
-          width: double.infinity,
-          child: _heroActionTile(
-            label: 'Message',
-            subtitle: '',
-            icon: Icons.mail_rounded,
-            iconBg: const Color(0xFF4A2F77),
-            iconFg: const Color(0xFFD279FF),
-            onTap: _mailingTeacher ? null : _mailTeacherDirectly,
-            compact: compact,
-          ),
         ),
       ],
     );
@@ -4229,7 +4216,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           iconBg: const Color(0xFF6D471D),
           iconColor: const Color(0xFFFF9A22),
           label: 'Payment',
-          pct: paymentPct,
+          pct: null,
           valueLabel: paymentLabel,
           barColor: const Color(0xFFFF9800),
           onTap: onTapPayment,
@@ -4243,7 +4230,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     required Color iconBg,
     required Color iconColor,
     required String label,
-    required int pct,
+    int? pct,
     required Color barColor,
     String? valueLabel,
     VoidCallback? onTap,
@@ -4277,7 +4264,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ),
                   ),
                   Text(
-                    valueLabel ?? '$pct%',
+                    valueLabel ?? (pct != null ? '$pct%' : ''),
                     style: TextStyle(
                       color: barColor,
                       fontWeight: FontWeight.w900,
@@ -4286,16 +4273,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  value: (pct / 100).clamp(0.0, 1.0),
-                  minHeight: 8,
-                  backgroundColor: Colors.white.withValues(alpha: 0.22),
-                  valueColor: AlwaysStoppedAnimation<Color>(barColor),
+              if (pct != null) ...[
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: (pct / 100).clamp(0.0, 1.0),
+                    minHeight: 8,
+                    backgroundColor: Colors.white.withValues(alpha: 0.22),
+                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),

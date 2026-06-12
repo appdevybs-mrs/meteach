@@ -483,9 +483,7 @@ class _TeacherLearnerProfileScreenState
   }
 
   String _reportSubject(String courseTitle) {
-    final yy = (DateTime.now().year % 100).toString().padLeft(2, '0');
-    final title = courseTitle.trim().isEmpty ? 'Course' : courseTitle.trim();
-    return "RC - $title '$yy";
+    return 'Performance Card';
   }
 
   String _monthLabel() {
@@ -522,6 +520,8 @@ class _TeacherLearnerProfileScreenState
         if (threadId.isEmpty || e.value is! Map) continue;
         final t = Map<dynamic, dynamic>.from(e.value as Map);
         if (t['isGroup'] == true) continue;
+        final tType = (t['type'] ?? '').toString().trim().toLowerCase();
+        if (tType != 'report') continue;
         final participants = t['participants'];
         if (participants is! Map) continue;
         final pm = Map<dynamic, dynamic>.from(participants);
@@ -576,6 +576,8 @@ class _TeacherLearnerProfileScreenState
     required String learnerUid,
     required String body,
     required String subject,
+    required String learnerName,
+    required String teacherName,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final msgRef = _db.child('mail_messages/$threadId').push();
@@ -583,9 +585,7 @@ class _TeacherLearnerProfileScreenState
     if (msgKey == null || msgKey.trim().isEmpty) {
       throw Exception('Could not create report message.');
     }
-    final preview = body.trim().length > 80
-        ? body.trim().substring(0, 80)
-        : body.trim();
+    final preview = body.trim();
     final updates = <String, dynamic>{
       'mail_messages/$threadId/$msgKey': {
         'fromUid': teacherUid,
@@ -604,15 +604,21 @@ class _TeacherLearnerProfileScreenState
       'mail_threads/$threadId/lastMessage': preview,
       'mail_index/$teacherUid/$threadId/subject': subject,
       'mail_index/$teacherUid/$threadId/type': 'report',
+      'mail_index/$teacherUid/$threadId/peerUid': learnerUid,
+      'mail_index/$teacherUid/$threadId/peerName': learnerName,
       'mail_index/$teacherUid/$threadId/updatedAt': now,
       'mail_index/$teacherUid/$threadId/lastMessage': preview,
       'mail_index/$teacherUid/$threadId/unreadCount': 0,
       'mail_index/$teacherUid/$threadId/deletedAt': null,
+      'mail_index/$teacherUid/$threadId/homeworkRef': null,
       'mail_index/$learnerUid/$threadId/subject': subject,
       'mail_index/$learnerUid/$threadId/type': 'report',
+      'mail_index/$learnerUid/$threadId/peerUid': teacherUid,
+      'mail_index/$learnerUid/$threadId/peerName': teacherName,
       'mail_index/$learnerUid/$threadId/updatedAt': now,
       'mail_index/$learnerUid/$threadId/lastMessage': preview,
       'mail_index/$learnerUid/$threadId/deletedAt': null,
+      'mail_index/$learnerUid/$threadId/homeworkRef': null,
       'mail_index/$learnerUid/$threadId/unreadCount': ServerValue.increment(1),
       'mail_state/$teacherUid/$threadId/lastReadAt': now,
       'mail_state/$teacherUid/$threadId/lastDeliveredAt': now,
@@ -913,6 +919,8 @@ class _TeacherLearnerProfileScreenState
                             'note': noteC.text.trim().isEmpty
                                 ? ''
                                 : noteC.text.trim(),
+                            'learnerName': learnerName,
+                            'teacherName': meName,
                           });
 
                           await _sendReportMail(
@@ -921,6 +929,8 @@ class _TeacherLearnerProfileScreenState
                             learnerUid: widget.learnerUid,
                             body: body,
                             subject: subject,
+                            learnerName: learnerName,
+                            teacherName: meName,
                           );
 
                           final skillValues = skills.map(
@@ -1795,7 +1805,7 @@ class _ReportCardDiagramV3 extends StatelessWidget {
                           Text(
                             schoolTitle.isNotEmpty
                                 ? schoolTitle
-                                : 'Dream English Academy',
+                                : 'Your Bridge School',
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.86),
                               fontWeight: FontWeight.w800,

@@ -457,6 +457,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       courseKey: widget.courseKey,
       sessionId: widget.sessionId,
     );
+    if (_asBool(map['videoCompleted'])) return;
+
     final materialsCompleted = _asBool(map['materialsCompleted']);
     final durationMs = _controller?.value.duration.inMilliseconds ?? 0;
 
@@ -470,7 +472,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         'videoCompletedAt': ServerValue.timestamp,
         'videoPositionMs': durationMs,
         'videoDurationMs': durationMs,
-        'completed': true,
+        'completed': materialsCompleted || true,
         'lastOpenedAt': ServerValue.timestamp,
         'updatedAt': ServerValue.timestamp,
       },

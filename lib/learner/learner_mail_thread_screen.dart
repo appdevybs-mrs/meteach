@@ -3033,6 +3033,13 @@ class _ReportCardContent extends StatelessWidget {
     return const Color(0xFFEF4444);
   }
 
+  String _scoreLabel(int v) {
+    if (v >= 90) return 'Excellent';
+    if (v >= 70) return 'Good';
+    if (v >= 40) return 'Developing';
+    return 'Needs Improvement';
+  }
+
   @override
   Widget build(BuildContext context) {
     final skills = (data['skills'] as Map?)
@@ -3043,6 +3050,10 @@ class _ReportCardContent extends StatelessWidget {
         <String, dynamic>{};
     final note = (data['note'] as String?)?.trim() ?? '';
     final month = (data['month'] as String?) ?? '';
+    final course = (data['course'] as String?) ?? '';
+    final learnerName = (data['learnerName'] as String?) ?? 'Learner';
+    final teacherName = (data['teacherName'] as String?) ?? '';
+    final schoolTitle = (data['schoolTitle'] as String?) ?? '';
     const navy = Color(0xFF1F4E79);
 
     return LayoutBuilder(
@@ -3051,7 +3062,7 @@ class _ReportCardContent extends StatelessWidget {
 
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
@@ -3069,50 +3080,67 @@ class _ReportCardContent extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.assessment_rounded, size: 18, color: navy),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Learner Progress Report',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 13,
-                      color: navy,
+                  const Icon(Icons.assessment_rounded, size: 22, color: navy),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$learnerName\'s Performance - $month',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        color: navy,
+                      ),
                     ),
                   ),
                 ],
               ),
-              if (month.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  month,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF64748B),
-                    fontWeight: FontWeight.w600,
+              if (course.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: navy.withAlpha(10),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: navy.withAlpha(30)),
+                  ),
+                  child: Text(
+                    course,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: navy,
+                    ),
                   ),
                 ),
               ],
               if (stats.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: [
                     if (stats['attendance'] != null)
                       _chip(
+                        Icons.calendar_month_rounded,
                         'Attendance',
                         '${stats['attendance']}%',
                         _attC(stats['attendance']),
                       ),
                     if (stats['lessonsCovered'] != null)
                       _chip(
+                        Icons.menu_book_rounded,
                         'Lessons',
                         '${stats['lessonsCovered']}',
                         const Color(0xFF3B82F6),
                       ),
                     if (stats['homeworkPending'] != null)
                       _chip(
+                        Icons.home_work_rounded,
                         'HW Pending',
                         '${stats['homeworkPending']}',
                         ((stats['homeworkPending'] as num?)?.toInt() ?? 0) > 0
@@ -3133,7 +3161,7 @@ class _ReportCardContent extends StatelessWidget {
                       Expanded(
                         child: _skillColumn(skills, 0, 4),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: _skillColumn(skills, 4, 8),
                       ),
@@ -3143,24 +3171,65 @@ class _ReportCardContent extends StatelessWidget {
                   _skillColumn(skills, 0, 8),
               ],
               if (note.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1, color: Color(0xFFE8EDF4)),
                 const SizedBox(height: 10),
+                const Text(
+                  '📝  Teacher\'s Note',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF8EC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFFD9A3)),
+                  padding: const EdgeInsets.only(left: 10),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                        color: Color(0xFF1F4E79),
+                        width: 3,
+                      ),
+                    ),
                   ),
                   child: Text(
                     note,
                     style: const TextStyle(
-                      fontSize: 11,
-                      height: 1.30,
-                      color: Color(0xFF3F2A04),
-                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      height: 1.35,
+                      color: Color(0xFF1E293B),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
+                ),
+              ],
+              if (teacherName.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1, color: Color(0xFFE8EDF4)),
+                const SizedBox(height: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Signed: $teacherName',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                    if (schoolTitle.isNotEmpty)
+                      Text(
+                        schoolTitle,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ],
@@ -3177,35 +3246,42 @@ class _ReportCardContent extends StatelessWidget {
     return const Color(0xFFEF4444);
   }
 
-  Widget _chip(String label, String value, Color color) {
+  Widget _chip(IconData icon, String label, String value, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: color.withAlpha(18),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: color.withAlpha(50)),
       ),
-      child: RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: TextStyle(
-                color: color.withAlpha(170),
-                fontWeight: FontWeight.w700,
-                fontSize: 10,
-              ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '$label: ',
+                  style: TextStyle(
+                    color: color.withAlpha(170),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+                TextSpan(
+                  text: value,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
             ),
-            TextSpan(
-              text: value,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w900,
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -3221,7 +3297,7 @@ class _ReportCardContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final entry in slice) ...[
-          if (entry != slice.first) const SizedBox(height: 4),
+          if (entry != slice.first) const SizedBox(height: 8),
           _skillRow(entry.key, skills[entry.key] ?? 0),
         ],
       ],
@@ -3231,45 +3307,58 @@ class _ReportCardContent extends StatelessWidget {
   Widget _skillRow(String key, int score) {
     final label = _skillLabels[key] ?? key;
     final color = _scoreColor(score);
+    final grade = _scoreLabel(score);
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 94,
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF334155),
+        Row(
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF334155),
+              ),
             ),
-          ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: color.withAlpha(20),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                grade,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '$score%',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: (score / 100.0).clamp(0.0, 1.0),
-              minHeight: 8,
-              backgroundColor: color.withAlpha(25),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-        ),
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 32,
-          child: Text(
-            '$score%',
-            textAlign: TextAlign.right,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w900,
-              color: color,
-            ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: (score / 100.0).clamp(0.0, 1.0),
+            minHeight: 12,
+            backgroundColor: color.withAlpha(25),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
           ),
         ),
       ],

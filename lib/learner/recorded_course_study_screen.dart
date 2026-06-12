@@ -714,6 +714,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Future<void> _markMaterialsCompleted(_RecordedSession session) async {
     _debug('markMaterialsCompleted sessionId=${session.id}');
+    if (_progressOf(session.id).materialsCompleted) return;
     final current = _progressOf(session.id);
     final updated = current.copyWith(
       materialsCompleted: true,

@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../services/mail_consistency_service.dart';
@@ -24,7 +25,7 @@ class TeacherMailScreen extends StatefulWidget {
   State<TeacherMailScreen> createState() => _TeacherMailScreenState();
 }
 
-enum _InboxTabRole { learners, teachers, admin }
+enum _InboxTabRole { learners, teachers, admin, reports }
 
 enum _MailViewMode { latestFirst, byLearner }
 
@@ -211,6 +212,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
   }
 
   bool _matchesTab(_InboxTabRole tab, _TopicRow r) {
+    if (tab == _InboxTabRole.reports) {
+      return r.type.trim().toLowerCase() == 'report';
+    }
     final role = _bestRole(r);
     final normalized = role.isEmpty ? 'learner' : role;
 
@@ -1495,9 +1499,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     required int learnersCount,
     required int teachersCount,
     required int adminCount,
+    required int reportsCount,
     required int learnersUnread,
     required int teachersUnread,
     required int adminUnread,
+    required int reportsUnread,
   }) {
     final scheme = Theme.of(context).colorScheme;
     final screenWidth = MediaQuery.sizeOf(context).width;
@@ -1583,6 +1589,23 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
               ],
             ),
           ),
+          Tab(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Reports ($reportsCount)',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (reportsUnread > 0) ...[
+                  const SizedBox(width: 6),
+                  _UnreadPill(value: reportsUnread),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1597,7 +1620,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
     );
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: Color.alphaBlend(
           scheme.primary.withValues(alpha: 0.03),
@@ -1658,6 +1681,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 allRows,
                 _InboxTabRole.admin,
               );
+              final reportsCount = allRows
+                  .where((r) => r.type.trim().toLowerCase() == 'report')
+                  .length;
               final learnersUnread = _unreadForTab(
                 allRows,
                 _InboxTabRole.learners,
@@ -1667,6 +1693,9 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                 _InboxTabRole.teachers,
               );
               final adminUnread = _unreadForTab(allRows, _InboxTabRole.admin);
+              final reportsUnread = allRows
+                  .where((r) => r.type.trim().toLowerCase() == 'report')
+                  .fold<int>(0, (s, r) => s + r.unreadCount);
               final selectedRow = desktopWorkspace
                   ? _desktopSelectedRow(allRows)
                   : null;
@@ -1677,9 +1706,11 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                     learnersCount: learnersCount,
                     teachersCount: teachersCount,
                     adminCount: adminCount,
+                    reportsCount: reportsCount,
                     learnersUnread: learnersUnread,
                     teachersUnread: teachersUnread,
                     adminUnread: adminUnread,
+                    reportsUnread: reportsUnread,
                   ),
                   const SizedBox(height: 2),
                   Expanded(
@@ -1688,6 +1719,7 @@ class _TeacherMailScreenState extends State<TeacherMailScreen> {
                         _buildTab(_InboxTabRole.learners, allRows),
                         _buildTab(_InboxTabRole.teachers, allRows),
                         _buildTab(_InboxTabRole.admin, allRows),
+                        _buildTab(_InboxTabRole.reports, allRows),
                       ],
                     ),
                   ),
@@ -1879,14 +1911,27 @@ class _ThreadTile extends StatelessWidget {
     return text;
   }
 
+  String _reportPreview(String raw) {
+    try {
+      final parsed = jsonDecode(raw.trim());
+      if (parsed is Map) {
+        final month = (parsed['month'] ?? '').toString().trim();
+        if (month.isNotEmpty) return '📋 $month';
+      }
+    } catch (_) {}
+    return _firstSentence(raw);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final shownSubject = _displaySubject(row.subject);
     final subject = shownSubject.isEmpty ? '(No topic)' : shownSubject;
-    final preview = _firstSentence(row.lastMessage);
     final isReport = row.type.trim().toLowerCase() == 'report';
+    final preview = isReport
+        ? _reportPreview(row.lastMessage)
+        : _firstSentence(row.lastMessage);
 
     final bgColor = row.unreadCount > 0
         ? Color.alphaBlend(
@@ -2914,6 +2959,7 @@ class _TopicRow {
   final String groupPicUrl;
 
   bool get isHomework {
+    if (type.toLowerCase() == 'report') return false;
     if (type.toLowerCase() == 'homework') return true;
     if (homeworkRef.trim().isNotEmpty) return true;
     final s = subject.trim().toLowerCase();
