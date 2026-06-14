@@ -2416,14 +2416,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      final msg = e.toString().contains('National ID')
-          ? 'Your National ID is needed to generate certificates. Please message the school on WhatsApp or the platform with your ID (front and back) or passport copy so we can add it to your profile.'
-          : toHumanError(e, fallback: 'Could not generate certificate.');
-      AppToast.show(
-        context,
-        msg,
-        type: AppToastType.error,
-      );
+      if (e.toString().contains('National ID')) {
+        _showNationalIdRequiredDialog();
+      } else {
+        AppToast.show(
+          context,
+          toHumanError(e, fallback: 'Could not generate certificate.'),
+          type: AppToastType.error,
+        );
+      }
     }
   }
 
@@ -2432,6 +2433,73 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return moduleKeyBase.isNotEmpty
         ? '${moduleKeyBase}_${moduleIndex + 1}'
         : 'm${moduleIndex + 1}';
+  }
+
+  void _showNationalIdRequiredDialog() {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => Dialog(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 200),
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                child: const Icon(
+                  Icons.badge_outlined,
+                  size: 32,
+                  color: Color(0xFFD97706),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'National ID Required',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'To download certificates, we need your National ID on file.\n\n'
+                'Send us a photo of your ID (front & back) or passport via '
+                'WhatsApp or the app\'s messaging, and we will add it to your profile.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF475569),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Got it'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildGeneratingCertificateDialog() {
@@ -2518,14 +2586,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         loadingDialogContext = null;
       }
       if (!mounted) return;
-      final msg = e.toString().contains('National ID')
-          ? 'Your National ID is needed to generate certificates. Please message the school on WhatsApp or the platform with your ID (front and back) or passport copy so we can add it to your profile.'
-          : toHumanError(e, fallback: 'Could not generate milestone certificate.');
-      AppToast.show(
-        context,
-        msg,
-        type: AppToastType.error,
-      );
+      if (e.toString().contains('National ID')) {
+        _showNationalIdRequiredDialog();
+      } else {
+        AppToast.show(
+          context,
+          toHumanError(e, fallback: 'Could not generate milestone certificate.'),
+          type: AppToastType.error,
+        );
+      }
     } finally {
       if (loadingDialogContext != null && loadingDialogContext!.mounted) {
         Navigator.of(loadingDialogContext!).pop();
