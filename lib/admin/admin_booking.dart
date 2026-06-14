@@ -1205,6 +1205,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   }
 
   Future<int?> _showSessionChoiceSheet({
+    required String courseId,
     required String title,
     required String description,
     required _CourseSyllabus syllabus,
@@ -1369,6 +1370,41 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                             ),
                                           ),
                                         ),
+                                        if (session.objective.isNotEmpty ||
+                                            session.skillType.isNotEmpty)
+                                          SizedBox(
+                                            height: 26,
+                                            child: TextButton.icon(
+                                              onPressed: () {
+                                                _showSessionObjectiveSheet(
+                                                  courseId: courseId,
+                                                  sessionNo: session.sessionNo,
+                                                );
+                                              },
+                                              style: TextButton.styleFrom(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 2,
+                                                ),
+                                                minimumSize: Size.zero,
+                                                tapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                foregroundColor:
+                                                    Colors.grey.shade500,
+                                              ),
+                                              icon: const Icon(
+                                                Icons.info_outline_rounded,
+                                                size: 14,
+                                              ),
+                                              label: const Text(
+                                                '',
+                                                style: TextStyle(
+                                                  fontSize: 0,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   ),
@@ -1524,6 +1560,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                       borderRadius: BorderRadius.circular(14),
                       onTap: () async {
                         final picked = await _showSessionChoiceSheet(
+                          courseId: sourceSlot.courseId,
                           title: 'Choose Session',
                           description:
                               'Swipe through the session cards, then keep the current session or choose another one before picking the new slot.',
@@ -1878,6 +1915,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     );
 
     final chosen = await _showSessionChoiceSheet(
+      courseId: slot.courseId,
       title: 'Change Session Only',
       description:
           'Keep date, time, and teacher the same. Only the session number will change.',
@@ -2050,6 +2088,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     );
 
     final chosen = await _showSessionChoiceSheet(
+      courseId: slot.courseId,
       title: 'Change Session for Group',
       description:
           'Keep date, time, and teacher the same. The session number will change for all learners in this slot.',
@@ -2559,6 +2598,221 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   // ========================= Slot Details =========================
 
+  Future<void> _showSessionObjectiveSheet({
+    required String courseId,
+    required int sessionNo,
+  }) async {
+    if (courseId.isEmpty || sessionNo <= 0) {
+      _toast('Invalid session.');
+      return;
+    }
+
+    try {
+      final snap = await _db.child('syllabi/$courseId/flexible').get();
+      Map<String, dynamic>? found;
+
+      if (snap.exists && snap.value is Map) {
+        final root = (snap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+        final rawUnits = root['units'];
+        if (rawUnits is List) {
+          int globalNo = 1;
+          for (final unitRaw in rawUnits) {
+            if (unitRaw is! Map) continue;
+            final unit = unitRaw.map((k, v) => MapEntry(k.toString(), v));
+            final rawSessions = unit['sessions'];
+            if (rawSessions is! List) continue;
+            for (final sessionRaw in rawSessions) {
+              if (sessionRaw is! Map) continue;
+              final session = sessionRaw.map(
+                (k, v) => MapEntry(k.toString(), v),
+              );
+              if (globalNo == sessionNo) {
+                found = {
+                  ...session,
+                  'unitTitle': (unit['title'] ?? '').toString().trim(),
+                  'unitOrder': _toInt(unit['order'], fallback: 0),
+                  'unitOtherTitle':
+                      (unit['otherTitle'] ?? '').toString().trim(),
+                };
+                break;
+              }
+              globalNo += 1;
+            }
+            if (found != null) break;
+          }
+        }
+      }
+
+      if (!mounted) return;
+      if (found == null) {
+        _toast('Session details not found.');
+        return;
+      }
+
+      final title = (found['title'] ?? '').toString().trim();
+      final objective = (found['objective'] ?? '').toString().trim();
+      final content = (found['content'] ?? '').toString().trim();
+      final homework = (found['homework'] ?? '').toString().trim();
+      final skillType = (found['skillType'] ?? '').toString().trim();
+      final duration = _toInt(found['durationMinutes'], fallback: 0);
+      final unitTitle = (found['unitTitle'] ?? '').toString().trim();
+      final unitOrder = _toInt(found['unitOrder'], fallback: 0);
+      final unitOtherTitle =
+          (found['unitOtherTitle'] ?? '').toString().trim();
+      final materialsUrl = (found['materialsUrl'] ?? '').toString().trim();
+      final homeworkUrl = (found['homeworkUrl'] ?? '').toString().trim();
+
+      final unitLabel = unitTitle.isEmpty
+          ? ''
+          : (unitOtherTitle.isNotEmpty
+                ? '$unitOtherTitle: $unitTitle'
+                : (unitOrder > 0 ? 'Unit $unitOrder: $unitTitle' : unitTitle));
+      final sessionLabel = title.isEmpty
+          ? 'Session $sessionNo'
+          : 'Session $sessionNo — $title';
+
+      final skillIcon = switch (skillType.toLowerCase()) {
+        'listening' => Icons.headphones_rounded,
+        'speaking' => Icons.record_voice_over_rounded,
+        'reading' => Icons.book_rounded,
+        'writing' => Icons.edit_rounded,
+        'grammar' => Icons.text_fields_rounded,
+        'vocabulary' => Icons.abc_rounded,
+        'project' => Icons.build_circle_rounded,
+        _ => Icons.menu_book_rounded,
+      };
+
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        builder: (modalCtx) {
+          final bottomPad = MediaQuery.of(modalCtx).viewPadding.bottom;
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(18, 8, 18, 12 + bottomPad),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (unitLabel.isNotEmpty) ...[
+                    Text(
+                      unitLabel,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.grey.shade600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                  ],
+                  Text(
+                    sessionLabel,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 17,
+                      color: primaryBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (skillType.isNotEmpty || duration > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          if (skillType.isNotEmpty) ...[
+                            Icon(skillIcon, size: 16, color: actionOrange),
+                            const SizedBox(width: 5),
+                            Text(
+                              skillType,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: actionOrange,
+                              ),
+                            ),
+                          ],
+                          if (skillType.isNotEmpty && duration > 0)
+                            const SizedBox(width: 12),
+                          if (duration > 0) ...[
+                            const Icon(
+                              Icons.schedule_rounded,
+                              size: 16,
+                              color: Color(0xFF6B7280),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$duration min',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  if (objective.isNotEmpty) ...[
+                    _SectionCard(
+                      icon: Icons.psychology_rounded,
+                      title: 'Objective',
+                      body: objective,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (content.isNotEmpty) ...[
+                    _SectionCard(
+                      icon: Icons.description_rounded,
+                      title: 'Content',
+                      body: content,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (homework.isNotEmpty) ...[
+                    _SectionCard(
+                      icon: Icons.home_rounded,
+                      title: 'Homework',
+                      body: homework,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (materialsUrl.isNotEmpty || homeworkUrl.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    if (materialsUrl.isNotEmpty)
+                      _UrlChip(
+                        icon: Icons.link_rounded,
+                        label: 'Materials',
+                        url: materialsUrl,
+                      ),
+                    if (homeworkUrl.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      _UrlChip(
+                        icon: Icons.assignment_rounded,
+                        label: 'Homework Link',
+                        url: homeworkUrl,
+                      ),
+                    ],
+                  ],
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (_) {
+      if (mounted) _toast('Failed to load session details.');
+    }
+  }
+
   Future<void> _openSlotDetails(_AdminBookedSlot slot) async {
     await _ensureLearnerProfiles(slot.learnerUids);
 
@@ -2626,12 +2880,49 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                 const SizedBox(height: 3),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Session ${slot.sessionNo <= 0 ? '—' : slot.sessionNo} • ${slot.learnerCount} learner${slot.learnerCount == 1 ? '' : 's'}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: actionOrange,
-                    ),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Session ${slot.sessionNo <= 0 ? '—' : slot.sessionNo} • ${slot.learnerCount} learner${slot.learnerCount == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: actionOrange,
+                        ),
+                      ),
+                      if (slot.sessionNo > 0) ...[
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 28,
+                          child: TextButton.icon(
+                            onPressed: () =>
+                                _showSessionObjectiveSheet(
+                                  courseId: slot.courseId,
+                                  sessionNo: slot.sessionNo,
+                                ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: actionOrange,
+                            ),
+                            icon: const Icon(
+                              Icons.info_outline_rounded,
+                              size: 16,
+                            ),
+                            label: const Text(
+                              'Details',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (!isSingleLearner) ...[
@@ -4152,6 +4443,112 @@ class _StatPill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
+
+  static const _primaryBlue = Color(0xFF1A2B48);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: _primaryBlue),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: _primaryBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+              color: Colors.grey.shade800,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UrlChip extends StatelessWidget {
+  const _UrlChip({
+    required this.icon,
+    required this.label,
+    required this.url,
+  });
+
+  final IconData icon;
+  final String label;
+  final String url;
+
+  static const _primaryBlue = Color(0xFF1A2B48);
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () {},
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: _primaryBlue.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _primaryBlue.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: _primaryBlue.withValues(alpha: 0.7)),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: _primaryBlue.withValues(alpha: 0.8),
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -575,8 +575,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final requiresVideo = _sessionRequiresVideo(session);
     final requiresMaterials = _sessionRequiresMaterials(session);
 
-    if (!requiresVideo && !requiresMaterials) return true;
-
     if (requiresVideo && requiresMaterials) {
       return p.videoCompleted || p.materialsCompleted;
     }
@@ -2418,9 +2416,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString().contains('National ID')
+          ? 'Your National ID is needed to generate certificates. Please message the school on WhatsApp or the platform with your ID (front and back) or passport copy so we can add it to your profile.'
+          : toHumanError(e, fallback: 'Could not generate certificate.');
       AppToast.show(
         context,
-        toHumanError(e, fallback: 'Could not generate certificate.'),
+        msg,
         type: AppToastType.error,
       );
     }
@@ -2517,9 +2518,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         loadingDialogContext = null;
       }
       if (!mounted) return;
+      final msg = e.toString().contains('National ID')
+          ? 'Your National ID is needed to generate certificates. Please message the school on WhatsApp or the platform with your ID (front and back) or passport copy so we can add it to your profile.'
+          : toHumanError(e, fallback: 'Could not generate milestone certificate.');
       AppToast.show(
         context,
-        toHumanError(e, fallback: 'Could not generate milestone certificate.'),
+        msg,
         type: AppToastType.error,
       );
     } finally {
