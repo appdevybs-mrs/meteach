@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -102,6 +103,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   final Map<String, StorageCheckResult> _storageCheckCacheByUrl =
       <String, StorageCheckResult>{};
 
+  late final ConfettiController _confettiController =
+      ConfettiController(duration: const Duration(seconds: 4));
+  bool _celebrated = false;
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +118,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   @override
   void dispose() {
     _offlineVideos.removeListener(_onOfflineVideosChanged);
+    _confettiController.dispose();
     super.dispose();
   }
 
@@ -267,6 +273,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _ensureSelectedUnits();
         _busy = false;
       });
+      _celebrateIfComplete();
       _debug(
         'loadAll success units=${_units.length} totalSessions=$_totalSessions '
         'completed=$_completedSessions expiresAt=$_expiresAt',
@@ -739,6 +746,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     setState(() {
       _progressBySessionId[session.id] = updated.copyWith(completed: completed);
     });
+    _celebrateIfComplete();
     _debug(
       'markMaterialsCompleted done sessionId=${session.id} completed=$completed',
     );
@@ -1037,6 +1045,78 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     } finally {
       if (mounted) setState(() => _openingMaterialsSessionId = null);
     }
+  }
+
+  Widget _buildCompletionBanner() {
+    if (!_courseCertificateUnlocked) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF0FDF4), Color(0xFFDCFCE7)],
+        ),
+        border: Border.all(color: const Color(0xFF86EFAC)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF22C55E),
+              borderRadius: BorderRadius.circular(19),
+            ),
+            child: const Icon(Icons.check_rounded, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Course Complete!',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    color: Color(0xFF166534),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$_completedSessions/$_totalSessions lessons',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
+                    color: Color(0xFF22C55E),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: _onCertificateTap,
+            icon: const Icon(Icons.workspace_premium_rounded, size: 16),
+            label: const Text('Certificate'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF166534),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTopOverviewCard() {
@@ -2398,6 +2478,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _snack('Certificate generation needs internet. Come back online to generate your certificate.');
       return;
     }
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _buildCertificateLoadingDialog(),
+    );
     try {
       final certId = 'course_${_sanitizeIdPart(_courseId)}';
       final cert = await _issueRecordedCertificate(
@@ -2409,12 +2495,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final bytes = await _certificatePdfService.generateCertificatePdfBytes(
         cert,
       );
+      if (mounted) Navigator.of(context).pop();
       await _presentCertificate(
         bytes: bytes,
         defaultFileName:
             'course_certificate_${_sanitizeIdPart(widget.courseKey)}.pdf',
       );
     } catch (e) {
+      if (mounted) Navigator.of(context).pop();
       if (!mounted) return;
       if (e.toString().contains('National ID')) {
         _showNationalIdRequiredDialog();
@@ -2425,6 +2513,80 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           type: AppToastType.error,
         );
       }
+    }
+  }
+
+  Widget _buildCertificateLoadingDialog() {
+    return PopScope(
+      canPop: false,
+      child: Material(
+        color: Colors.black54,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 36),
+            padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(36),
+                  ),
+                  child: const Icon(
+                    Icons.workspace_premium_rounded,
+                    size: 36,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Generating your certificate…',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Please wait a moment',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const LinearProgressIndicator(
+                  backgroundColor: Color(0xFFE2E8F0),
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _celebrateIfComplete() {
+    if (!_celebrated &&
+        _completedSessions == _totalSessions &&
+        _totalSessions > 0) {
+      _celebrated = true;
+      _confettiController.play();
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) _confettiController.play();
+      });
     }
   }
 
@@ -2503,19 +2665,63 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Widget _buildGeneratingCertificateDialog() {
-    return Dialog(
-      elevation: 0,
-      backgroundColor: Colors.transparent,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 140),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: const BrandedInlineLoader(
-          message: 'Preparing module certificate...',
+    return PopScope(
+      canPop: false,
+      child: Material(
+        color: Colors.black54,
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 36),
+            padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(36),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      '🎓',
+                      style: TextStyle(fontSize: 36),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Generating Module Certificate',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '⏳ Please wait while we prepare your PDF…',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const LinearProgressIndicator(
+                  backgroundColor: Color(0xFFE2E8F0),
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -2561,13 +2767,19 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final certId = 'module_${_sanitizeIdPart(_courseId)}_$moduleKey';
       final cert = await _issueRecordedCertificate(
         certId: certId,
-        certificateTitle: '$_title - $moduleLabel',
+        certificateTitle: _title,
         trainingDate: _moduleCompletionDate(moduleUnits),
         kind: 'milestone',
         moduleKey: moduleKey,
       );
-      final bytes = await _certificatePdfService.generateCertificatePdfBytes(
-        cert,
+      final rawTitle = moduleUnits.first.otherTitle.trim();
+      final displayModuleLabel = rawTitle.isEmpty
+          ? 'Module ${moduleIndex + 1}'
+          : 'Module ${moduleIndex + 1}: $rawTitle';
+      final bytes = await _certificatePdfService
+          .generateMilestoneCertificatePdfBytes(
+        cert: cert,
+        moduleLabel: displayModuleLabel,
       );
 
       if (loadingDialogContext != null && loadingDialogContext!.mounted) {
@@ -2618,22 +2830,93 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final proceed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Certificate Notice'),
-        content: const Text(
-          'Depending on your country of origin, this certificate may require stamping by our office. Please contact us if you need this process.\n\n'
-          'قد تتطلب هذه الشهادة ختمًا من مكتبنا حسب بلدك. يرجى التواصل معنا إذا كنت تحتاج إلى هذه الإجراءات.',
+      builder: (_) => Dialog(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.fromLTRB(24, 32, 24, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(36),
+                ),
+                child: const Center(
+                  child: Text(
+                    '🌍',
+                    style: TextStyle(fontSize: 36),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '📜 Certificate Notice',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Column(
+                  children: [
+                    Text(
+                      'Depending on your country of origin, this certificate may require stamping by our office. Please contact us if you need this process.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF475569),
+                        height: 1.5,
+                      ),
+                    ),
+                    SizedBox(height: 14),
+                    Text(
+                      'قد تتطلب هذه الشهادة ختمًا من مكتبنا حسب بلدك. يرجى التواصل معنا إذا كنت تحتاج إلى هذه الإجراءات.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF475569),
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('✅ Continue'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Continue'),
-          ),
-        ],
       ),
     );
 
@@ -2641,19 +2924,74 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     final action = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Certificate Ready'),
-        content: const Text('Print now or save/share to your device.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'share'),
-            child: const Text('Save / Share'),
+      builder: (_) => Dialog(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.fromLTRB(24, 32, 24, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, 'print'),
-            child: const Text('Print'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(36),
+                ),
+                child: const Center(
+                  child: Text(
+                    '✅',
+                    style: TextStyle(fontSize: 36),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Certificate Ready',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Your certificate is ready. Print it now or save/share it to your device.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF475569),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(context, 'print'),
+                  icon: const Icon(Icons.print_rounded, size: 18),
+                  label: const Text('🖨️ Print'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'share'),
+                  icon: const Icon(Icons.share_rounded, size: 18),
+                  label: const Text('💾 Save / Share'),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
 
@@ -4177,6 +4515,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                           children: [
                             _buildSyncErrorBanner(),
                             _buildOfflineCacheBanner(),
+                            _buildCompletionBanner(),
                             _buildUnitsList(),
                           ],
                         ),
@@ -4199,6 +4538,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       ],
                       _buildSyncErrorBanner(),
                       _buildOfflineCacheBanner(),
+                      _buildCompletionBanner(),
                       _buildUnitsList(),
                     ],
                   ),
@@ -4207,8 +4547,28 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
     }
 
+    final Widget wrappedContent = ConfettiWidget(
+      confettiController: _confettiController,
+      blastDirectionality: BlastDirectionality.explosive,
+      numberOfParticles: 60,
+      emissionFrequency: 0.08,
+      maxBlastForce: 40,
+      minBlastForce: 15,
+      colors: const [
+        Color(0xFF22C55E),
+        Color(0xFF3B82F6),
+        Color(0xFFF59E0B),
+        Color(0xFFEC4899),
+        Color(0xFF8B5CF6),
+        Color(0xFFEF4444),
+        Color(0xFF14B8A6),
+        Color(0xFFF97316),
+      ],
+      child: content,
+    );
+
     if (widget.embedded) {
-      return content;
+      return wrappedContent;
     }
 
     return Scaffold(
@@ -4293,7 +4653,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
               ),
             ),
-            Positioned.fill(child: content),
+            Positioned.fill(child: wrappedContent),
           ],
         ),
       ),

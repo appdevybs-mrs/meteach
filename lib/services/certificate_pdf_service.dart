@@ -294,6 +294,126 @@ class CertificatePdfService {
     return doc.save();
   }
 
+  static const _monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _fmtLongDate(DateTime d) {
+    return '${d.day.toString().padLeft(2, '0')}-${_monthNames[d.month - 1]}-${d.year}';
+  }
+
+  Future<Uint8List> generateMilestoneCertificatePdfBytes({
+    required Certificate cert,
+    required String moduleLabel,
+  }) async {
+    final doc = pw.Document();
+    final template = await _loadPdfTemplate('assets/images/milestone.pdf');
+    pw.Font? playfairRegular;
+    pw.Font? playfairBold;
+    try {
+      final regularBytes = await rootBundle.load(
+        'assets/fonts/PlayfairDisplay-Regular.ttf',
+      );
+      playfairRegular = pw.Font.ttf(regularBytes);
+      final boldBytes = await rootBundle.load(
+        'assets/fonts/PlayfairDisplay-Bold.ttf',
+      );
+      playfairBold = pw.Font.ttf(boldBytes);
+    } catch (_) {}
+    const double pageHeight = 842;
+
+    final issueDate = cert.createdAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
+        : DateTime.now();
+
+    // Bottom-origin Y → top-origin: top = pageHeight - y
+    const double fullNameY = 270;     // bottom 572
+    const double courseTitleY = 472.5;  // bottom 369.5 (0.5px up)
+    const double moduleLabelY = 499.5;  // bottom 342.5 (0.5px up)
+    const double cvnY = 640;          // bottom 202 (8px up)
+    const double timestampY = 751;    // bottom 91 (16px up)
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(595, pageHeight),
+        margin: pw.EdgeInsets.zero,
+        build: (_) {
+          return pw.Stack(
+            children: [
+              if (template != null)
+                pw.Positioned.fill(
+                  child: pw.Image(template, fit: pw.BoxFit.fill),
+                ),
+              pw.Positioned(
+                left: 66,
+                top: fullNameY,
+                child: pw.Text(
+                  cert.fullName.toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 22,
+                    font: playfairBold ?? playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 64,
+                top: courseTitleY,
+                child: pw.Text(
+                  cert.certificateTitle.toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    font: playfairBold ?? playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 64,
+                top: moduleLabelY,
+                child: pw.Text(
+                  moduleLabel,
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    font: playfairBold ?? playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 216,
+                top: cvnY,
+                child: pw.Text(
+                  cert.cvn.toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    font: playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 469,
+                top: timestampY,
+                child: pw.Text(
+                  _fmtLongDate(issueDate),
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    font: playfairRegular,
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc.save();
+  }
+
   Future<Uint8List> generateHardcopyCertificatePdfBytes({
     required Certificate cert,
     required HardcopyCertificateInput input,

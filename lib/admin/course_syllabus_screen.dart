@@ -1656,6 +1656,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                                     : () => _bulkUploadRecordedModuleAssets(
                                         group.moduleLabel,
                                       ),
+                                onEditLabel: () =>
+                                    _editModuleLabel(group),
                               ),
                               if (_isModuleExpanded(group.moduleLabel))
                                 for (final pair in group.units)
@@ -2210,6 +2212,47 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     setState(() => _unitExpanded[unitId] = !(_unitExpanded[unitId] ?? true));
   }
 
+  void _editModuleLabel(_ModuleUnitGroup group) {
+    final controller = TextEditingController(text: group.moduleLabel);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit module title'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Module title',
+            hintText: 'e.g. Module 1, Theme A, ...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final newLabel = controller.text.trim();
+              if (newLabel.isNotEmpty && newLabel != group.moduleLabel) {
+                for (final entry in group.units) {
+                  _units[entry.key] = entry.value.copyWith(
+                    otherTitle: newLabel,
+                  );
+                }
+                await _autoSaveIfRecorded(
+                  successMessage: 'Module title updated',
+                );
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _toggleModuleExpanded(String moduleLabel) {
     setState(
       () => _moduleExpanded[moduleLabel] =
@@ -2711,6 +2754,7 @@ class _ModuleHeader extends StatelessWidget {
     required this.onToggle,
     this.onClear,
     this.onBulkUpload,
+    this.onEditLabel,
   });
 
   final String label;
@@ -2720,6 +2764,7 @@ class _ModuleHeader extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback? onClear;
   final VoidCallback? onBulkUpload;
+  final VoidCallback? onEditLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -2752,6 +2797,13 @@ class _ModuleHeader extends StatelessWidget {
                   : Icons.keyboard_arrow_down_rounded,
               color: const Color(0xFF1E3A8A),
             ),
+            if (onEditLabel != null)
+              IconButton(
+                tooltip: 'Edit module title',
+                onPressed: onEditLabel,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                color: const Color(0xFF2563EB),
+              ),
             IconButton(
               tooltip: 'Bulk upload module assets',
               onPressed: onBulkUpload,

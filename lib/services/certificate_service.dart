@@ -88,6 +88,21 @@ class CertificateService {
     return '$_prefix-R$year-$sequence';
   }
 
+  String _cvnFromMilestone({
+    required String certificateTitle,
+    required int nowMs,
+  }) {
+    final year = DateTime.fromMillisecondsSinceEpoch(nowMs).year;
+    final words = certificateTitle.trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .take(3)
+        .toList();
+    final initials = words.map((w) => w[0].toUpperCase()).join();
+    final random = (nowMs % 1000).toString().padLeft(3, '0');
+    return '$_prefix-$year-$initials$random';
+  }
+
   DatabaseReference _recordedCertRef(String learnerUid, String certId) {
     return _usersRef
         .child(learnerUid)
@@ -491,11 +506,16 @@ class CertificateService {
 
     var cvn = existing?.certificate.cvn ?? '';
     if (cvn.isEmpty) {
-      cvn = _cvnFromRecordedId(
-        learnerUid: learnerUid,
-        certId: certId,
-        nowMs: now,
-      );
+      cvn = kind == 'milestone'
+          ? _cvnFromMilestone(
+              certificateTitle: certificateTitle,
+              nowMs: now,
+            )
+          : _cvnFromRecordedId(
+              learnerUid: learnerUid,
+              certId: certId,
+              nowMs: now,
+            );
       var unique = await isRecordedCVNUnique(
         cvn,
         learnerUid: learnerUid,

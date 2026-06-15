@@ -52,6 +52,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   int _activeTab = 0;
   String _searchQuery = '';
   String? _printingCertCvn;
+  String? _recordedKindFilter; // null = all, 'course', 'milestone'
 
 
 
@@ -225,12 +226,19 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   void _applyRecordedFilters() {
     final q = _searchQuery.trim().toLowerCase();
     _filteredRecordedCertificates = _recordedCertificates.where((entry) {
-      if (q.isEmpty) return true;
       final cert = entry.certificate;
-      return cert.fullName.toLowerCase().contains(q) ||
-          cert.cvn.toLowerCase().contains(q) ||
-          cert.certificateTitle.toLowerCase().contains(q) ||
-          cert.nationalIdNumber.toLowerCase().contains(q);
+      if (q.isNotEmpty &&
+          !cert.fullName.toLowerCase().contains(q) &&
+          !cert.cvn.toLowerCase().contains(q) &&
+          !cert.certificateTitle.toLowerCase().contains(q) &&
+          !cert.nationalIdNumber.toLowerCase().contains(q)) {
+        return false;
+      }
+      if (_recordedKindFilter != null &&
+          cert.certificateKind != _recordedKindFilter) {
+        return false;
+      }
+      return true;
     }).toList();
   }
 
@@ -486,9 +494,33 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: PopupMenuButton<String>(
+          Row(
+            children: [
+              _KindChip(
+                label: 'All',
+                selected: _recordedKindFilter == null,
+                onTap: () {
+                  setState(() => _recordedKindFilter = null);
+                },
+              ),
+              const SizedBox(width: 6),
+              _KindChip(
+                label: 'Course',
+                selected: _recordedKindFilter == 'course',
+                onTap: () {
+                  setState(() => _recordedKindFilter = 'course');
+                },
+              ),
+              const SizedBox(width: 6),
+              _KindChip(
+                label: 'Milestone',
+                selected: _recordedKindFilter == 'milestone',
+                onTap: () {
+                  setState(() => _recordedKindFilter = 'milestone');
+                },
+              ),
+              const Spacer(),
+              PopupMenuButton<String>(
               onSelected: (value) {
                 if (value == 'disable_before_date') {
                   _runRecordedQuickAction(deleteBeforeDate: false);
@@ -525,11 +557,12 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildRecordedCertificatesList() {
     if (_loadingRecorded) {
@@ -3103,6 +3136,41 @@ class _HardcopyFormSheetState extends State<_HardcopyFormSheet> {
   }
 }
 
+class _KindChip extends StatelessWidget {
+  const _KindChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : const Color(0xFF64748B),
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CertificateListItem extends StatelessWidget {
   final Certificate certificate;
   final VoidCallback onView;
@@ -3238,6 +3306,33 @@ class _CertificateListItem extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (certificate.certificateKind != null) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: certificate.certificateKind == 'milestone'
+                            ? const Color(0xFFFEF3C7)
+                            : const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        certificate.certificateKind == 'milestone'
+                            ? 'Milestone'
+                            : 'Course',
+                        style: TextStyle(
+                          color: certificate.certificateKind == 'milestone'
+                              ? const Color(0xFF92400E)
+                              : const Color(0xFF166534),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
                   const Spacer(),
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert, color: _softText),

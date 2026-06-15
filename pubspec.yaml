@@ -62,6 +62,7 @@ dependencies:
   webview_flutter_android: ^4.10.13
   webview_flutter_wkwebview: ^3.23.8
   flutter_markdown: ^0.7.6
+  confetti: ^0.8.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -91,3 +92,4 @@ flutter:
     - assets/fonts/PlayfairDisplay-Bold.ttf
     - assets/fonts/HughIsLife.ttf
     - assets/images/cpd.pdf
+    - assets/images/milestone.pdf
