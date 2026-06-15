@@ -519,49 +519,11 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                   setState(() => _recordedKindFilter = 'milestone');
                 },
               ),
-              const Spacer(),
-              PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'disable_before_date') {
-                  _runRecordedQuickAction(deleteBeforeDate: false);
-                } else if (value == 'delete_before_date') {
-                  _runRecordedQuickAction(deleteBeforeDate: true);
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'disable_before_date',
-                  child: Text('Disable downloads before date'),
-                ),
-                PopupMenuItem(
-                  value: 'delete_before_date',
-                  child: Text('Delete certificates before date'),
-                ),
-              ],
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  border: Border.all(color: _uiBorder),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.bolt_rounded, size: 18, color: _primaryBlue),
-                    SizedBox(width: 6),
-                    Text('Quick actions (filtered)'),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+            ],
+          ),
+        ],
+      ),
+    );
 }
 
   Widget _buildRecordedCertificatesList() {
@@ -589,14 +551,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         return _CertificateListItem(
           certificate: cert,
           onView: () => _showViewRecordedCertificate(cert),
-          onEdit: () => _showEditRecordedCertificateForm(entry),
-          onDelete: () => _deleteRecordedCertificateEntry(entry),
           onPrint: () => _printCertificate(cert),
-          onHardcopy: () => _printHardcopyCertificate(cert),
-          onToggleDownloads: () => _toggleRecordedDownloads(entry),
-          toggleDownloadsLabel: cert.downloadsEnabled
-              ? 'Disable download'
-              : 'Enable download',
         );
       },
     );
@@ -1312,16 +1267,19 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
         await widget.service.save(cert);
       }
 
-      if (certName.isNotEmpty) {
-        await widget.service.addSuggestedName(certName);
-      }
-      if (subline.isNotEmpty) {
-        await widget.service.addSuggestedSubline(subline);
-      }
-      final desc = _descriptionC.text.trim();
-      if (desc.isNotEmpty) {
-        await widget.service.addSuggestedDescription(desc);
-      }
+      // Best-effort suggestion writes — ignore failures
+      try {
+        if (certName.isNotEmpty) {
+          await widget.service.addSuggestedName(certName);
+        }
+        if (subline.isNotEmpty) {
+          await widget.service.addSuggestedSubline(subline);
+        }
+        final desc = _descriptionC.text.trim();
+        if (desc.isNotEmpty) {
+          await widget.service.addSuggestedDescription(desc);
+        }
+      } catch (_) {}
 
       if (mounted) {
         AppToast.show(
@@ -1514,7 +1472,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                       // File pickers based on type
                       if (_idType == 'national_id') ...[
                         _buildFilePickerTile(
-                          label: 'Front ID *',
+                          label: 'Front ID',
                           fileName: _frontIdUrl != null
                               ? 'Uploaded'
                               : (_isEditing && widget.certificate!.frontIdUrl != null
@@ -1536,7 +1494,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                         ),
                       ] else ...[
                         _buildFilePickerTile(
-                          label: 'Passport *',
+                          label: 'Passport',
                           fileName: _passportUrl != null
                               ? 'Uploaded'
                               : (_isEditing && widget.certificate!.passportUrl != null
@@ -3174,22 +3132,12 @@ class _KindChip extends StatelessWidget {
 class _CertificateListItem extends StatelessWidget {
   final Certificate certificate;
   final VoidCallback onView;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
   final VoidCallback onPrint;
-  final VoidCallback onHardcopy;
-  final VoidCallback? onToggleDownloads;
-  final String? toggleDownloadsLabel;
 
   const _CertificateListItem({
     required this.certificate,
     required this.onView,
-    required this.onEdit,
-    required this.onDelete,
     required this.onPrint,
-    required this.onHardcopy,
-    this.onToggleDownloads,
-    this.toggleDownloadsLabel,
   });
 
   Color _getStatusColor() {
@@ -3341,54 +3289,15 @@ class _CertificateListItem extends StatelessWidget {
                         case 'view':
                           onView();
                           break;
-                        case 'edit':
-                          onEdit();
-                          break;
                         case 'print':
                           onPrint();
                           break;
-                        case 'hardcopy':
-                          onHardcopy();
-                          break;
-                        case 'toggle_download':
-                          onToggleDownloads?.call();
-                          break;
-                        case 'delete':
-                          onDelete();
-                          break;
                       }
                     },
-                    itemBuilder: (_) {
-                      final items = <PopupMenuEntry<String>>[
-                        const PopupMenuItem(value: 'view', child: Text('View')),
-                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        const PopupMenuItem(
-                          value: 'print',
-                          child: Text('Print'),
-                        ),
-                        const PopupMenuItem(
-                          value: 'hardcopy',
-                          child: Text('Hardcopy'),
-                        ),
-                      ];
-                      if (onToggleDownloads != null) {
-                        items.add(
-                          PopupMenuItem(
-                            value: 'toggle_download',
-                            child: Text(
-                              toggleDownloadsLabel ?? 'Toggle download',
-                            ),
-                          ),
-                        );
-                      }
-                      items.add(
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete'),
-                        ),
-                      );
-                      return items;
-                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'view', child: Text('View')),
+                      PopupMenuItem(value: 'print', child: Text('Print')),
+                    ],
                   ),
                 ],
               ),
@@ -3665,18 +3574,13 @@ class _CertificateViewSheet extends StatelessWidget {
                   children: [
                     FilledButton.icon(
                       onPressed: () => _sharePdf(context),
-                      icon: const Icon(Icons.download_rounded, size: 18),
-                      label: const Text('Generate PDF'),
+                      icon: const Icon(Icons.share_rounded, size: 18),
+                      label: const Text('Save / Share'),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => _printPdf(context),
                       icon: const Icon(Icons.print_rounded, size: 18),
                       label: const Text('Print'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _printHardcopyPdf(context),
-                      icon: const Icon(Icons.description_outlined, size: 18),
-                      label: const Text('Hardcopy'),
                     ),
                   ],
                 ),

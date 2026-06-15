@@ -6458,112 +6458,88 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
                   final hwAvg = _asInt(hwFinal['avgScore']);
                   final hwRedo = _asInt(hwFinal['redoCount']);
+                  final summaryLine =
+                      'Behavior ${behaviorAvg > 0 ? behaviorAvg : '-'} /5 • '
+                      'Progress ${progressAvg > 0 ? progressAvg : '-'} /5 • '
+                      'HW ${hwAvg > 0 ? hwAvg : '-'} /100 • '
+                      'Redo $hwRedo';
 
                   final diagramUrl = (r['diagramUrl'] ?? '').toString().trim();
-                  final hasDiagram = diagramUrl.isNotEmpty;
 
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.only(bottom: 6),
                     child: _miniCard(
                       bg: Colors.white,
                       borderColor: AdminLearnersScreen.uiBorders,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            children: [
-                              _metricChip(Icons.star_border_rounded, 'Behavior', behaviorAvg, 5),
-                              _metricChip(Icons.trending_up_rounded, 'Progress', progressAvg, 5),
-                              _metricChip(Icons.assignment_rounded, 'HW', hwAvg, 100),
-                              _metricChip(Icons.replay_rounded, 'Redo', hwRedo, null),
-                            ],
+                          Text(
+                            summaryLine,
+                            style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
-                          const SizedBox(height: 10),
-                          if (courseTitle.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: _miniPill(courseTitle),
+                          const SizedBox(height: 6),
+                          Text(
+                            [
+                              if (courseTitle.isNotEmpty) courseTitle,
+                              if (byName.isNotEmpty) 'By $byName',
+                              if (createdAt.isNotEmpty) createdAt,
+                              if (reportId.isNotEmpty) '#$reportId',
+                            ].join(' • '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
                             ),
+                          ),
                           if (comment.isNotEmpty) ...[
-                            Container(
-                              padding: const EdgeInsets.only(left: 10),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  left: BorderSide(
-                                    color: AdminLearnersScreen.primaryBlue.withValues(alpha: 0.25),
-                                    width: 3,
-                                  ),
-                                ),
-                              ),
-                              child: Text(
-                                shortOneLine(comment, max: 200),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.black.withValues(alpha: 0.65),
-                                  fontSize: 12,
-                                  fontStyle: FontStyle.italic,
-                                ),
+                            const SizedBox(height: 6),
+                            Text(
+                              shortOneLine(comment),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.black.withValues(alpha: 0.68),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
                               ),
                             ),
-                            const SizedBox(height: 8),
                           ],
-                          Row(
-                            children: [
-                              if (byName.isNotEmpty) ...[
-                                Icon(Icons.person_rounded, size: 14, color: Colors.black.withValues(alpha: 0.4)),
-                                const SizedBox(width: 3),
-                                Text(
-                                  byName,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.black.withValues(alpha: 0.5),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                              ],
-                              if (createdAt.isNotEmpty) ...[
-                                Icon(Icons.calendar_today_rounded, size: 12, color: Colors.black.withValues(alpha: 0.4)),
-                                const SizedBox(width: 3),
-                                Text(
-                                  createdAt,
-                                  style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.5)),
-                                ),
-                                const SizedBox(width: 12),
-                              ],
-                              if (reportId.isNotEmpty) ...[
-                                Icon(Icons.tag_rounded, size: 14, color: Colors.black.withValues(alpha: 0.4)),
-                                const SizedBox(width: 3),
-                                Flexible(
-                                  child: Text(
-                                    '#$reportId',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.4)),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          if (hasDiagram) ...[
+                          if (diagramUrl.isNotEmpty) ...[
+                            const SizedBox(height: 6),
                             Align(
                               alignment: Alignment.centerLeft,
                               child: TextButton.icon(
                                 style: TextButton.styleFrom(
                                   visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  backgroundColor: AdminLearnersScreen.primaryBlue.withValues(alpha: 0.08),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
                                   ),
                                 ),
-                                onPressed: () => _openDiagramViewer(items, i),
-                                icon: const Icon(Icons.bar_chart_rounded, size: 16),
-                                label: const Text('View Report Card'),
+                                onPressed: () async {
+                                  final uri = Uri.tryParse(diagramUrl);
+                                  if (uri == null) {
+                                    _toast('Invalid report diagram link.');
+                                    return;
+                                  }
+                                  final ok = await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                  if (!ok) {
+                                    _toast(
+                                      'Could not open report diagram link.',
+                                    );
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.open_in_new_rounded,
+                                  size: 16,
+                                ),
+                                label: const Text('Open diagram'),
                               ),
                             ),
                           ],
@@ -6577,39 +6553,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
           ),
         ),
       ],
-    );
-  }
-
-  void _openDiagramViewer(List<Map<String, dynamic>> allItems, int currentIndex) {
-    final diagramItems = <Map<String, String>>[];
-    for (final item in allItems) {
-      final url = (item['diagramUrl'] ?? '').toString().trim();
-      if (url.isEmpty) continue;
-      final title = (item['courseTitle'] ?? '').toString().trim();
-      final date = _fmtDateMs(_asInt(item['createdAt']));
-      diagramItems.add({'url': url, 'label': [if (title.isNotEmpty) title, if (date.isNotEmpty) date].join(' — ')});
-    }
-    if (diagramItems.isEmpty) return;
-
-    final currentReportId = (allItems[currentIndex]['reportId'] ?? '').toString();
-    final startIdx = diagramItems.indexWhere((d) {
-      final idx = allItems.indexWhere((item) {
-        final rid = (item['reportId'] ?? '').toString();
-        final diagramUrl = (item['diagramUrl'] ?? '').toString().trim();
-        return rid == currentReportId && diagramUrl == d['url'];
-      });
-      return idx >= 0;
-    });
-    final initialIndex = startIdx >= 0 ? startIdx : 0;
-
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.94),
-      barrierDismissible: false,
-      builder: (_) => _DiagramViewer(
-        diagramItems: diagramItems,
-        initialIndex: initialIndex,
-      ),
     );
   }
 
@@ -6647,32 +6590,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
               minHeight: 6,
               backgroundColor: Colors.white,
               valueColor: AlwaysStoppedAnimation<Color>(valueColor),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static Widget _metricChip(IconData icon, String label, int value, int? max) {
-    final display = max != null ? '$value/$max' : '$value';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AdminLearnersScreen.appBg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: AdminLearnersScreen.primaryBlue),
-          const SizedBox(width: 4),
-          Text(
-            '$label $display',
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: AdminLearnersScreen.primaryBlue,
             ),
           ),
         ],
@@ -6814,177 +6731,6 @@ class _MiniState extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
-      ),
-    );
-  }
-}
-
-class _DiagramViewer extends StatefulWidget {
-  final List<Map<String, String>> diagramItems;
-  final int initialIndex;
-
-  const _DiagramViewer({
-    required this.diagramItems,
-    required this.initialIndex,
-  });
-
-  @override
-  State<_DiagramViewer> createState() => _DiagramViewerState();
-}
-
-class _DiagramViewerState extends State<_DiagramViewer> {
-  late PageController _pageController;
-  late int _currentPage;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentPage = widget.initialIndex;
-    _pageController = PageController(initialPage: _currentPage);
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.zero,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: widget.diagramItems.length,
-            onPageChanged: (i) => setState(() => _currentPage = i),
-            itemBuilder: (context, i) {
-              final item = widget.diagramItems[i];
-              final url = item['url'] ?? '';
-              return InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 5.0,
-                child: Center(
-                  child: Image.network(
-                    url,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => const Text(
-                      'Failed to load image',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                    loadingBuilder: (ctx, child, prog) {
-                      if (prog == null) return child;
-                      return const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + 8,
-                left: 8,
-                right: 8,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.6),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded, color: Colors.white),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      widget.diagramItems.length > 1
-                          ? '${_currentPage + 1} / ${widget.diagramItems.length}'
-                          : '',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + 16,
-                left: 16,
-                right: 16,
-              ),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.6),
-                  ],
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.diagramItems[_currentPage]['label'] ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (widget.diagramItems.length > 1)
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(
-                        widget.diagramItems.length,
-                        (i) => Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: i == _currentPage
-                                ? Colors.white
-                                : Colors.white.withValues(alpha: 0.35),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
