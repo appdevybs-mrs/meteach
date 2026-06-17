@@ -796,6 +796,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                             bookingCardKey: _dashboardBookingCardKey,
                             coursesListKey: _dashboardCoursesListKey,
                             bookingTopCardKey: _bookingTopCardKey,
+                            onOpenBooking: _openBookingScreen,
                           ),
                         ),
                       ),
@@ -828,12 +829,14 @@ class _LearnerDashboardLite extends StatefulWidget {
     required this.bookingCardKey,
     required this.coursesListKey,
     required this.bookingTopCardKey,
+    this.onOpenBooking,
   });
 
   final GlobalKey homeworkCardKey;
   final GlobalKey bookingCardKey;
   final GlobalKey coursesListKey;
   final GlobalKey<_BookingTopCardState> bookingTopCardKey;
+  final VoidCallback? onOpenBooking;
 
   @override
   State<_LearnerDashboardLite> createState() => _LearnerDashboardLiteState();
@@ -2362,7 +2365,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                     children: [
                       KeyedSubtree(
                         key: widget.bookingCardKey,
-                        child: _BookingTopCard(key: widget.bookingTopCardKey),
+                        child: _BookingTopCard(
+                          key: widget.bookingTopCardKey,
+                          onOpenBooking: widget.onOpenBooking,
+                        ),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -3128,7 +3134,9 @@ class _RingProgressPainter extends CustomPainter {
 }
 
 class _BookingTopCard extends StatefulWidget {
-  const _BookingTopCard({super.key});
+  const _BookingTopCard({super.key, this.onOpenBooking});
+
+  final VoidCallback? onOpenBooking;
 
   @override
   State<_BookingTopCard> createState() => _BookingTopCardState();
@@ -4126,15 +4134,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
       children: [
         InkWell(
           borderRadius: BorderRadius.circular(24),
-          onTap: () async {
-            unawaited(
-              OfflineActionGuard.runExclusive(
-                context,
-                'learner.booking.open_picker',
-                () => _openBookingCoursePicker(context),
-              ),
-            );
-          },
+          onTap: () => widget.onOpenBooking?.call(),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
@@ -4168,17 +4168,35 @@ class _BookingTopCardState extends State<_BookingTopCard>
                   child: const Icon(LearnerIcons.booking, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Book your next class',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      height: 1.2,
-                    ),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Book your next class',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'احجز درسك الآن لتجربة نظام الحجز',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 10),

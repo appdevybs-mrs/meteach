@@ -1116,6 +1116,37 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return _effectiveBookedCount(s) >= cap;
   }
 
+  _DaySlotSummary _daySlotSummary(
+    DateTime day, {
+    String? teacherId,
+  }) {
+    final dk = _dateKey(day);
+    final slots = _slotsForCurrentLesson().where((s) {
+      if (s.dayKey != dk) return false;
+      if (teacherId != null && s.teacherId != teacherId) return false;
+      return true;
+    }).toList();
+
+    if (slots.isEmpty) return _DaySlotSummary.none;
+
+    var hasAvailable = false;
+    var hasGroupJoin = false;
+
+    for (final s in slots) {
+      final status = _slotStatus(s, sessionNo: _flowLessonNo);
+      if (status == _SlotStatus.availableBook) {
+        hasAvailable = true;
+      } else if (status == _SlotStatus.joinSameSession ||
+          status == _SlotStatus.joinWithSessionChange) {
+        hasGroupJoin = true;
+      }
+    }
+
+    if (hasAvailable) return _DaySlotSummary.available;
+    if (hasGroupJoin) return _DaySlotSummary.groupOnly;
+    return _DaySlotSummary.none;
+  }
+
   _SlotStatus _slotStatus(_Slot s, {int? sessionNo}) {
     if (_isBookedByMe(s)) return _SlotStatus.booked;
 
@@ -4113,6 +4144,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   Widget _buildCancelEntryCard() {
+    final isAr = lessonChoiceArabic;
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: _openCancelBookingsSheet,
@@ -4120,43 +4152,48 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFEFEA),
+          color: const Color(0xFFB91C1C),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFF2B8A8)),
+          border: Border.all(color: const Color(0xFF991B1B)),
         ),
-        child: Row(
-          children: [
-            const Icon(Icons.cancel_schedule_send_rounded, color: actionOrange),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _cancelCardTitle(),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: actionOrange,
+        child: Directionality(
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+          child: Row(
+            children: [
+              const Icon(Icons.cancel_schedule_send_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: isAr
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _cancelCardTitle(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _cancelCardSubtitle(),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF8A3D27),
-                      fontSize: 12,
+                    const SizedBox(height: 2),
+                    Text(
+                      _cancelCardSubtitle(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 16,
-              color: actionOrange,
-            ),
-          ],
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: Colors.white,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -5760,43 +5797,91 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Expanded(child: buildPill(expand: true));
   }
 
-  Widget _buildStepLabel(int no, String text) {
+  Widget _buildStepLabel(
+    int no,
+    String text, {
+    int totalSteps = 3,
+    String? hint,
+  }) {
     final isAr = lessonChoiceArabic;
-    return Row(
-      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 24,
-          height: 24,
-          decoration: BoxDecoration(
-            color: primaryBlue.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: primaryBlue.withValues(alpha: 0.35)),
-          ),
-          child: Center(
-            child: Text(
-              '$no',
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
+        Row(
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
                 color: primaryBlue,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Center(
+                child: Text(
+                  '$no',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: primaryBlue,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 3,
+              ),
+              decoration: BoxDecoration(
+                color: primaryBlue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: primaryBlue.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Text(
+                '$no/$totalSteps',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: primaryBlue,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (hint != null && hint.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: EdgeInsets.only(
+              left: isAr ? 0 : 38,
+              right: isAr ? 38 : 0,
+            ),
+            child: Text(
+              hint,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
                 fontSize: 12,
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: primaryBlue,
-              fontSize: 15,
-            ),
-          ),
-        ),
+        ],
       ],
     );
   }
@@ -5962,53 +6047,309 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: uiBorder),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x0D000000),
-              blurRadius: 8,
-              offset: Offset(0, 4),
+              color: Color(0x14000000),
+              blurRadius: 20,
+              offset: Offset(0, 10),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              courseTitle,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                color: primaryBlue,
-                fontSize: 18,
-              ),
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: primaryBlue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.book_rounded,
+                    color: primaryBlue,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    courseTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: primaryBlue,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 16),
             _buildSessionLinePill(label: _sessionLabel(_flowLessonNo)),
-            const SizedBox(height: 3),
+            const SizedBox(height: 6),
             Text(
               'Session $_flowLessonNo of $_effectiveTotalSessions',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade700,
-                fontSize: 12,
+                color: Colors.grey.shade600,
+                fontSize: 13,
               ),
             ),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: () =>
-                  setState(() => flowStep = _BookingFlowStep.lessonChoice),
-              child: Text(
-                isAr ? 'تغيير الدرس' : 'Change lesson',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: actionOrange,
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: actionOrange,
+                  side: BorderSide(
+                    color: actionOrange.withValues(alpha: 0.4),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () =>
+                    setState(() => flowStep = _BookingFlowStep.lessonChoice),
+                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                label: Text(
+                  isAr ? 'تغيير الدرس' : 'Change lesson',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCalendarDayGrid({
+    required List<DateTime> days,
+    required DateTime? selectedDay,
+    required void Function(DateTime) onDaySelected,
+    String? teacherId,
+  }) {
+    if (days.isEmpty) return const SizedBox.shrink();
+    final sorted = List<DateTime>.from(days)..sort();
+    final firstMonth =
+        DateTime(sorted.first.year, sorted.first.month, 1);
+    final lastMonth =
+        DateTime(sorted.last.year, sorted.last.month, 1);
+    final months = <DateTime>[];
+    var m = firstMonth;
+    while (!m.isAfter(lastMonth)) {
+      months.add(m);
+      m = DateTime(m.year, m.month + 1, 1);
+    }
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        for (final month in months)
+          _buildMonthGrid(
+            month: month,
+            sortedDays: sorted,
+            selectedDay: selectedDay,
+            onDaySelected: onDaySelected,
+            teacherId: teacherId,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMonthGrid({
+    required DateTime month,
+    required List<DateTime> sortedDays,
+    required DateTime? selectedDay,
+    required void Function(DateTime) onDaySelected,
+    required String? teacherId,
+  }) {
+    final isAr = lessonChoiceArabic;
+    final monthDays = sortedDays
+        .where((d) =>
+            d.year == month.year && d.month == month.month)
+        .toSet()
+        .toList();
+    final daysInMonth =
+        DateTime(month.year, month.month + 1, 0).day;
+    final firstWeekday =
+        DateTime(month.year, month.month, 1).weekday;
+    final startOffset = firstWeekday - 1;
+
+    final weekdayLabels = isAr
+        ? ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س']
+        : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const monthNames = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          '${monthNames[month.month - 1]} ${month.year}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: primaryBlue,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: weekdayLabels
+              .map((l) => Expanded(
+                    child: Center(
+                      child: Text(
+                        l,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ))
+              .toList(),
+        ),
+        const SizedBox(height: 4),
+        ..._buildWeeks(
+          month: month,
+          daysInMonth: daysInMonth,
+          startOffset: startOffset,
+          monthDays: monthDays,
+          selectedDay: selectedDay,
+          onDaySelected: onDaySelected,
+          teacherId: teacherId,
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  List<Widget> _buildWeeks({
+    required DateTime month,
+    required int daysInMonth,
+    required int startOffset,
+    required List<DateTime> monthDays,
+    required DateTime? selectedDay,
+    required void Function(DateTime) onDaySelected,
+    required String? teacherId,
+  }) {
+    final weeks = <Widget>[];
+    var day = 1;
+    while (day <= daysInMonth) {
+      final cells = <Widget>[];
+      for (var col = 0; col < 7; col++) {
+        if ((day == 1 && col < startOffset) || day > daysInMonth) {
+          cells.add(const Expanded(child: SizedBox(height: 42)));
+        } else {
+          final currentDay =
+              DateTime(month.year, month.month, day);
+          final isAvailable = monthDays.any((d) =>
+              d.day == currentDay.day);
+          final isSelected = selectedDay != null &&
+              selectedDay.day == currentDay.day &&
+              selectedDay.month == currentDay.month &&
+              selectedDay.year == currentDay.year;
+          final summary = isAvailable
+              ? _daySlotSummary(currentDay, teacherId: teacherId)
+              : _DaySlotSummary.none;
+
+          cells.add(Expanded(
+            child: _buildCalendarCell(
+              dayNumber: day,
+              isAvailable: isAvailable,
+              isSelected: isSelected,
+              summary: summary,
+              onTap: isAvailable
+                  ? () => onDaySelected(currentDay)
+                  : null,
+            ),
+          ));
+          day++;
+        }
+      }
+      weeks.add(Row(
+        mainAxisSize: MainAxisSize.min,
+        children: cells,
+      ));
+    }
+    return weeks;
+  }
+
+  Widget _buildCalendarCell({
+    required int dayNumber,
+    required bool isAvailable,
+    required bool isSelected,
+    required _DaySlotSummary summary,
+    required VoidCallback? onTap,
+  }) {
+    final bool showDot =
+        isAvailable && summary != _DaySlotSummary.none;
+    final Color dotColor;
+    if (summary == _DaySlotSummary.available) {
+      dotColor = const Color(0xFF22C55E);
+    } else if (summary == _DaySlotSummary.groupOnly) {
+      dotColor = const Color(0xFFF97316);
+    } else {
+      dotColor = Colors.grey;
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Container(
+        height: 42,
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: isSelected ? primaryBlue : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '$dayNumber',
+              style: TextStyle(
+                fontWeight:
+                    isSelected || isAvailable
+                        ? FontWeight.w900
+                        : FontWeight.w600,
+                color: isSelected
+                    ? Colors.white
+                    : isAvailable
+                        ? primaryBlue
+                        : Colors.grey.shade400,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 2),
+            if (showDot)
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: dotColor,
+                ),
+              )
+            else
+              const SizedBox(height: 6),
           ],
         ),
       ),
@@ -6031,7 +6372,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStepLabel(1, isAr ? 'اختر معلم' : 'Choose a teacher'),
+        _buildStepLabel(
+          1,
+          isAr ? 'اختر معلم' : 'Choose a teacher',
+          hint: isAr
+              ? 'انقر على معلم لرؤية الأيام المتاحة'
+              : 'Tap a teacher to see available days',
+        ),
         const SizedBox(height: 8),
         if (shouldCollapseTeachers)
           _collapsedTeachersCard(teachers)
@@ -6165,54 +6512,35 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         if (selectedTeacherFirstId != null) ...[
           SizedBox(key: _byTeacherSelectionKey),
           const SizedBox(height: 10),
-          _buildStepLabel(2, isAr ? 'اختر يوم' : 'Choose a day'),
+          _buildStepLabel(
+            2,
+            isAr ? 'اختر يوم' : 'Choose a day',
+            hint: isAr
+                ? 'اختر يوماً لعرض الأوقات المتاحة'
+                : 'Pick a day to see available times',
+          ),
           const SizedBox(height: 6),
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: days.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) {
-                final d = days[i];
-                final on =
-                    selectedDay != null &&
-                    _dateKey(selectedDay!) == _dateKey(d);
-                final count = _availableTimesForTeacherDay(
-                  selectedTeacherFirstId!,
-                  d,
-                ).length;
-                return InkWell(
-                  onTap: () => setState(() {
-                    selectedDay = d;
-                    selectedTime = null;
-                  }),
-                  borderRadius: BorderRadius.circular(999),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: on ? primaryBlue : Colors.white,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: on ? primaryBlue : uiBorder),
-                    ),
-                    child: Center(
-                      child: Text(
-                        '${_friendlyDate(d)} - $count',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: on ? Colors.white : primaryBlue,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+          _buildCalendarDayGrid(
+            days: days,
+            selectedDay: selectedDay,
+            onDaySelected: (d) {
+              setState(() {
+                selectedDay = d;
+                selectedTime = null;
+              });
+            },
+            teacherId: selectedTeacherFirstId,
           ),
         ],
         if (selectedDay != null) ...[
           const SizedBox(height: 10),
-          _buildStepLabel(3, isAr ? 'اختر وقت' : 'Choose a time'),
+          _buildStepLabel(
+            3,
+            isAr ? 'اختر وقت' : 'Choose a time',
+            hint: isAr
+                ? 'اختر وقتاً مناسباً للمتابعة'
+                : 'Choose a suitable time to proceed',
+          ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -6430,52 +6758,34 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStepLabel(1, isAr ? 'اختر يوم' : 'Choose a day'),
+        _buildStepLabel(
+          1,
+          isAr ? 'اختر يوم' : 'Choose a day',
+          hint: isAr
+              ? 'اختر يوماً لعرض الأوقات المتاحة'
+              : 'Pick a day to see available times',
+        ),
         const SizedBox(height: 6),
-        SizedBox(
-          height: 44,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: days.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (_, i) {
-              final d = days[i];
-              final on =
-                  selectedDay != null && _dateKey(selectedDay!) == _dateKey(d);
-              final count = _slotsForCurrentLesson()
-                  .where((s) => s.dayKey == _dateKey(d))
-                  .length;
-              return InkWell(
-                onTap: () => setState(() {
-                  selectedDay = d;
-                  selectedTime = null;
-                  selectedTeacherId = null;
-                }),
-                borderRadius: BorderRadius.circular(999),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: on ? primaryBlue : Colors.white,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: on ? primaryBlue : uiBorder),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${_friendlyDate(d)} - $count',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: on ? Colors.white : primaryBlue,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
+        _buildCalendarDayGrid(
+          days: days,
+          selectedDay: selectedDay,
+          onDaySelected: (d) {
+            setState(() {
+              selectedDay = d;
+              selectedTime = null;
+              selectedTeacherId = null;
+            });
+          },
         ),
         if (selectedDay != null) ...[
           const SizedBox(height: 10),
-          _buildStepLabel(2, isAr ? 'اختر وقت' : 'Choose a time'),
+          _buildStepLabel(
+            2,
+            isAr ? 'اختر وقت' : 'Choose a time',
+            hint: isAr
+                ? 'اختر وقتاً لرؤية المعلمين المتاحين'
+                : 'Pick a time to see available teachers',
+          ),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -6601,7 +6911,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ],
         if (selectedTime != null) ...[
           const SizedBox(height: 10),
-          _buildStepLabel(3, isAr ? 'اختر معلم' : 'Choose a teacher'),
+          _buildStepLabel(
+            3,
+            isAr ? 'اختر معلم' : 'Choose a teacher',
+            hint: isAr
+                ? 'اختر معلمك لتأكيد الحجز'
+                : 'Select your teacher to confirm booking',
+          ),
           const SizedBox(height: 6),
           ...teachers.map((s) {
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
@@ -6717,6 +7033,72 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           }),
         ],
       ],
+    );
+  }
+
+  Widget _buildPathCard({
+    required _SchedulePath path,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final selected = schedulePath == path;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        if (schedulePath == path) return;
+        setState(() {
+          schedulePath = path;
+          _resetScheduleSelections();
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? primaryBlue : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? primaryBlue : uiBorder,
+            width: selected ? 1.5 : 1,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: primaryBlue.withValues(alpha: 0.25),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : [],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: selected ? Colors.white : primaryBlue, size: 24),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: selected ? Colors.white : primaryBlue,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.8)
+                    : Colors.grey.shade600,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -6872,58 +7254,40 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             ),
           ),
         ],
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final compactPathSwitch = constraints.maxWidth < 340;
-            return Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: uiBorder),
+        const SizedBox(height: 16),
+        Text(
+          isAr ? 'كيف تريد البحث؟' : 'How would you like to search?',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: palette.text.withValues(alpha: 0.7),
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildPathCard(
+                path: _SchedulePath.byTeacher,
+                icon: Icons.person_search_rounded,
+                title: isAr ? 'حسب المعلم' : 'By Teacher',
+                subtitle: isAr
+                    ? 'اختر معلمك المفضل أولاً'
+                    : 'Find your preferred teacher first',
               ),
-              child: compactPathSwitch
-                  ? Column(
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                            child: _buildSchedulePathPill(
-                              path: _SchedulePath.byTeacher,
-                              icon: Icons.person_search_rounded,
-                              label: isAr ? 'حسب المعلم' : 'By Teacher',
-                              fullWidth: false,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            width: double.infinity,
-                            child: _buildSchedulePathPill(
-                              path: _SchedulePath.byDay,
-                              icon: Icons.calendar_month_rounded,
-                              label: isAr ? 'حسب التوقيت' : 'By Day',
-                              fullWidth: false,
-                            ),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        _buildSchedulePathPill(
-                          path: _SchedulePath.byTeacher,
-                          icon: Icons.person_search_rounded,
-                          label: isAr ? 'حسب المعلم' : 'By Teacher',
-                        ),
-                        const SizedBox(width: 6),
-                        _buildSchedulePathPill(
-                          path: _SchedulePath.byDay,
-                          icon: Icons.calendar_month_rounded,
-                          label: isAr ? 'حسب التوقيت' : 'By Day',
-                        ),
-                      ],
-                    ),
-            );
-          },
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildPathCard(
+                path: _SchedulePath.byDay,
+                icon: Icons.calendar_month_rounded,
+                title: isAr ? 'حسب التوقيت' : 'By Day',
+                subtitle: isAr
+                    ? 'اختر التاريخ أولاً'
+                    : 'Pick a date first',
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 14),
         AnimatedSwitcher(
@@ -7303,11 +7667,14 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               }
             },
           ),
-          title: Text(
-            _bookingScreenTitle(),
-            style: TextStyle(
-              color: palette.primary,
-              fontWeight: FontWeight.w900,
+          title: Directionality(
+            textDirection: lessonChoiceArabic ? TextDirection.rtl : TextDirection.ltr,
+            child: Text(
+              _bookingScreenTitle(),
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
           actions: [
@@ -7359,9 +7726,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                             padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
                             child: Column(
                               children: [
-                                if (flowStep != _BookingFlowStep.confirm &&
-                                    flowStep != _BookingFlowStep.lessonChoice)
-                                  _buildCancelEntryCard(),
                                 const SizedBox(height: 10),
                                 AnimatedSwitcher(
                                   duration:
@@ -7523,6 +7887,8 @@ enum _BookingFlowStep { lessonChoice, schedule, confirm, success }
 enum _SchedulePath { byTeacher, byDay }
 
 enum _ChipMatchKind { none, matchDifferentSession, exact }
+
+enum _DaySlotSummary { none, groupOnly, available }
 
 class _CourseChoice {
   final String id;
