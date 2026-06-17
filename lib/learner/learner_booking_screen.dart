@@ -64,6 +64,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   bool loading = true;
   bool booking = false;
   bool refreshing = false;
+  bool _bookingCancelled = false;
   String progressLabel = '';
 
   // Course
@@ -159,6 +160,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   }
 
   bool _goBackOneStepInFlow() {
+    if (progressLabel.isNotEmpty) {
+      _showCancelBookingDialog();
+      return true;
+    }
     switch (flowStep) {
       case _BookingFlowStep.success:
         setState(() => flowStep = _BookingFlowStep.confirm);
@@ -172,6 +177,46 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       case _BookingFlowStep.lessonChoice:
         return false;
     }
+  }
+
+  void _showCancelBookingDialog() {
+    final isAr = lessonChoiceArabic;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(
+          isAr ? 'الحجز قيد التنفيذ' : 'Booking in progress',
+          style: const TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: Text(
+          isAr
+              ? 'يتم معالجة حجزك. هل تريد إلغاء الحجز والعودة؟'
+              : 'Your booking is being processed. Cancel and go back?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(isAr ? 'الانتظار' : 'Keep waiting'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C),
+            ),
+            onPressed: () {
+              _bookingCancelled = true;
+              setState(() => progressLabel = '');
+              _clearBusyVisualIfIdle();
+              Navigator.pop(ctx);
+            },
+            child: Text(
+              isAr ? 'إلغاء الآن' : 'Cancel now',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _isAtEntryStep() => flowStep == _BookingFlowStep.lessonChoice;
@@ -425,10 +470,6 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   String _cancelNoObjectiveLabel() => lessonChoiceArabic
       ? 'لا يوجد وصف متاح لهذه الحصة.'
       : 'No objective available for this session.';
-
-  String _confirmDetailsLabel(bool expanded) => lessonChoiceArabic
-      ? (expanded ? 'إخفاء التفاصيل' : 'تفاصيل الحصة')
-      : (expanded ? 'Hide details' : 'Session details');
 
   String _confirmObjectiveLabel() =>
       lessonChoiceArabic ? 'هدف الحصة' : 'Session objective';
@@ -3128,11 +3169,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       _clearBusyVisualIfIdle();
     }
 
+    _bookingCancelled = false;
     _setProgressLabel('Checking slot...');
 
     _GlobalSlotOccupancy? liveOccupancyFor24h;
     if (_isWithin24Hours(slot)) {
       liveOccupancyFor24h = await _loadLiveGlobalOccupancyForSlot(slot);
+      if (_bookingCancelled) { stopChecking(); return; }
       final sameLevelJoinWithin24h =
           liveOccupancyFor24h != null &&
           liveOccupancyFor24h.courseId == cid &&
@@ -3147,6 +3190,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
 
     final latestBusyByTeacherDay = await _loadTeacherBusyRangesForWindow();
+    if (_bookingCancelled) { stopChecking(); return; }
     if (_hasClassConflict(
       latestBusyByTeacherDay,
       slot.teacherId,
@@ -3168,10 +3212,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       sessionNo: targetSession,
     );
     if (!mounted) return;
+    if (_bookingCancelled) { stopChecking(); return; }
 
     if (shouldWarn) {
       final decision = await _askSessionCheckBeforeBooking(targetSession);
       if (!mounted) return;
+      if (_bookingCancelled) { stopChecking(); return; }
 
       if (decision == null) {
         stopChecking();
@@ -3234,8 +3280,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     _markBusyVisualStart();
 
     try {
+      if (_bookingCancelled) return;
       final liveOccupancy =
           liveOccupancyFor24h ?? await _loadLiveGlobalOccupancyForSlot(slot);
+      if (_bookingCancelled) return;
       if (liveOccupancy != null &&
           liveOccupancy.courseId != cid &&
           !liveOccupancy.bookedByMe) {
@@ -3259,6 +3307,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           levelLabel: levelLabel,
         );
         if (!mounted) return;
+        if (_bookingCancelled) return;
         if (ok != true) return;
         setState(() {
           studyMode = 'custom';
@@ -5215,13 +5264,26 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Text(
               isAr ? 'اختر درساً' : 'Choose a lesson',
               style: TextStyle(
                 fontWeight: FontWeight.w900,
                 fontSize: 18,
                 color: palette.primary,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              isAr
+                  ? 'اضغط على درس لمعرفة التفاصيل والحجز'
+                  : 'Tap a lesson to see details and book',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                color: Colors.grey.shade600,
               ),
             ),
           ),
@@ -5429,9 +5491,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom +
+            MediaQuery.of(context).padding.bottom,
+      ),
         child: Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -5534,6 +5597,100 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
+  void _showSessionMiniDetailsForLesson(Map<String, dynamic> session) {
+    final no = _toInt(session['sessionNo'], fallback: 0);
+    final objective = (session['objective'] ?? '').toString().trim();
+    final title = (session['sessionTitle'] ?? '').toString().trim();
+    final isAr = lessonChoiceArabic;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom +
+              MediaQuery.of(context).padding.bottom,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 44,
+                  height: 5,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDDE4EA),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        color: primaryBlue, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        title.isEmpty
+                            ? 'Session $no'
+                            : 'Session $no — $title',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          color: primaryBlue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (objective.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    isAr ? 'هدف الحصة' : 'Session Objective',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    objective,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1A1A1A),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+                if (objective.isEmpty) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    isAr
+                        ? 'لا توجد تفاصيل إضافية لهذه الحصة.'
+                        : 'No additional details for this session.',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLessonRow(Map<String, dynamic> session) {
     final no = _toInt(session['sessionNo'], fallback: 0);
     final title = (session['sessionTitle'] ?? '').toString().trim();
@@ -5592,6 +5749,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               ),
             ),
             const SizedBox(width: 6),
+            if (!studied)
+              GestureDetector(
+                onTap: () => _showSessionMiniDetailsForLesson(session),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: const Color(0xFF0E7C86).withValues(alpha: 0.55),
+                  ),
+                ),
+              ),
             const Icon(Icons.chevron_right_rounded,
                 size: 18, color: Color(0xFF0E7C86)),
           ],
@@ -5608,7 +5777,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        _buildCancelEntryCard(),
+        if (upcomingBookingsCount > 0)
+          _buildCancelEntryCard(),
         const SizedBox(height: 20),
         Icon(Icons.auto_awesome_rounded, size: 36, color: palette.primary),
         const SizedBox(height: 10),
@@ -7424,6 +7594,11 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         sessionNo <= 0) {
       return Text(isAr ? 'انتهت صلاحية الاختيار. اختر مرة أخرى.' : 'Selection expired. Please choose again.');
     }
+    final cap = slot.maxLearnersPerSlot <= 0 ? 6 : slot.maxLearnersPerSlot;
+    final booked = _effectiveBookedCount(slot);
+    final left = (cap - booked) < 0 ? 0 : (cap - booked);
+    final sessionTitle = _sessionTitleFor(sessionNo);
+
     return Directionality(
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: Column(
@@ -7434,13 +7609,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             style: const TextStyle(
               fontWeight: FontWeight.w900,
               color: primaryBlue,
-              fontSize: 22,
+              fontSize: 24,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
               gradient: const LinearGradient(
@@ -7496,13 +7671,34 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
+                Divider(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  height: 1,
+                ),
+                const SizedBox(height: 14),
                 _buildSessionLinePill(
                   label: _sessionLabel(sessionNo),
                   onPrimary: true,
                   compact: true,
                 ),
-                const SizedBox(height: 10),
+                if (sessionTitle.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    sessionTitle,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Divider(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  height: 1,
+                ),
+                const SizedBox(height: 14),
                 InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: () => _openTeacherProfileSheet(slot),
@@ -7512,24 +7708,25 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       ProfileAvatar(
                         name: slot.teacherName,
                         photoUrl: slot.teacherPhotoUrl,
-                        radius: 18,
+                        radius: 20,
                         borderColor: Colors.white.withValues(alpha: 0.6),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           slot.teacherName,
                           style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
+                            fontSize: 15,
                           ),
                         ),
                       ),
                       if (slot.hasIntroVideo)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                            horizontal: 8,
+                            vertical: 3,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.15),
@@ -7547,129 +7744,132 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
                   '${_friendlyDate(selectedDay!)} • $selectedTime',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Divider(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  height: 1,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  _confirmObjectiveLabel(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _sessionObjectiveFor(sessionNo).isEmpty
+                      ? _cancelNoObjectiveLabel()
+                      : _sessionObjectiveFor(sessionNo),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 10),
-                InkWell(
-                  borderRadius: BorderRadius.circular(999),
-                  onTap: () {
-                    setState(
-                      () => confirmSessionExpanded = !confirmSessionExpanded,
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 2,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-                      children: [
-                        Text(
-                          _confirmDetailsLabel(confirmSessionExpanded),
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white.withValues(alpha: 0.8),
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          confirmSessionExpanded
-                              ? Icons.keyboard_arrow_up_rounded
-                              : Icons.keyboard_arrow_down_rounded,
-                          color: Colors.white.withValues(alpha: 0.8),
-                          size: 18,
-                        ),
-                      ],
-                    ),
-                  ),
+                const SizedBox(height: 14),
+                Divider(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  height: 1,
                 ),
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  child: confirmSessionExpanded
-                      ? Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(top: 6),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (_sessionTitleFor(sessionNo).isNotEmpty) ...[
-                                Text(
-                                  _sessionTitleFor(sessionNo),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                              ],
-                              Text(
-                                _confirmObjectiveLabel(),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white.withValues(alpha: 0.8),
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _sessionObjectiveFor(sessionNo).isEmpty
-                                    ? _cancelNoObjectiveLabel()
-                                    : _sessionObjectiveFor(sessionNo),
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : const SizedBox.shrink(),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.people_rounded,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isAr
+                          ? 'المقاعد المتبقية: $left'
+                          : 'Spots remaining: $left',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Row(
             textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
             children: [
-              OutlinedButton(
-                onPressed: () =>
-                    setState(() => flowStep = _BookingFlowStep.schedule),
-                child: Text(isAr ? 'رجوع' : 'Back'),
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFB91C1C),
+                    side: const BorderSide(color: Color(0xFFB91C1C)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () =>
+                      setState(() => flowStep = _BookingFlowStep.schedule),
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: Text(
+                    isAr ? 'رجوع' : 'Back',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
               ),
-              const SizedBox(width: 8),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: primaryBlue),
-                onPressed: limitReached
-                    ? null
-                    : () async {
-                        await _bookSlot(slot, sessionNo: sessionNo);
-                        if (!mounted) return;
-                        if (myBookedSlots.containsKey(slot.key)) {
-                          setState(() => flowStep = _BookingFlowStep.success);
-                        }
-                      },
-                child: Text(isAr ? 'تأكيد' : 'Confirm booking'),
+              const SizedBox(width: 16),
+              Expanded(
+                flex: 2,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: actionOrange,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: limitReached
+                      ? null
+                      : () async {
+                          await _bookSlot(slot, sessionNo: sessionNo);
+                          if (!mounted) return;
+                          if (myBookedSlots.containsKey(slot.key)) {
+                            setState(() => flowStep = _BookingFlowStep.success);
+                          }
+                        },
+                  icon: const Icon(Icons.check_circle_rounded, size: 20),
+                  label: Text(
+                    isAr ? 'تأكيد الحجز' : 'Confirm booking',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
           if (limitReached) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Text(
               _bookingLimitNote(),
               style: const TextStyle(
