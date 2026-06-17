@@ -1,6 +1,6 @@
 part of '../main.dart';
 
-enum AppMode { home, media, jobs }
+enum AppMode { courses, gallery, media }
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -10,20 +10,9 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  AppMode mode = AppMode.home;
+  AppMode mode = AppMode.courses;
 
   static const double _desktopShellMinWidth = 1100;
-
-  Widget _pageForMode(AppMode value) {
-    switch (value) {
-      case AppMode.home:
-        return const AssistantHome();
-      case AppMode.media:
-        return const MediaHome();
-      case AppMode.jobs:
-        return const JobsHome();
-    }
-  }
 
   Future<void> _openLogin(BuildContext context) async {
     await Navigator.of(
@@ -37,17 +26,21 @@ class _HomeShellState extends State<HomeShell> {
 
   String _labelForMode(AppMode value) {
     switch (value) {
-      case AppMode.home:
-        return 'Home';
+      case AppMode.courses:
+        return 'Courses';
+      case AppMode.gallery:
+        return 'Gallery';
       case AppMode.media:
         return 'Media';
-      case AppMode.jobs:
-        return 'Jobs';
     }
   }
 
   Widget _buildDesktopShell(BuildContext context) {
-    final currentPage = _pageForMode(mode);
+    final pages = const <Widget>[
+      AssistantHome(),
+      GalleryHome(),
+      MediaHome(),
+    ];
     return SafeArea(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -76,6 +69,20 @@ class _HomeShellState extends State<HomeShell> {
                 labelType: NavigationRailLabelType.none,
                 onDestinationSelected: (i) =>
                     setState(() => mode = AppMode.values[i]),
+                destinations: const [
+                  NavigationRailDestination(
+                    icon: Icon(Icons.auto_stories_rounded),
+                    label: Text('Courses'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.photo_library_rounded),
+                    label: Text('Gallery'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.perm_media_rounded),
+                    label: Text('Media'),
+                  ),
+                ],
                 leading: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
                   child: Column(
@@ -103,36 +110,6 @@ class _HomeShellState extends State<HomeShell> {
                     ],
                   ),
                 ),
-                trailing: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-                  child: FilledButton.icon(
-                    onPressed: () => _openLogin(context),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Brand.actionOrange,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    icon: const Icon(Icons.login_rounded),
-                    label: const Text('Login'),
-                  ),
-                ),
-                destinations: const [
-                  NavigationRailDestination(
-                    icon: Icon(Icons.home_rounded),
-                    label: Text('Home'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.perm_media_rounded),
-                    label: Text('Media'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.work_outline_rounded),
-                    label: Text('Jobs'),
-                  ),
-                ],
               ),
             ),
           ),
@@ -189,7 +166,12 @@ class _HomeShellState extends State<HomeShell> {
                         ),
                       ),
                       const Divider(height: 1),
-                      Expanded(child: currentPage),
+                      Expanded(
+                        child: IndexedStack(
+                          index: mode.index,
+                          children: pages,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -206,22 +188,32 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       backgroundColor: Brand.appBg,
       resizeToAvoidBottomInset: true,
-      body: SafeArea(child: _pageForMode(mode)),
-      floatingActionButton: mode == AppMode.jobs
-          ? null
-          : _PulsingLoginFab(onPressed: () => _openLogin(context)),
+      body: SafeArea(
+        child: IndexedStack(
+          index: mode.index,
+          children: const [
+            AssistantHome(),
+            GalleryHome(),
+            MediaHome(),
+          ],
+        ),
+      ),
+      floatingActionButton: _PulsingLoginFab(onPressed: () => _openLogin(context)),
       bottomNavigationBar: NavigationBar(
         selectedIndex: mode.index,
         onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Home'),
+          NavigationDestination(
+            icon: Icon(Icons.auto_stories_rounded),
+            label: 'Courses',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.photo_library_rounded),
+            label: 'Gallery',
+          ),
           NavigationDestination(
             icon: Icon(Icons.perm_media_rounded),
             label: 'Media',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.work_outline_rounded),
-            label: 'Jobs',
           ),
         ],
       ),
@@ -288,7 +280,6 @@ class _MediaHomeState extends State<MediaHome> {
   static const List<String> _descriptions = [
     'Read teacher-curated and educational stories',
     'Play learning games and activities',
-    'View drawings, projects, and learner creations',
   ];
 
   final List<_MediaCategoryTabData> _tabs = const [
@@ -302,24 +293,19 @@ class _MediaHomeState extends State<MediaHome> {
       icon: Icons.sports_esports_rounded,
       accent: Color(0xFF0B8F87),
     ),
-    _MediaCategoryTabData(
-      label: 'Gallery',
-      icon: Icons.photo_library_rounded,
-      accent: Color(0xFF5A6AE6),
-    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: SoftBackground(
         child: Column(
           children: [
             _buildLearnersHubHeader(context),
             const Expanded(
               child: TabBarView(
-                children: [StoriesHome(), GamesHome(), GalleryHome()],
+                children: [StoriesHome(), GamesHome()],
               ),
             ),
           ],
@@ -514,43 +500,48 @@ class _JobsHomeState extends State<JobsHome> {
 
   @override
   Widget build(BuildContext context) {
-    return SoftBackground(
-      child: Column(
-        children: [
-          const SimpleTopBar(title: 'Jobs'),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-              children: [
-                CardShell(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Work With Us',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Brand.primaryBlue,
-                          fontWeight: FontWeight.w900,
-                        ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: SoftBackground(
+          child: Column(
+            children: [
+              const SimpleTopBar(title: 'Jobs'),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                  children: [
+                    CardShell(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Work With Us',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Brand.primaryBlue,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _jobDescriptions[_descIndex],
+                            style: TextStyle(
+                              color: Brand.mainText.withValues(alpha: 0.8),
+                              fontWeight: FontWeight.w600,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _jobDescriptions[_descIndex],
-                        style: TextStyle(
-                          color: Brand.mainText.withValues(alpha: 0.8),
-                          fontWeight: FontWeight.w600,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 12),
+                    const CardShell(child: JobApplicationScreen()),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                const CardShell(child: JobApplicationScreen()),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

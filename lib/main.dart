@@ -701,7 +701,7 @@ class AssistantHome extends StatelessWidget {
     return SoftBackground(
       child: Column(
         children: [
-          SimpleTopBar(title: 'Your Bridge School', right: _CvnVerifyButton()),
+          const SimpleTopBar(title: 'Your Bridge School'),
           Expanded(
             child: Align(
               alignment: Alignment.topCenter,
@@ -712,11 +712,8 @@ class AssistantHome extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _LevelTestCard(),
-                      const SizedBox(height: 18),
-                      const SizedBox(height: 10),
-                      const _JoinOnlineCircleEntryButton(),
-                      const SizedBox(height: 18),
+                      const _FeatureCardsRow(),
+                      const SizedBox(height: 22),
                       const _SectionHeader(
                         title: 'Courses',
                         subtitle: 'Browse all available courses here.',
@@ -735,130 +732,176 @@ class AssistantHome extends StatelessWidget {
   }
 }
 
-class _CvnVerifyButton extends StatelessWidget {
-  const _CvnVerifyButton();
+class _FeatureCardsRow extends StatelessWidget {
+  const _FeatureCardsRow();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Brand.primaryBlue.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const VerifyCertificateScreen()),
-        ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(MainIcons.shield, color: Brand.primaryBlue, size: 20),
-              const SizedBox(width: 6),
-              Text(
-                'CVN',
-                style: TextStyle(
-                  color: Brand.primaryBlue,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                ),
-              ),
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 8.0;
+        final narrow = constraints.maxWidth < 480;
+
+        Widget card(Widget w) => SizedBox(
+          width: narrow ? null : 100,
+          child: w,
+        );
+
+        final items = <Widget>[
+          _FeatureCard(
+            icon: MainIcons.premium,
+            label: 'Exam',
+            color: Brand.actionOrange,
+            onTap: () => _openPlayStore(context),
           ),
-        ),
-      ),
+          _FeatureCard(
+            icon: MainIcons.shield,
+            label: 'Certificate',
+            color: Brand.primaryBlue,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const VerifyCertificateScreen(),
+                ),
+              );
+            },
+          ),
+          const _JoinOnlineCircleEntryButton(),
+          _FeatureCard(
+            icon: Icons.work_outline_rounded,
+            label: 'Jobs',
+            color: const Color(0xFF5A6AE6),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const JobsHome(),
+                ),
+              );
+            },
+          ),
+        ];
+
+        if (!narrow) {
+          return SizedBox(
+            height: 88,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                card(items[0]),
+                SizedBox(width: spacing),
+                card(items[1]),
+                SizedBox(width: spacing),
+                card(items[2]),
+                SizedBox(width: spacing),
+                card(items[3]),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 88,
+              child: Row(
+                children: [
+                  Expanded(child: items[0]),
+                  SizedBox(width: spacing),
+                  Expanded(child: items[1]),
+                ],
+              ),
+            ),
+            SizedBox(height: spacing),
+            SizedBox(
+              height: 88,
+              child: Row(
+                children: [
+                  Expanded(child: items[2]),
+                  SizedBox(width: spacing),
+                  Expanded(child: items[3]),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  void _openPlayStore(BuildContext context) {
+    final marketUrl = Uri.parse(
+      'market://details?id=com.appdevybs.mycertenglish',
+    );
+    final webPlayStoreUrl = Uri.parse(
+      'https://play.google.com/store/apps/details?id=com.appdevybs.mycertenglish&pcampaignid=web_share',
+    );
+    launchUrl(marketUrl, mode: LaunchMode.externalApplication).then((ok) {
+      if (ok) return;
+      launchUrl(webPlayStoreUrl, mode: LaunchMode.externalApplication).then(
+        (ok) {
+          if (!context.mounted) return;
+          if (!ok) {
+            AppToast.show(
+              context,
+              'Could not open Play Store',
+              type: AppToastType.error,
+            );
+          }
+        },
+      );
+    });
   }
 }
 
-class _LevelTestCard extends StatelessWidget {
-  _LevelTestCard();
+class _FeatureCard extends StatelessWidget {
+  const _FeatureCard({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
 
-  final Uri _webPlayStoreUrl = Uri.parse(
-    'https://play.google.com/store/apps/details?id=com.appdevybs.mycertenglish&pcampaignid=web_share',
-  );
-
-  final Uri _marketUrl = Uri.parse(
-    'market://details?id=com.appdevybs.mycertenglish',
-  );
-
-  Future<void> _openPlayStore(BuildContext context) async {
-    try {
-      final okMarket = await launchUrl(
-        _marketUrl,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (okMarket) return;
-
-      final okWeb = await launchUrl(
-        _webPlayStoreUrl,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!context.mounted) return;
-      if (!okWeb) {
-        AppToast.show(
-          context,
-          'Could not open Play Store',
-          type: AppToastType.error,
-        );
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-      AppToast.show(
-        context,
-        toHumanError(e, fallback: 'Could not open Play Store.'),
-        type: AppToastType.error,
-      );
-    }
-  }
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => _openPlayStore(context),
-        child: CardShell(
-          child: Row(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Brand.uiBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Brand.actionOrange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Brand.uiBorder),
+              Icon(icon, color: color, size: 28),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: Brand.primaryBlue,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
                 ),
-                child: const Icon(MainIcons.premium, color: Brand.actionOrange),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      'Test Your Level & Get Certified',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                        color: Brand.primaryBlue,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Tap here to open My Cert English.',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Brand.mainText,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(MainIcons.openInNew, color: Brand.primaryBlue),
             ],
           ),
         ),
@@ -914,11 +957,8 @@ class _JoinOnlineCircleEntryButton extends StatefulWidget {
 }
 
 class _JoinOnlineCircleEntryButtonState
-    extends State<_JoinOnlineCircleEntryButton>
-    with SingleTickerProviderStateMixin {
+    extends State<_JoinOnlineCircleEntryButton> {
   static const String circlesPath = 'circle';
-  late final AnimationController _pulseController;
-  late final Animation<double> _scaleAnimation;
   late final PageController _pageController;
   List<_OnlineCircle> _prefetchedOpenCircles = const [];
   bool _prefetching = true;
@@ -938,15 +978,7 @@ class _JoinOnlineCircleEntryButtonState
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.04).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
     _pageController = PageController(viewportFraction: 0.86);
-    _pulseController.repeat(reverse: true);
     _prefetchCircles();
   }
 
@@ -2051,88 +2083,65 @@ class _JoinOnlineCircleEntryButtonState
 
   @override
   void dispose() {
-    _pulseController.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: _openCirclesFullscreen,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFD54F),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFFFC107), width: 1.4),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFFC107).withValues(alpha: 0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: _prefetchedOpenCircles.isNotEmpty ? _openCirclesFullscreen : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Brand.uiBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_prefetching)
+                const SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                )
+              else
                 SizedBox(
-                  width: 56,
-                  height: 56,
+                  width: 32,
+                  height: 32,
                   child: _buildOpenCircleTeacherIcon(
                     circles: _prefetchedOpenCircles,
-                    size: 56,
-                    borderRadius: BorderRadius.circular(18),
-                    backgroundColor: Colors.white.withValues(alpha: 0.35),
+                    size: 32,
+                    borderRadius: BorderRadius.circular(999),
+                    backgroundColor: const Color(0xFF0B8F87).withValues(alpha: 0.10),
                     fallbackIcon: Icons.groups_rounded,
-                    fallbackIconColor: Brand.primaryBlue,
-                    fallbackIconSize: 28,
+                    fallbackIconColor: const Color(0xFF0B8F87),
+                    fallbackIconSize: 20,
                   ),
                 ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Join Online Circle',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                          color: Brand.primaryBlue,
-                        ),
-                      ),
-                      SizedBox(height: 5),
-                      Text(
-                        'Tap to view circle cards and join on time.',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Brand.primaryBlue,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
+              const SizedBox(height: 6),
+              const Text(
+                'Circles',
+                style: TextStyle(
+                  color: Brand.primaryBlue,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
                 ),
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_rounded,
-                    color: Brand.primaryBlue,
-                  ),
-                ),
-              ],
-            ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
       ),
@@ -2398,6 +2407,66 @@ class _DetailRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _GalleryShimmer extends StatefulWidget {
+  const _GalleryShimmer();
+
+  @override
+  State<_GalleryShimmer> createState() => _GalleryShimmerState();
+}
+
+class _GalleryShimmerState extends State<_GalleryShimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final opacity = 0.25 + _controller.value * 0.5;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          child: Opacity(
+            opacity: opacity,
+            child: GridView.count(
+              crossAxisCount: 4,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 1,
+              physics: const NeverScrollableScrollPhysics(),
+              children: List.generate(12, (_) => _buildSkeletonCard()),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSkeletonCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+      ),
     );
   }
 }
@@ -2701,9 +2770,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                       padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
+                            crossAxisCount: 4,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
                             childAspectRatio: 1,
                           ),
                       itemCount: selectedItems.length,
@@ -2722,8 +2791,8 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                             Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (_) => _PublicGalleryViewerScreen(
-                                  type: type,
-                                  url: url,
+                                  items: selectedItems,
+                                  initialIndex: index,
                                 ),
                               ),
                             );
@@ -2770,9 +2839,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
             return GridView.builder(
               padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
+                crossAxisCount: 4,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
                 childAspectRatio: 0.92,
               ),
               itemCount: teachers.length,
@@ -2844,6 +2913,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
             child: StreamBuilder<DatabaseEvent>(
               stream: _galleryRef().onValue,
               builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const _GalleryShimmer();
+                }
                 final items = _itemsFromSnapshot(snap.data?.snapshot.value);
                 final visibleItems = _applyFilter(items);
 
@@ -2964,9 +3036,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                               padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
                               gridDelegate:
                                   const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    crossAxisSpacing: 12,
-                                    mainAxisSpacing: 12,
+                                    crossAxisCount: 4,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
                                     childAspectRatio: 1,
                                   ),
                               itemCount: visibleItems.length,
@@ -2988,11 +3060,10 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                   onTap: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
-                                        builder: (_) =>
-                                            _PublicGalleryViewerScreen(
-                                              type: type,
-                                              url: url,
-                                            ),
+                                        builder: (_) => _PublicGalleryViewerScreen(
+                                          items: visibleItems,
+                                          initialIndex: index,
+                                        ),
                                       ),
                                     );
                                   },
@@ -3100,16 +3171,40 @@ class _PublicGalleryVideoTile extends StatelessWidget {
   }
 }
 
-class _PublicGalleryViewerScreen extends StatelessWidget {
-  const _PublicGalleryViewerScreen({required this.type, required this.url});
+class _PublicGalleryViewerScreen extends StatefulWidget {
+  const _PublicGalleryViewerScreen({
+    required this.items,
+    required this.initialIndex,
+  });
 
-  final String type;
-  final String url;
+  final List<Map<String, dynamic>> items;
+  final int initialIndex;
+
+  @override
+  State<_PublicGalleryViewerScreen> createState() =>
+      _PublicGalleryViewerScreenState();
+}
+
+class _PublicGalleryViewerScreenState
+    extends State<_PublicGalleryViewerScreen> {
+  late final PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isVideo = type.trim().toLowerCase() == 'video';
-
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -3117,29 +3212,41 @@ class _PublicGalleryViewerScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         title: Text(
-          isVideo ? 'Video' : 'Photo',
+          '${_currentIndex + 1} / ${widget.items.length}',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w900,
           ),
         ),
       ),
-      body: Center(
-        child: isVideo
-            ? _PublicGalleryViewerVideo(url: url)
-            : InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: Image.network(
-                  url,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const Icon(
-                    Icons.broken_image_outlined,
-                    color: Colors.white,
-                    size: 44,
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.items.length,
+        onPageChanged: (i) => setState(() => _currentIndex = i),
+        itemBuilder: (context, index) {
+          final item = widget.items[index];
+          final type = (item['type'] ?? '').toString().trim().toLowerCase();
+          final url = (item['url'] ?? '').toString().trim();
+          final isVideo = type == 'video';
+
+          return Center(
+            child: isVideo
+                ? _PublicGalleryViewerVideo(url: url)
+                : InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 4,
+                    child: Image.network(
+                      url,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white,
+                        size: 44,
+                      ),
+                    ),
                   ),
-                ),
-              ),
+          );
+        },
       ),
     );
   }
