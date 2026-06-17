@@ -5886,6 +5886,52 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     );
   }
 
+  Widget _buildStepCard({
+    required Widget child,
+    required bool isActive,
+    required bool isCompleted,
+  }) {
+    return AnimatedBuilder(
+      animation: _sessionPulseCtrl,
+      builder: (context, _) {
+        final pulse = isActive ? _sessionPulseCtrl.value : 0.0;
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isActive
+                ? primaryBlue.withValues(alpha: 0.05 + (pulse * 0.03))
+                : isCompleted
+                    ? primaryBlue.withValues(alpha: 0.03)
+                    : Colors.grey.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isActive
+                  ? primaryBlue.withValues(alpha: 0.25 + (pulse * 0.2))
+                  : isCompleted
+                      ? primaryBlue.withValues(alpha: 0.15)
+                      : Colors.grey.withValues(alpha: 0.15),
+            ),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: primaryBlue.withValues(
+                        alpha: 0.08 + (pulse * 0.08),
+                      ),
+                      blurRadius: 6 + (pulse * 4),
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : [],
+          ),
+          child: child,
+        );
+      },
+      child: child,
+    );
+  }
+
   Widget _buildTimeChip(
     String t,
     bool selected,
@@ -6372,18 +6418,24 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStepLabel(
-          1,
-          isAr ? 'اختر معلم' : 'Choose a teacher',
-          hint: isAr
-              ? 'انقر على معلم لرؤية الأيام المتاحة'
-              : 'Tap a teacher to see available days',
-        ),
-        const SizedBox(height: 8),
-        if (shouldCollapseTeachers)
-          _collapsedTeachersCard(teachers)
-        else
-          ...teachers.map((s) {
+        _buildStepCard(
+          isActive: selectedTeacherFirstId == null,
+          isCompleted: selectedTeacherFirstId != null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildStepLabel(
+                1,
+                isAr ? 'اختر معلم' : 'Choose a teacher',
+                hint: isAr
+                    ? 'انقر على معلم لرؤية الأيام المتاحة'
+                    : 'Tap a teacher to see available days',
+              ),
+              const SizedBox(height: 8),
+              if (shouldCollapseTeachers)
+                _collapsedTeachersCard(teachers)
+              else
+                ...teachers.map((s) {
             final selected = selectedTeacherFirstId == s.teacherId;
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
             final booked = _effectiveBookedCount(s);
@@ -6509,242 +6561,259 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               ),
             );
           }),
-        if (selectedTeacherFirstId != null) ...[
-          SizedBox(key: _byTeacherSelectionKey),
-          const SizedBox(height: 10),
-          _buildStepLabel(
-            2,
-            isAr ? 'اختر يوم' : 'Choose a day',
-            hint: isAr
-                ? 'اختر يوماً لعرض الأوقات المتاحة'
-                : 'Pick a day to see available times',
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
-          _buildCalendarDayGrid(
-            days: days,
-            selectedDay: selectedDay,
-            onDaySelected: (d) {
-              setState(() {
-                selectedDay = d;
-                selectedTime = null;
-              });
-            },
-            teacherId: selectedTeacherFirstId,
-          ),
-        ],
-        if (selectedDay != null) ...[
-          const SizedBox(height: 10),
-          _buildStepLabel(
-            3,
-            isAr ? 'اختر وقت' : 'Choose a time',
-            hint: isAr
-                ? 'اختر وقتاً مناسباً للمتابعة'
-                : 'Choose a suitable time to proceed',
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final t in times)
-                _buildTimeChip(
-                  t,
-                  selectedTime == t,
-                  () {
-                    final slot = _slotsForCurrentLesson().firstWhere(
-                      (s) =>
-                          s.teacherId == selectedTeacherFirstId &&
-                          s.dayKey == _dateKey(selectedDay!) &&
-                          s.time == t,
-                    );
-                    final status = _slotStatus(slot, sessionNo: _flowLessonNo);
-                    if (status == _SlotStatus.closed) {
-                      _showClosedSlotInfo();
-                      return;
-                    }
-                    if (status == _SlotStatus.unavailable ||
-                        status == _SlotStatus.booked) {
-                      _toast(_blockedSlotToast(slot));
-                      return;
-                    }
-                    setState(() {
-                      selectedTime = t;
-                    });
-                  },
-                  status: () {
-                    final slot = _slotsForCurrentLesson().firstWhere(
-                      (s) =>
-                          s.teacherId == selectedTeacherFirstId &&
-                          s.dayKey == _dateKey(selectedDay!) &&
-                          s.time == t,
-                    );
-                    return _slotStatus(slot, sessionNo: _flowLessonNo);
-                  }(),
-                  label: () {
-                    final slot = _slotsForCurrentLesson().firstWhere(
-                      (s) =>
-                          s.teacherId == selectedTeacherFirstId &&
-                          s.dayKey == _dateKey(selectedDay!) &&
-                          s.time == t,
-                    );
-                    final kind = _chipMatchKindForSlot(
-                      slot,
-                      targetSession: _flowLessonNo,
-                    );
-                    if (kind == _ChipMatchKind.none) {
-                      return _timeChipLabel(
-                        t,
-                        _slotStatus(slot, sessionNo: _flowLessonNo),
-                        slot: slot,
-                      );
-                    }
-                    return _timeChipDetailsLabel(
-                      slot,
-                      targetSession: _flowLessonNo,
-                    );
-                  }(),
-                  pulse: () {
-                    final slot = _slotsForCurrentLesson().firstWhere(
-                      (s) =>
-                          s.teacherId == selectedTeacherFirstId &&
-                          s.dayKey == _dateKey(selectedDay!) &&
-                          s.time == t,
-                    );
-                    return _chipMatchKindForSlot(
-                          slot,
-                          targetSession: _flowLessonNo,
-                        ) !=
-                        _ChipMatchKind.none;
-                  }(),
-                  onDetailsTap: () {
-                    final slot = _slotsForCurrentLesson().firstWhere(
-                      (s) =>
-                          s.teacherId == selectedTeacherFirstId &&
-                          s.dayKey == _dateKey(selectedDay!) &&
-                          s.time == t,
-                    );
-                    _showSessionMiniDetails(slot);
-                  },
+        if (selectedTeacherFirstId != null)
+          _buildStepCard(
+            isActive: selectedDay == null,
+            isCompleted: selectedDay != null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(key: _byTeacherSelectionKey),
+                _buildStepLabel(
+                  2,
+                  isAr ? 'اختر يوم' : 'Choose a day',
+                  hint: isAr
+                      ? 'اختر يوماً لعرض الأوقات المتاحة'
+                      : 'Pick a day to see available times',
                 ),
-            ],
-          ),
-          ...() {
-            final suggestions = _suggestedSlotsForTeacherDay();
-            if (suggestions.isEmpty) return <Widget>[];
-            return [
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    Icons.tips_and_updates_rounded,
-                    color: Colors.lightBlue.shade700,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    isAr ? 'مقترح (نفس المستوى)' : 'Suggested (same level)',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: Colors.lightBlue.shade800,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ...suggestions.map((s) {
-                final status = _slotStatus(s, sessionNo: _flowLessonNo);
-                final session = _effectiveGroupSessionNo(s) ?? _flowLessonNo;
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
+                const SizedBox(height: 6),
+                _buildCalendarDayGrid(
+                  days: days,
+                  selectedDay: selectedDay,
+                  onDaySelected: (d) {
                     setState(() {
-                      selectedTeacherId = s.teacherId;
-                      selectedTeacherFirstId = s.teacherId;
-                      selectedDay = DateTime(
-                        s.start.year,
-                        s.start.month,
-                        s.start.day,
-                      );
-                      selectedTime = s.time;
-                      confirmSessionNo =
-                          status == _SlotStatus.joinWithSessionChange
-                          ? session
-                          : _flowLessonNo;
-                      flowStep = _BookingFlowStep.confirm;
+                      selectedDay = d;
+                      selectedTime = null;
                     });
                   },
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.lightBlue.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.lightBlue.shade200),
-                    ),
-                    child: Row(
+                  teacherId: selectedTeacherFirstId,
+                ),
+              ],
+            ),
+          ),
+        if (selectedDay != null)
+          _buildStepCard(
+            isActive: selectedTime == null,
+            isCompleted: selectedTime != null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStepLabel(
+                  3,
+                  isAr ? 'اختر وقت' : 'Choose a time',
+                  hint: isAr
+                      ? 'اختر وقتاً مناسباً للمتابعة'
+                      : 'Choose a suitable time to proceed',
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final t in times)
+                      _buildTimeChip(
+                        t,
+                        selectedTime == t,
+                        () {
+                          final slot = _slotsForCurrentLesson().firstWhere(
+                            (s) =>
+                                s.teacherId == selectedTeacherFirstId &&
+                                s.dayKey == _dateKey(selectedDay!) &&
+                                s.time == t,
+                          );
+                          final status = _slotStatus(slot, sessionNo: _flowLessonNo);
+                          if (status == _SlotStatus.closed) {
+                            _showClosedSlotInfo();
+                            return;
+                          }
+                          if (status == _SlotStatus.unavailable ||
+                              status == _SlotStatus.booked) {
+                            _toast(_blockedSlotToast(slot));
+                            return;
+                          }
+                          setState(() {
+                            selectedTime = t;
+                          });
+                        },
+                        status: () {
+                          final slot = _slotsForCurrentLesson().firstWhere(
+                            (s) =>
+                                s.teacherId == selectedTeacherFirstId &&
+                                s.dayKey == _dateKey(selectedDay!) &&
+                                s.time == t,
+                          );
+                          return _slotStatus(slot, sessionNo: _flowLessonNo);
+                        }(),
+                        label: () {
+                          final slot = _slotsForCurrentLesson().firstWhere(
+                            (s) =>
+                                s.teacherId == selectedTeacherFirstId &&
+                                s.dayKey == _dateKey(selectedDay!) &&
+                                s.time == t,
+                          );
+                          final kind = _chipMatchKindForSlot(
+                            slot,
+                            targetSession: _flowLessonNo,
+                          );
+                          if (kind == _ChipMatchKind.none) {
+                            return _timeChipLabel(
+                              t,
+                              _slotStatus(slot, sessionNo: _flowLessonNo),
+                              slot: slot,
+                            );
+                          }
+                          return _timeChipDetailsLabel(
+                            slot,
+                            targetSession: _flowLessonNo,
+                          );
+                        }(),
+                        pulse: () {
+                          final slot = _slotsForCurrentLesson().firstWhere(
+                            (s) =>
+                                s.teacherId == selectedTeacherFirstId &&
+                                s.dayKey == _dateKey(selectedDay!) &&
+                                s.time == t,
+                          );
+                          return _chipMatchKindForSlot(
+                                slot,
+                                targetSession: _flowLessonNo,
+                              ) !=
+                              _ChipMatchKind.none;
+                        }(),
+                        onDetailsTap: () {
+                          final slot = _slotsForCurrentLesson().firstWhere(
+                            (s) =>
+                                s.teacherId == selectedTeacherFirstId &&
+                                s.dayKey == _dateKey(selectedDay!) &&
+                                s.time == t,
+                          );
+                          _showSessionMiniDetails(slot);
+                        },
+                      ),
+                  ],
+                ),
+                ...() {
+                  final suggestions = _suggestedSlotsForTeacherDay();
+                  if (suggestions.isEmpty) return <Widget>[];
+                  return [
+                    const SizedBox(height: 12),
+                    Row(
                       children: [
-                        Expanded(
-                          child: Text(
-                            '${s.time} • ${s.teacherName} • Session $session',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: primaryBlue,
-                            ),
-                          ),
+                        Icon(
+                          Icons.tips_and_updates_rounded,
+                          color: Colors.lightBlue.shade700,
+                          size: 18,
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: status == _SlotStatus.joinWithSessionChange
-                                ? switchSessionBg
-                                : peerBg,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: status == _SlotStatus.joinWithSessionChange
-                                  ? switchSessionBorder
-                                  : peerBorder,
-                            ),
-                          ),
-                          child: Text(
-                            status == _SlotStatus.joinWithSessionChange
-                                ? 'Join + switch'
-                                : 'Join',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: primaryBlue,
-                              fontSize: 11,
-                            ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isAr ? 'مقترح (نفس المستوى)' : 'Suggested (same level)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Colors.lightBlue.shade800,
                           ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    ...suggestions.map((s) {
+                      final status = _slotStatus(s, sessionNo: _flowLessonNo);
+                      final session = _effectiveGroupSessionNo(s) ?? _flowLessonNo;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          setState(() {
+                            selectedTeacherId = s.teacherId;
+                            selectedTeacherFirstId = s.teacherId;
+                            selectedDay = DateTime(
+                              s.start.year,
+                              s.start.month,
+                              s.start.day,
+                            );
+                            selectedTime = s.time;
+                            confirmSessionNo =
+                                status == _SlotStatus.joinWithSessionChange
+                                ? session
+                                : _flowLessonNo;
+                            flowStep = _BookingFlowStep.confirm;
+                          });
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.lightBlue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.lightBlue.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${s.time} • ${s.teacherName} • Session $session',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: primaryBlue,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: status == _SlotStatus.joinWithSessionChange
+                                      ? switchSessionBg
+                                      : peerBg,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: status == _SlotStatus.joinWithSessionChange
+                                        ? switchSessionBorder
+                                        : peerBorder,
+                                  ),
+                                ),
+                                child: Text(
+                                  status == _SlotStatus.joinWithSessionChange
+                                      ? 'Join + switch'
+                                      : 'Join',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    color: primaryBlue,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ];
+                }(),
+                if (selectedTime != null) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: actionOrange,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () => setState(() {
+                      confirmSessionNo = _flowLessonNo;
+                      flowStep = _BookingFlowStep.confirm;
+                    }),
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    label: Text(isAr ? 'متابعة للتأكيد' : 'Continue to confirm'),
                   ),
-                );
-              }),
-            ];
-          }(),
-        ],
-        if (selectedTime != null) ...[
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: actionOrange,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+                ],
+              ],
             ),
-            onPressed: () => setState(() {
-              confirmSessionNo = _flowLessonNo;
-              flowStep = _BookingFlowStep.confirm;
-            }),
-            icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-            label: Text(isAr ? 'متابعة للتأكيد' : 'Continue to confirm'),
           ),
-        ],
       ],
     );
   }
@@ -6758,168 +6827,197 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildStepLabel(
-          1,
-          isAr ? 'اختر يوم' : 'Choose a day',
-          hint: isAr
-              ? 'اختر يوماً لعرض الأوقات المتاحة'
-              : 'Pick a day to see available times',
-        ),
-        const SizedBox(height: 6),
-        _buildCalendarDayGrid(
-          days: days,
-          selectedDay: selectedDay,
-          onDaySelected: (d) {
-            setState(() {
-              selectedDay = d;
-              selectedTime = null;
-              selectedTeacherId = null;
-            });
-          },
-        ),
-        if (selectedDay != null) ...[
-          const SizedBox(height: 10),
-          _buildStepLabel(
-            2,
-            isAr ? 'اختر وقت' : 'Choose a time',
-            hint: isAr
-                ? 'اختر وقتاً لرؤية المعلمين المتاحين'
-                : 'Pick a time to see available teachers',
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+        _buildStepCard(
+          isActive: selectedDay == null,
+          isCompleted: selectedDay != null,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final t in times)
-                _buildTimeChip(
-                  t,
-                  selectedTime == t,
-                  () {
-                    final candidates = _slotsForCurrentLesson()
-                        .where(
-                          (s) =>
-                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
-                        )
-                        .toList();
-                    final preferred = candidates.firstWhere(
-                      (s) =>
-                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
-                          _SlotStatus.joinWithSessionChange.index,
-                      orElse: () => candidates.first,
-                    );
-                    final preferredStatus = _slotStatus(
-                      preferred,
-                      sessionNo: _flowLessonNo,
-                    );
-                    if (preferredStatus == _SlotStatus.closed) {
-                      _showClosedSlotInfo();
-                      return;
-                    }
-                    if (preferredStatus == _SlotStatus.unavailable ||
-                        preferredStatus == _SlotStatus.booked) {
-                      _toast(_blockedSlotToast(preferred));
-                      return;
-                    }
-                    setState(() {
-                      selectedTime = t;
-                      selectedTeacherId = null;
-                    });
-                  },
-                  status: () {
-                    final candidates = _slotsForCurrentLesson().where(
-                      (s) => s.dayKey == _dateKey(selectedDay!) && s.time == t,
-                    );
-                    _SlotStatus best = _SlotStatus.closed;
-                    for (final c in candidates) {
-                      final st = _slotStatus(c, sessionNo: _flowLessonNo);
-                      if (st.index < best.index) best = st;
-                    }
-                    return candidates.isEmpty
-                        ? _SlotStatus.availableBook
-                        : best;
-                  }(),
-                  label: () {
-                    final candidates = _slotsForCurrentLesson()
-                        .where(
-                          (s) =>
-                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
-                        )
-                        .toList();
-                    if (candidates.isEmpty) return t;
-                    final preferred = candidates.firstWhere(
-                      (s) =>
-                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
-                          _SlotStatus.joinWithSessionChange.index,
-                      orElse: () => candidates.first,
-                    );
-                    final kind = _chipMatchKindForSlot(
-                      preferred,
-                      targetSession: _flowLessonNo,
-                    );
-                    if (kind == _ChipMatchKind.none) {
-                      return _timeChipLabel(
-                        t,
-                        _slotStatus(preferred, sessionNo: _flowLessonNo),
-                        slot: preferred,
-                      );
-                    }
-                    return _timeChipDetailsLabel(
-                      preferred,
-                      targetSession: _flowLessonNo,
-                    );
-                  }(),
-                  pulse: () {
-                    final candidates = _slotsForCurrentLesson()
-                        .where(
-                          (s) =>
-                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
-                        )
-                        .toList();
-                    if (candidates.isEmpty) return false;
-                    final preferred = candidates.firstWhere(
-                      (s) =>
-                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
-                          _SlotStatus.joinWithSessionChange.index,
-                      orElse: () => candidates.first,
-                    );
-                    return _chipMatchKindForSlot(
-                          preferred,
-                          targetSession: _flowLessonNo,
-                        ) !=
-                        _ChipMatchKind.none;
-                  }(),
-                  onDetailsTap: () {
-                    final candidates = _slotsForCurrentLesson()
-                        .where(
-                          (s) =>
-                              s.dayKey == _dateKey(selectedDay!) && s.time == t,
-                        )
-                        .toList();
-                    if (candidates.isEmpty) return;
-                    final preferred = candidates.firstWhere(
-                      (s) =>
-                          _slotStatus(s, sessionNo: _flowLessonNo).index <=
-                          _SlotStatus.joinWithSessionChange.index,
-                      orElse: () => candidates.first,
-                    );
-                    _showSessionMiniDetails(preferred);
-                  },
-                ),
+              _buildStepLabel(
+                1,
+                isAr ? 'اختر يوم' : 'Choose a day',
+                hint: isAr
+                    ? 'اختر يوماً لعرض الأوقات المتاحة'
+                    : 'Pick a day to see available times',
+              ),
+              const SizedBox(height: 6),
+              _buildCalendarDayGrid(
+                days: days,
+                selectedDay: selectedDay,
+                onDaySelected: (d) {
+                  setState(() {
+                    selectedDay = d;
+                    selectedTime = null;
+                    selectedTeacherId = null;
+                  });
+                },
+              ),
             ],
           ),
-        ],
-        if (selectedTime != null) ...[
-          const SizedBox(height: 10),
-          _buildStepLabel(
-            3,
-            isAr ? 'اختر معلم' : 'Choose a teacher',
-            hint: isAr
-                ? 'اختر معلمك لتأكيد الحجز'
-                : 'Select your teacher to confirm booking',
+        ),
+        if (selectedDay != null)
+          _buildStepCard(
+            isActive: selectedTime == null,
+            isCompleted: selectedTime != null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStepLabel(
+                  2,
+                  isAr ? 'اختر وقت' : 'Choose a time',
+                  hint: isAr
+                      ? 'اختر وقتاً لرؤية المعلمين المتاحين'
+                      : 'Pick a time to see available teachers',
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final t in times)
+                      _buildTimeChip(
+                        t,
+                        selectedTime == t,
+                        () {
+                          final candidates = _slotsForCurrentLesson()
+                              .where(
+                                (s) => s.dayKey == _dateKey(selectedDay!) &&
+                                    s.time == t,
+                              )
+                              .toList();
+                          final preferred = candidates.firstWhere(
+                            (s) =>
+                                _slotStatus(s, sessionNo: _flowLessonNo).index <=
+                                _SlotStatus.joinWithSessionChange.index,
+                            orElse: () => candidates.first,
+                          );
+                          final preferredStatus = _slotStatus(
+                            preferred,
+                            sessionNo: _flowLessonNo,
+                          );
+                          if (preferredStatus == _SlotStatus.closed) {
+                            _showClosedSlotInfo();
+                            return;
+                          }
+                          if (preferredStatus == _SlotStatus.unavailable ||
+                              preferredStatus == _SlotStatus.booked) {
+                            _toast(_blockedSlotToast(preferred));
+                            return;
+                          }
+                          setState(() {
+                            selectedTime = t;
+                            selectedTeacherId = null;
+                          });
+                        },
+                        status: () {
+                          final candidates = _slotsForCurrentLesson().where(
+                            (s) =>
+                                s.dayKey == _dateKey(selectedDay!) &&
+                                s.time == t,
+                          );
+                          _SlotStatus best = _SlotStatus.closed;
+                          for (final c in candidates) {
+                            final st =
+                                _slotStatus(c, sessionNo: _flowLessonNo);
+                            if (st.index < best.index) best = st;
+                          }
+                          return candidates.isEmpty
+                              ? _SlotStatus.availableBook
+                              : best;
+                        }(),
+                        label: () {
+                          final candidates = _slotsForCurrentLesson()
+                              .where(
+                                (s) => s.dayKey == _dateKey(selectedDay!) &&
+                                    s.time == t,
+                              )
+                              .toList();
+                          if (candidates.isEmpty) return t;
+                          final preferred = candidates.firstWhere(
+                            (s) =>
+                                _slotStatus(s, sessionNo: _flowLessonNo).index <=
+                                _SlotStatus.joinWithSessionChange.index,
+                            orElse: () => candidates.first,
+                          );
+                          final kind = _chipMatchKindForSlot(
+                            preferred,
+                            targetSession: _flowLessonNo,
+                          );
+                          if (kind == _ChipMatchKind.none) {
+                            return _timeChipLabel(
+                              t,
+                              _slotStatus(
+                                preferred,
+                                sessionNo: _flowLessonNo,
+                              ),
+                              slot: preferred,
+                            );
+                          }
+                          return _timeChipDetailsLabel(
+                            preferred,
+                            targetSession: _flowLessonNo,
+                          );
+                        }(),
+                        pulse: () {
+                          final candidates = _slotsForCurrentLesson()
+                              .where(
+                                (s) => s.dayKey == _dateKey(selectedDay!) &&
+                                    s.time == t,
+                              )
+                              .toList();
+                          if (candidates.isEmpty) return false;
+                          final preferred = candidates.firstWhere(
+                            (s) =>
+                                _slotStatus(s, sessionNo: _flowLessonNo)
+                                    .index <=
+                                _SlotStatus.joinWithSessionChange.index,
+                            orElse: () => candidates.first,
+                          );
+                          return _chipMatchKindForSlot(
+                                preferred,
+                                targetSession: _flowLessonNo,
+                              ) !=
+                              _ChipMatchKind.none;
+                        }(),
+                        onDetailsTap: () {
+                          final candidates = _slotsForCurrentLesson()
+                              .where(
+                                (s) => s.dayKey == _dateKey(selectedDay!) &&
+                                    s.time == t,
+                              )
+                              .toList();
+                          if (candidates.isEmpty) return;
+                          final preferred = candidates.firstWhere(
+                            (s) =>
+                                _slotStatus(s, sessionNo: _flowLessonNo)
+                                    .index <=
+                                _SlotStatus.joinWithSessionChange.index,
+                            orElse: () => candidates.first,
+                          );
+                          _showSessionMiniDetails(preferred);
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
-          ...teachers.map((s) {
+        if (selectedTime != null)
+          _buildStepCard(
+            isActive: true,
+            isCompleted: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildStepLabel(
+                  3,
+                  isAr ? 'اختر معلم' : 'Choose a teacher',
+                  hint: isAr
+                      ? 'اختر معلمك لتأكيد الحجز'
+                      : 'Select your teacher to confirm booking',
+                ),
+                const SizedBox(height: 6),
+                ...teachers.map((s) {
             final cap = s.maxLearnersPerSlot <= 0 ? 6 : s.maxLearnersPerSlot;
             final booked = _effectiveBookedCount(s);
             final left = (cap - booked) < 0 ? 0 : (cap - booked);
@@ -7031,7 +7129,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               ),
             );
           }),
-        ],
+              ],
+            ),
+          ),
       ],
     );
   }

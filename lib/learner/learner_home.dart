@@ -4186,7 +4186,7 @@ class _BookingTopCardState extends State<_BookingTopCard>
                       ),
                       const SizedBox(height: 2),
                       const Text(
-                        'احجز درسك الآن لتجربة نظام الحجز',
+                        'احجز درسك الآن',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
