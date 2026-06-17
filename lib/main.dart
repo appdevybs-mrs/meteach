@@ -2770,9 +2770,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                       padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
                             childAspectRatio: 1,
                           ),
                       itemCount: selectedItems.length,
@@ -2839,9 +2839,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
             return GridView.builder(
               padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
                 childAspectRatio: 0.92,
               ),
               itemCount: teachers.length,
@@ -3195,12 +3195,24 @@ class _PublicGalleryViewerScreenState
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: _currentIndex);
+    _precacheAdjacent(_currentIndex);
   }
 
   @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _precacheAdjacent(int index) async {
+    for (final offset in [-1, 0, 1]) {
+      final i = index + offset;
+      if (i < 0 || i >= widget.items.length) continue;
+      final url = (widget.items[i]['url'] ?? '').toString().trim();
+      if (url.isNotEmpty) {
+        precacheImage(NetworkImage(url), context);
+      }
+    }
   }
 
   @override
@@ -3222,29 +3234,72 @@ class _PublicGalleryViewerScreenState
       body: PageView.builder(
         controller: _pageController,
         itemCount: widget.items.length,
-        onPageChanged: (i) => setState(() => _currentIndex = i),
+        onPageChanged: (i) {
+          setState(() => _currentIndex = i);
+          _precacheAdjacent(i);
+        },
         itemBuilder: (context, index) {
           final item = widget.items[index];
           final type = (item['type'] ?? '').toString().trim().toLowerCase();
           final url = (item['url'] ?? '').toString().trim();
+          final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
           final isVideo = type == 'video';
 
-          return Center(
-            child: isVideo
-                ? _PublicGalleryViewerVideo(url: url)
-                : InteractiveViewer(
-                    minScale: 0.8,
-                    maxScale: 4,
+          if (isVideo) {
+            return Center(child: _PublicGalleryViewerVideo(url: url));
+          }
+
+          return Stack(
+            children: [
+              if (thumbnailUrl.isNotEmpty)
+                Positioned.fill(
+                  child: Center(
                     child: Image.network(
-                      url,
+                      thumbnailUrl,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white,
-                        size: 44,
-                      ),
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
+                ),
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4,
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      final total = loadingProgress.expectedTotalBytes;
+                      final fraction = total != null
+                          ? loadingProgress.cumulativeBytesLoaded / total
+                          : null;
+                      return Center(
+                        child: CircularProgressIndicator(
+                          value: fraction,
+                          color: Colors.white54,
+                          strokeWidth: 2.5,
+                        ),
+                      );
+                    },
+                    frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                      if (wasSynchronouslyLoaded) return child;
+                      if (frame == null) return const SizedBox.shrink();
+                      return AnimatedOpacity(
+                        opacity: 1,
+                        duration: const Duration(milliseconds: 300),
+                        child: child,
+                      );
+                    },
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.broken_image_outlined,
+                      color: Colors.white,
+                      size: 44,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           );
         },
       ),
