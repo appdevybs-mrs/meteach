@@ -68,12 +68,8 @@ class _LearnerHomeState extends State<LearnerHome> {
   int _shellRefreshEpoch = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey _menuIconKey = GlobalKey();
-  final GlobalKey _drawerGalleryKey = GlobalKey();
-  final GlobalKey _drawerGamesKey = GlobalKey();
   final GlobalKey _drawerCoachKey = GlobalKey();
-  final GlobalKey _drawerStoriesKey = GlobalKey();
   final GlobalKey _drawerProfileKey = GlobalKey();
-  final GlobalKey _drawerMailKey = GlobalKey();
   final GlobalKey _drawerRegulationsKey = GlobalKey();
   final GlobalKey _drawerMenuSettingsKey = GlobalKey();
   final GlobalKey _drawerLogoutKey = GlobalKey();
@@ -681,20 +677,12 @@ class _LearnerHomeState extends State<LearnerHome> {
                 palette: p,
                 displayNameFuture: _displayNameFuture,
                 profilePhotoFuture: _profilePhotoFuture,
-                galleryTileKey: _drawerGalleryKey,
-                gamesTileKey: _drawerGamesKey,
                 coachTileKey: _drawerCoachKey,
-                storiesTileKey: _drawerStoriesKey,
                 profileTileKey: _drawerProfileKey,
-                mailTileKey: _drawerMailKey,
                 regulationsTileKey: _drawerRegulationsKey,
                 settingsTileKey: _drawerMenuSettingsKey,
                 logoutButtonKey: _drawerLogoutKey,
                 onOpenProfile: _openProfileScreen,
-                onOpenMail: _openMailScreen,
-                onOpenGallery: _openGalleryScreen,
-                onOpenStories: _openStoriesScreen,
-                onOpenGames: _openGamesScreen,
                 onOpenStudyCoach: _openStudyCoachScreen,
                 onOpenRegulations: _openRegulationsScreen,
                 onOpenSettings: _openSettingsSheet,
@@ -2321,11 +2309,28 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             children: [
               const SizedBox(height: 8),
 
+              // Top row: Gallery, Stories, Games
               LayoutBuilder(
                 builder: (context, constraints) {
                   final tiny = constraints.maxWidth < 350;
                   final gap = tiny ? 6.0 : 8.0;
-
+                  return Row(
+                    children: [
+                      const Expanded(child: _GalleryHomeCard(compact: true)),
+                      SizedBox(width: gap),
+                      const Expanded(child: _StoriesHomeCard(compact: true)),
+                      SizedBox(width: gap),
+                      const Expanded(child: _GamesHomeCard(compact: true)),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+              // Second row: Homework, Mail, Reminders
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final tiny = constraints.maxWidth < 350;
+                  final gap = tiny ? 6.0 : 8.0;
                   return Row(
                     children: [
                       Expanded(
@@ -2335,11 +2340,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                         ),
                       ),
                       SizedBox(width: gap),
-                      const Expanded(child: _RemindersHomeCard(compact: true)),
+                      const Expanded(child: _LearnerMailHomeCard(compact: true)),
                       SizedBox(width: gap),
-                      const Expanded(
-                        child: _LearnerMailHomeCard(compact: true),
-                      ),
+                      const Expanded(child: _RemindersHomeCard(compact: true)),
                     ],
                   );
                 },
@@ -6205,16 +6208,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             ),
             builder: (context, homeworkSnap) {
               final summary = homeworkSnap.data;
-              final courseKeysWithUndone =
-                  summary?.courseKeysWithUndone ?? <String>{};
               final undoneTotal = summary?.undoneTotal ?? 0;
-              final coursesCount = courseKeysWithUndone.length;
-              final subtitle =
-                  homeworkSnap.connectionState == ConnectionState.waiting
-                  ? 'Loading homework…'
-                  : (coursesCount == 0
-                        ? 'All done ✅'
-                        : '$coursesCount course${coursesCount == 1 ? '' : 's'} • $undoneTotal pending');
 
               return KeyedSubtree(
                 key: targetKey,
@@ -6314,24 +6308,13 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                                   ),
                               ],
                             ),
-                            SizedBox(height: tiny ? 10 : 18),
+                            SizedBox(height: tiny ? 10 : 12),
                             Text(
                               'Homework',
                               style: TextStyle(
                                 color: p.primary,
                                 fontWeight: FontWeight.w900,
-                                fontSize: tiny ? 12 : 16,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: p.text.withValues(alpha: 0.62),
-                                fontWeight: FontWeight.w700,
-                                fontSize: tiny ? 10 : 12,
+                                fontSize: tiny ? 12 : 14,
                               ),
                             ),
                           ],
@@ -6378,8 +6361,6 @@ class _RemindersHomeCard extends StatelessWidget {
       builder: (context, snap) {
         final v = snap.data?.snapshot.value;
         final unread = NotificationCounterService.reminderCounts(v).newCount;
-
-        final subtitle = unread == 0 ? 'All caught up ✅' : '$unread unread';
 
         return InkWell(
           borderRadius: BorderRadius.circular(20),
@@ -6472,24 +6453,13 @@ class _RemindersHomeCard extends StatelessWidget {
                           ),
                       ],
                     ),
-                    SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
+                    SizedBox(height: tiny ? 10 : (compact ? 12 : 12)),
                     Text(
                       'Reminders',
                       style: TextStyle(
                         color: p.primary,
                         fontWeight: FontWeight.w900,
-                        fontSize: tiny ? 12 : (compact ? 14 : 16),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: p.text.withValues(alpha: 0.62),
-                        fontWeight: FontWeight.w700,
-                        fontSize: tiny ? 10 : 12,
+                        fontSize: tiny ? 12 : (compact ? 12 : 14),
                       ),
                     ),
                   ],
@@ -6522,8 +6492,6 @@ class _LearnerMailHomeCard extends StatelessWidget {
           v,
           excludeHomework: true,
         );
-
-        final subtitle = unread == 0 ? 'No unread ✅' : '$unread unread';
 
         return InkWell(
           borderRadius: BorderRadius.circular(20),
@@ -6616,24 +6584,13 @@ class _LearnerMailHomeCard extends StatelessWidget {
                           ),
                       ],
                     ),
-                    SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
+                    SizedBox(height: tiny ? 10 : (compact ? 12 : 12)),
                     Text(
                       'Mail',
                       style: TextStyle(
                         color: p.primary,
                         fontWeight: FontWeight.w900,
-                        fontSize: tiny ? 12 : (compact ? 14 : 16),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: p.text.withValues(alpha: 0.62),
-                        fontWeight: FontWeight.w700,
-                        fontSize: tiny ? 10 : 12,
+                        fontSize: tiny ? 12 : (compact ? 12 : 14),
                       ),
                     ),
                   ],
@@ -6647,9 +6604,10 @@ class _LearnerMailHomeCard extends StatelessWidget {
   }
 }
 
-// ignore: unused_element
 class _GalleryHomeCard extends StatelessWidget {
-  const _GalleryHomeCard();
+  const _GalleryHomeCard({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -6671,76 +6629,63 @@ class _GalleryHomeCard extends StatelessWidget {
           ),
         );
       },
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: p.cardBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withValues(alpha: 0.85)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 7),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tiny = compact && constraints.maxWidth < 112;
+          final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
+          final iconSize = tiny ? 18.0 : 22.0;
+          final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
-          ],
-        ),
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: p.soft,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              ),
-              child: Icon(LearnerIcons.gallery, color: p.primary),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Gallery',
-                    style: TextStyle(
-                      color: p.primary,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
+            padding: EdgeInsets.all(contentPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: iconBox,
+                  height: iconBox,
+                  decoration: BoxDecoration(
+                    color: p.soft,
+                    borderRadius: BorderRadius.circular(tiny ? 12 : 15),
+                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Open your photos and videos',
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.62),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
+                  child: Icon(LearnerIcons.gallery, color: p.primary, size: iconSize),
+                ),
+                SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
+                Text(
+                  'Gallery',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: tiny ? 12 : (compact ? 14 : 16),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: p.soft,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Icon(Icons.chevron_right_rounded, color: p.primary),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-// ignore: unused_element
-class _StudyCoachHomeCard extends StatelessWidget {
-  const _StudyCoachHomeCard();
+class _StoriesHomeCard extends StatelessWidget {
+  const _StoriesHomeCard({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -6753,79 +6698,141 @@ class _StudyCoachHomeCard extends StatelessWidget {
           WindowAccessService.instance.guardOpen(
             context: context,
             role: AppWindowRole.learner,
-            windowKey: AppWindowKeys.learnerStudyCoach,
+            windowKey: AppWindowKeys.learnerStories,
             onAllowed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const LearnerStudyCoachScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const LearnerStoriesScreen()),
               );
             },
           ),
         );
       },
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: p.cardBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border.withValues(alpha: 0.85)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 7),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tiny = compact && constraints.maxWidth < 112;
+          final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
+          final iconSize = tiny ? 18.0 : 22.0;
+          final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
-          ],
-        ),
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: p.soft,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              ),
-              child: Icon(LearnerIcons.studyCoach, color: p.primary),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Study Coach',
-                    style: TextStyle(
-                      color: p.primary,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                    ),
+            padding: EdgeInsets.all(contentPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: iconBox,
+                  height: iconBox,
+                  decoration: BoxDecoration(
+                    color: p.soft,
+                    borderRadius: BorderRadius.circular(tiny ? 12 : 15),
+                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Set goals, reminders, and track progress',
-                    style: TextStyle(
-                      color: p.text.withValues(alpha: 0.62),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
+                  child: Icon(LearnerIcons.stories, color: p.primary, size: iconSize),
+                ),
+                SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
+                Text(
+                  'Stories',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: tiny ? 12 : (compact ? 14 : 16),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: p.soft,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Icon(Icons.chevron_right_rounded, color: p.primary),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _GamesHomeCard extends StatelessWidget {
+  const _GamesHomeCard({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _paletteFromTheme();
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () {
+        unawaited(
+          WindowAccessService.instance.guardOpen(
+            context: context,
+            role: AppWindowRole.learner,
+            windowKey: AppWindowKeys.learnerGames,
+            onAllowed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const LearnerGamesScreen()),
+              );
+            },
+          ),
+        );
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tiny = compact && constraints.maxWidth < 112;
+          final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
+          final iconSize = tiny ? 18.0 : 22.0;
+          final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: p.cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: p.border.withValues(alpha: 0.85)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 12,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
-          ],
-        ),
+            padding: EdgeInsets.all(contentPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: iconBox,
+                  height: iconBox,
+                  decoration: BoxDecoration(
+                    color: p.soft,
+                    borderRadius: BorderRadius.circular(tiny ? 12 : 15),
+                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                  ),
+                  child: Icon(LearnerIcons.games, color: p.primary, size: iconSize),
+                ),
+                SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
+                Text(
+                  'Games',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: tiny ? 12 : (compact ? 14 : 16),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -7040,20 +7047,12 @@ class _LearnerDrawer extends StatelessWidget {
     required this.palette,
     required this.displayNameFuture,
     required this.profilePhotoFuture,
-    required this.galleryTileKey,
-    required this.gamesTileKey,
     required this.coachTileKey,
-    required this.storiesTileKey,
     required this.profileTileKey,
-    required this.mailTileKey,
     required this.regulationsTileKey,
     required this.settingsTileKey,
     required this.logoutButtonKey,
     required this.onOpenProfile,
-    required this.onOpenMail,
-    required this.onOpenGallery,
-    required this.onOpenStories,
-    required this.onOpenGames,
     required this.onOpenStudyCoach,
     required this.onOpenRegulations,
     required this.onOpenSettings,
@@ -7063,20 +7062,12 @@ class _LearnerDrawer extends StatelessWidget {
   final _HomePalette palette;
   final Future<String>? displayNameFuture;
   final Future<String>? profilePhotoFuture;
-  final GlobalKey galleryTileKey;
-  final GlobalKey gamesTileKey;
   final GlobalKey coachTileKey;
-  final GlobalKey storiesTileKey;
   final GlobalKey profileTileKey;
-  final GlobalKey mailTileKey;
   final GlobalKey regulationsTileKey;
   final GlobalKey settingsTileKey;
   final GlobalKey logoutButtonKey;
   final VoidCallback onOpenProfile;
-  final VoidCallback onOpenMail;
-  final VoidCallback onOpenGallery;
-  final VoidCallback onOpenStories;
-  final VoidCallback onOpenGames;
   final VoidCallback onOpenStudyCoach;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenSettings;
@@ -7186,36 +7177,6 @@ class _LearnerDrawer extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                 children: [
                   _DrawerTile(
-                    targetKey: storiesTileKey,
-                    palette: palette,
-                    icon: LearnerIcons.stories,
-                    title: 'Stories',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenStories();
-                    },
-                  ),
-                  _DrawerTile(
-                    targetKey: galleryTileKey,
-                    palette: palette,
-                    icon: LearnerIcons.gallery,
-                    title: 'Gallery',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenGallery();
-                    },
-                  ),
-                  _DrawerTile(
-                    targetKey: gamesTileKey,
-                    palette: palette,
-                    icon: LearnerIcons.games,
-                    title: 'Games',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenGames();
-                    },
-                  ),
-                  _DrawerTile(
                     targetKey: coachTileKey,
                     palette: palette,
                     icon: LearnerIcons.studyCoach,
@@ -7225,18 +7186,6 @@ class _LearnerDrawer extends StatelessWidget {
                       onOpenStudyCoach();
                     },
                   ),
-
-                  _DrawerTile(
-                    targetKey: mailTileKey,
-                    palette: palette,
-                    icon: LearnerIcons.mail,
-                    title: 'Mail',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenMail();
-                    },
-                  ),
-
                   _DrawerTile(
                     targetKey: profileTileKey,
                     palette: palette,

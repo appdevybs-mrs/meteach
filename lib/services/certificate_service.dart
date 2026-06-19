@@ -498,6 +498,7 @@ class CertificateService {
     required String instructorName,
     String? moduleKey,
     String cpdHours = '40',
+    String shortDescription = '',
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final existing = await getRecordedCertificateByPath(
@@ -587,6 +588,7 @@ class CertificateService {
       moduleKey: existing?.certificate.moduleKey ?? moduleKey,
       instructorName: chosenInstructor,
       cpdHours: existing?.certificate.cpdHours ?? cpdHours,
+      shortDescription: existing?.certificate.shortDescription ?? shortDescription,
     );
 
     await _recordedCertRef(learnerUid, certId).set(certBase.toMap());

@@ -579,6 +579,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           },
           onView: (cert) => _showViewRecordedCertificate(cert),
           onPrint: (cert) => _printCertificate(cert),
+          onDelete: (entry) => _deleteRecordedCertificateEntry(entry),
         );
       },
     );
@@ -3162,6 +3163,7 @@ class _UserCertGroupCard extends StatelessWidget {
   final VoidCallback onToggle;
   final void Function(Certificate cert) onView;
   final void Function(Certificate cert) onPrint;
+  final void Function(RecordedCertificateEntry entry) onDelete;
 
   const _UserCertGroupCard({
     required this.group,
@@ -3169,6 +3171,7 @@ class _UserCertGroupCard extends StatelessWidget {
     required this.onToggle,
     required this.onView,
     required this.onPrint,
+    required this.onDelete,
   });
 
   @override
@@ -3253,6 +3256,7 @@ class _UserCertGroupCard extends StatelessWidget {
                       certificate: cert,
                       onView: () => onView(cert),
                       onPrint: () => onPrint(cert),
+                      onDelete: () => onDelete(entry),
                     ),
                   );
                 }).toList(),
@@ -3273,11 +3277,13 @@ class _CertificateListItem extends StatelessWidget {
   final Certificate certificate;
   final VoidCallback onView;
   final VoidCallback onPrint;
+  final VoidCallback onDelete;
 
   const _CertificateListItem({
     required this.certificate,
     required this.onView,
     required this.onPrint,
+    required this.onDelete,
   });
 
   Color _getStatusColor() {
@@ -3314,49 +3320,70 @@ class _CertificateListItem extends StatelessWidget {
           width: isAutoExpired ? 2 : 1,
         ),
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onView,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  InkWell(
-                    onTap: () => _copyToClipboard(context, certificate.cvn),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _primaryBlue.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            certificate.cvn,
-                            style: const TextStyle(
-                              color: _primaryBlue,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                InkWell(
+                  onTap: () => _copyToClipboard(context, certificate.cvn),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _primaryBlue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          certificate.cvn,
+                          style: const TextStyle(
+                            color: _primaryBlue,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
                           ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.copy,
-                            size: 14,
-                            color: _primaryBlue.withValues(alpha: 0.7),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.copy,
+                          size: 14,
+                          color: _primaryBlue.withValues(alpha: 0.7),
+                        ),
+                      ],
                     ),
                   ),
+                ),
+                const SizedBox(width: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _getStatusLabel(),
+                      style: TextStyle(
+                        color: _getStatusColor(),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                if (certificate.certificateKind != null) ...[
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -3364,113 +3391,81 @@ class _CertificateListItem extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: _getStatusColor().withValues(alpha: 0.1),
+                      color: certificate.certificateKind == 'milestone'
+                          ? const Color(0xFFFEF3C7)
+                          : const Color(0xFFDCFCE7),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _getStatusLabel(),
-                          style: TextStyle(
-                            color: _getStatusColor(),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                        if (isAutoExpired)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: Tooltip(
-                              message: 'Auto-expired based on expiration date',
-                              child: Icon(
-                                Icons.schedule,
-                                size: 14,
-                                color: Colors.orange.shade600,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (certificate.certificateKind != null) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
+                    child: Text(
+                      certificate.certificateKind == 'milestone'
+                          ? 'Milestone'
+                          : 'Course',
+                      style: TextStyle(
                         color: certificate.certificateKind == 'milestone'
-                            ? const Color(0xFFFEF3C7)
-                            : const Color(0xFFDCFCE7),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        certificate.certificateKind == 'milestone'
-                            ? 'Milestone'
-                            : 'Course',
-                        style: TextStyle(
-                          color: certificate.certificateKind == 'milestone'
-                              ? const Color(0xFF92400E)
-                              : const Color(0xFF166534),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
+                            ? const Color(0xFF92400E)
+                            : const Color(0xFF166534),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
                       ),
                     ),
-                  ],
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.print, size: 20, color: _softText),
-                    tooltip: 'Print PDF',
-                    onPressed: onPrint,
                   ),
                 ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                certificate.fullName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                  color: _primaryBlue,
+                const Spacer(),
+                GestureDetector(
+                  onTap: onPrint,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    child: const Icon(Icons.print, size: 20, color: _softText),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                certificate.certificateTitle,
-                style: const TextStyle(color: _softText, fontSize: 14),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                GestureDetector(
+                  onTap: onDelete,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    child: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: onView,
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _InfoChip(
-                    icon: Icons.calendar_today,
-                    label: 'Training: ${certificate.trainingDate}',
+                  Text(
+                    certificate.fullName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: _primaryBlue,
+                    ),
                   ),
-                  _InfoChip(
-                    icon: Icons.event,
-                    label: 'Expires: ${certificate.expirationDate}',
+                  const SizedBox(height: 4),
+                  Text(
+                    certificate.certificateTitle,
+                    style: const TextStyle(color: _softText, fontSize: 14),
                   ),
-                  _InfoChip(
-                    icon: Icons.download_rounded,
-                    label: 'Downloads: ${certificate.downloadCount}',
-                  ),
-                  _InfoChip(
-                    icon: certificate.downloadsEnabled
-                        ? Icons.lock_open_rounded
-                        : Icons.lock_outline_rounded,
-                    label: certificate.downloadsEnabled
-                        ? 'Download ON'
-                        : 'Download OFF',
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _InfoChip(
+                        icon: Icons.calendar_today,
+                        label: certificate.trainingDate,
+                      ),
+                      _InfoChip(
+                        icon: Icons.download_rounded,
+                        label: 'Downloads: ${certificate.downloadCount}',
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

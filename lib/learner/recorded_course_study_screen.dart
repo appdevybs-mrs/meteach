@@ -2090,6 +2090,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required String kind,
     String? moduleKey,
     String cpdHours = '40',
+    String shortDescription = '',
   }) async {
     final identity = await _learnerIdentity();
     final fullName = (identity['fullName'] ?? 'Learner').trim();
@@ -2115,6 +2116,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       instructorName: instructorName,
       moduleKey: moduleKey,
       cpdHours: cpdHours,
+      shortDescription: shortDescription,
     );
   }
 
@@ -2488,13 +2490,51 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
     try {
       final certId = 'course_${_sanitizeIdPart(_courseId)}';
-      final cpdHours = (widget.courseData['cpd_hours'] ?? '40').toString();
+      late String cpdHours;
+      late String shortDescription;
+
+      try {
+        final courseSnap = await _coursesRef
+            .child(_courseId)
+            .get()
+            .timeout(const Duration(seconds: 10));
+        if (courseSnap.exists && courseSnap.value is Map) {
+          final courseMap = Map<String, dynamic>.from(
+            courseSnap.value as Map,
+          );
+          cpdHours = (courseMap['cpd_hours'] ?? '40').toString();
+          shortDescription = (courseMap['short_description'] ?? '').toString();
+        } else {
+          cpdHours = '40';
+          shortDescription = '';
+        }
+      } catch (_) {
+        cpdHours = '40';
+        shortDescription = '';
+      }
+
+      if (cpdHours == '40' && shortDescription.isEmpty && widget.courseKey.trim().isNotEmpty && widget.courseKey != _courseId) {
+        try {
+          final fallbackSnap = await _coursesRef
+              .child(widget.courseKey)
+              .get()
+              .timeout(const Duration(seconds: 10));
+          if (fallbackSnap.exists && fallbackSnap.value is Map) {
+            final courseMap = Map<String, dynamic>.from(
+              fallbackSnap.value as Map,
+            );
+            cpdHours = (courseMap['cpd_hours'] ?? cpdHours).toString();
+            shortDescription = (courseMap['short_description'] ?? shortDescription).toString();
+          }
+        } catch (_) {}
+      }
       final cert = await _issueRecordedCertificate(
         certId: certId,
         certificateTitle: _title,
         trainingDate: _courseCompletionDate(),
         kind: 'course',
         cpdHours: cpdHours,
+        shortDescription: shortDescription,
       );
       final bytes = await _certificatePdfService.generateCertificatePdfBytes(
         cert,

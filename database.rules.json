@@ -134,6 +134,42 @@
         },
         "selfDeleteDone": {
           ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+        },
+
+        "recorded_certificates": {
+          "$certId": {
+            ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",
+
+            "cvn": { ".validate": "newData.isString()" },
+            "fullName": { ".validate": "newData.isString()" },
+            "nationalIdNumber": { ".validate": "newData.isString()" },
+            "certificateTitle": { ".validate": "newData.isString()" },
+            "trainingDate": { ".validate": "newData.isString()" },
+            "expirationDate": { ".validate": "newData.isString()" },
+            "status": { ".validate": "newData.isString()" },
+            "createdAt": { ".validate": "newData.isNumber()" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "issuedBy": { ".validate": "!newData.exists() || newData.isString()" },
+            "notes": { ".validate": "!newData.exists() || newData.isString()" },
+            "pdfUrl": { ".validate": "!newData.exists() || newData.isString()" },
+            "pdfPreviewUrl": { ".validate": "!newData.exists() || newData.isString()" },
+            "downloadCount": { ".validate": "newData.isNumber()" },
+            "lastDownloadedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+            "downloadsEnabled": { ".validate": "newData.isBoolean()" },
+            "source": { ".validate": "!newData.exists() || newData.isString()" },
+            "learnerUid": { ".validate": "!newData.exists() || newData.isString()" },
+            "recordedCertId": { ".validate": "!newData.exists() || newData.isString()" },
+            "certificateKind": { ".validate": "!newData.exists() || newData.isString()" },
+            "courseId": { ".validate": "!newData.exists() || newData.isString()" },
+            "courseKey": { ".validate": "!newData.exists() || newData.isString()" },
+            "moduleKey": { ".validate": "!newData.exists() || newData.isString()" },
+            "instructorName": { ".validate": "!newData.exists() || newData.isString()" },
+            "exam_course": { ".validate": "newData.isString()" },
+            "cpd_hours": { ".validate": "!newData.exists() || newData.isString()" },
+            "short_description": { ".validate": "!newData.exists() || newData.isString()" },
+
+            "$other": { ".validate": false }
+          }
         }
       }
     },

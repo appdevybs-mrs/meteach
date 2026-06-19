@@ -23,6 +23,9 @@ class _AdminTeacherSessionCountScreenState
   static const uiBorder = Color(0xFFD1D9E0);
   static const accentGreen = Color(0xFF2B9E6A);
 
+  static final Map<String, List<_TeacherStats>> _summaryCache = {};
+  static final Map<String, int> _totalSessionsCache = {};
+
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   bool _loading = true;
@@ -38,16 +41,36 @@ class _AdminTeacherSessionCountScreenState
   final Map<String, Map<int, String>> _sessionTitlesByCourse = {};
   final Set<String> _expandedTeachers = {};
   final Map<String, Set<String>> _expandedLearners = {};
+  final Set<String> _loadingTeacherDetails = {};
   String? _printingTeacherId;
   bool _printingAll = false;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(preferCache: true);
   }
 
   String _two(int n) => n.toString().padLeft(2, '0');
+
+  String _cacheKey() {
+    final from = _customFrom == null
+        ? ''
+        : '${_customFrom!.year}-${_two(_customFrom!.month)}-${_two(_customFrom!.day)}';
+    final to = _customTo == null
+        ? ''
+        : '${_customTo!.year}-${_two(_customTo!.month)}-${_two(_customTo!.day)}';
+    return '$_dateFilter|$from|$to';
+  }
+
+  String _teacherKey(_TeacherStats teacher) =>
+      teacher.teacherId.trim().isNotEmpty
+          ? teacher.teacherId.trim()
+          : teacher.teacherName.trim();
+
+  List<_TeacherStats> _cloneTeachers(List<_TeacherStats> source) {
+    return source.map((teacher) => teacher.cloneSummary()).toList();
+  }
 
   DateTime? _parseDate(String s) {
     final parts = s.split('-');
@@ -88,13 +111,6 @@ class _AdminTeacherSessionCountScreenState
     if (v is int) return v;
     if (v is num) return v.toInt();
     return int.tryParse(v.toString()) ?? 0;
-  }
-
-  String _learnerNameFromReservationValue(dynamic value) {
-    if (value == null || value == true || value == false) return '';
-    if (value is Map) return _learnerNameFromUserMap(value);
-    final s = value.toString().trim();
-    return (s == 'true' || s == 'false') ? '' : s;
   }
 
   String _learnerNameFromUserMap(Map<dynamic, dynamic> raw) {
@@ -174,7 +190,20 @@ class _AdminTeacherSessionCountScreenState
     return out;
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool preferCache = false}) async {
+    final cacheKey = _cacheKey();
+    if (preferCache && _summaryCache.containsKey(cacheKey)) {
+      setState(() {
+        _loading = false;
+        _error = null;
+        _teachers
+          ..clear()
+          ..addAll(_cloneTeachers(_summaryCache[cacheKey]!));
+        _totalSessions = _totalSessionsCache[cacheKey] ?? 0;
+      });
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -184,6 +213,7 @@ class _AdminTeacherSessionCountScreenState
       _sessionTitlesByCourse.clear();
       _expandedTeachers.clear();
       _expandedLearners.clear();
+      _loadingTeacherDetails.clear();
     });
 
     try {
@@ -196,9 +226,6 @@ class _AdminTeacherSessionCountScreenState
 
       final byCourse = Map<dynamic, dynamic>.from(snap.value as Map);
       final Map<String, _TeacherStats> teacherMap = {};
-      final Set<String> neededCourseIds = {};
-      final Set<String> neededLearnerIds = {};
-      final Map<String, String> learnerNamesById = {};
 
       for (final courseEntry in byCourse.entries) {
         final courseId = courseEntry.key.toString();
@@ -239,36 +266,11 @@ class _AdminTeacherSessionCountScreenState
 
               final learnersRaw = slotNode['learners'];
               final learnerCount = (learnersRaw is Map) ? learnersRaw.length : 0;
-              final learnerNames = <String>[];
               final learnerIds = <String>[];
               if (learnersRaw is Map) {
                 for (final lEntry in learnersRaw.entries) {
                   final lId = lEntry.key.toString();
-                  final rawLearnerName = _learnerNameFromReservationValue(
-                    lEntry.value,
-                  );
-                  if (rawLearnerName.isNotEmpty) {
-                    learnerNamesById[lId] = rawLearnerName;
-                  }
-                  neededLearnerIds.add(lId);
-                  final lName = rawLearnerName.isNotEmpty ? rawLearnerName : lId;
                   learnerIds.add(lId);
-                  learnerNames.add(lName);
-
-                  final teacher = teacherMap[key]!;
-                  teacher.learners.putIfAbsent(
-                    lId,
-                    () => _LearnerStats(learnerId: lId, learnerName: lName),
-                  );
-                  teacher.learners[lId]!.sessions.add(_LearnerSessionInfo(
-                    learnerId: lId,
-                    learnerName: lName,
-                    sessionNo: _toInt(slotNode['sessionNo']),
-                    dateStr: dayKey,
-                    timeStr: hhmm,
-                    courseId: courseId,
-                  ));
-                  teacher.learners[lId]!.sessionCount++;
                 }
               }
 
@@ -279,11 +281,9 @@ class _AdminTeacherSessionCountScreenState
                 sessionNo: _toInt(slotNode['sessionNo']),
                 learnerCount: learnerCount,
                 learnerIds: learnerIds,
-                learnerNames: learnerNames,
               ));
               teacherMap[key]!.sessionCount++;
               _totalSessions++;
-              neededCourseIds.add(courseId);
             }
 
             if (m['learners'] is Map) {
@@ -303,89 +303,11 @@ class _AdminTeacherSessionCountScreenState
         }
       }
 
-      // Booking reservations store learners as {uid: true}; resolve real names.
-      for (final uid in neededLearnerIds) {
-        if ((learnerNamesById[uid] ?? '').trim().isNotEmpty) continue;
-        try {
-          final userSnap = await _db.child('users/$uid').get();
-          if (userSnap.exists && userSnap.value is Map) {
-            final userMap = Map<dynamic, dynamic>.from(userSnap.value as Map);
-            final name = _learnerNameFromUserMap(userMap);
-            learnerNamesById[uid] = name.isNotEmpty ? name : uid;
-          } else {
-            learnerNamesById[uid] = uid;
-          }
-        } catch (_) {
-          learnerNamesById[uid] = uid;
-        }
-      }
-
-      // Fetch course titles
-      for (final cid in neededCourseIds) {
-        try {
-          final cSnap = await _db.child('courses/$cid/title').get();
-          if (cSnap.exists && cSnap.value != null) {
-            _courseTitles[cid] = cSnap.value.toString();
-          } else {
-            final cSnap2 = await _db.child('courses/$cid/name').get();
-            if (cSnap2.exists && cSnap2.value != null) {
-              _courseTitles[cid] = cSnap2.value.toString();
-            } else {
-              _courseTitles[cid] = cid;
-            }
-          }
-        } catch (_) {
-          _courseTitles[cid] = cid;
-        }
-        _sessionTitlesByCourse[cid] = await _loadSessionTitles(cid);
-      }
-
-      // Fetch learner attendance status for each online booking row.
-      for (final teacher in teacherMap.values) {
-        for (final learner in teacher.learners.values) {
-          for (final s in learner.sessions) {
-            final bookingKey = _bookingKey(s.courseId, s.dateStr, s.timeStr);
-            try {
-              final attendanceSnap = await _db
-                  .child(
-                    'booking_progress/${s.learnerId}/${s.courseId}/online_attendance/$bookingKey',
-                  )
-                  .get();
-              s.attendanceStatus = attendanceSnap.exists && attendanceSnap.value is Map
-                  ? _attendanceStatusFromMap(
-                      Map<dynamic, dynamic>.from(attendanceSnap.value as Map),
-                    )
-                  : 'Pending';
-            } catch (_) {
-              s.attendanceStatus = 'Pending';
-            }
-          }
-        }
-      }
-
-      // Apply course titles to sessions
-      for (final teacher in teacherMap.values) {
-        for (final session in teacher.sessions) {
-          session.courseTitle = _courseTitles[session.courseId] ?? session.courseId;
-          session.learnerNames
-            ..clear()
-            ..addAll(
-              session.learnerIds.map((id) => learnerNamesById[id] ?? id),
-            );
-        }
-        for (final learner in teacher.learners.values) {
-          learner.learnerName =
-              learnerNamesById[learner.learnerId] ?? learner.learnerId;
-          for (final s in learner.sessions) {
-            s.courseTitle = _courseTitles[s.courseId] ?? s.courseId;
-            s.sessionTitle = _sessionLabel(s.courseId, s.sessionNo);
-            s.learnerName = learnerNamesById[s.learnerId] ?? s.learnerId;
-          }
-        }
-      }
-
       final sorted = teacherMap.values.toList()
         ..sort((a, b) => b.sessionCount.compareTo(a.sessionCount));
+
+      _summaryCache[cacheKey] = _cloneTeachers(sorted);
+      _totalSessionsCache[cacheKey] = _totalSessions;
 
       setState(() {
         _teachers.addAll(sorted);
@@ -396,6 +318,154 @@ class _AdminTeacherSessionCountScreenState
         _error = toHumanError(e, fallback: 'Could not load session data.');
         _loading = false;
       });
+    }
+  }
+
+  Future<String> _loadCourseTitle(String courseId) async {
+    final cid = courseId.trim();
+    if (cid.isEmpty) return '';
+    if (_courseTitles.containsKey(cid)) return _courseTitles[cid]!;
+    try {
+      final cSnap = await _db.child('courses/$cid/title').get();
+      if (cSnap.exists && cSnap.value != null) {
+        _courseTitles[cid] = cSnap.value.toString();
+      } else {
+        final cSnap2 = await _db.child('courses/$cid/name').get();
+        _courseTitles[cid] = cSnap2.exists && cSnap2.value != null
+            ? cSnap2.value.toString()
+            : cid;
+      }
+    } catch (_) {
+      _courseTitles[cid] = cid;
+    }
+    return _courseTitles[cid]!;
+  }
+
+  Future<String> _loadLearnerName(String learnerId) async {
+    final uid = learnerId.trim();
+    if (uid.isEmpty) return '';
+    try {
+      final userSnap = await _db.child('users/$uid').get();
+      if (userSnap.exists && userSnap.value is Map) {
+        final name = _learnerNameFromUserMap(
+          Map<dynamic, dynamic>.from(userSnap.value as Map),
+        );
+        return name.isNotEmpty ? name : uid;
+      }
+    } catch (_) {}
+    return uid;
+  }
+
+  Future<void> _ensureTeacherDetails(_TeacherStats teacher) async {
+    final key = _teacherKey(teacher);
+    if (teacher.detailsLoaded) return;
+    if (_loadingTeacherDetails.contains(key)) {
+      while (mounted && _loadingTeacherDetails.contains(key)) {
+        await Future.delayed(const Duration(milliseconds: 80));
+      }
+      return;
+    }
+
+    setState(() => _loadingTeacherDetails.add(key));
+    try {
+      final neededCourseIds = teacher.sessions.map((s) => s.courseId).toSet();
+      for (final cid in neededCourseIds) {
+        await _loadCourseTitle(cid);
+        _sessionTitlesByCourse.putIfAbsent(cid, () => {});
+        if (_sessionTitlesByCourse[cid]!.isEmpty) {
+          _sessionTitlesByCourse[cid] = await _loadSessionTitles(cid);
+        }
+      }
+
+      final neededLearnerIds = <String>{};
+      for (final session in teacher.sessions) {
+        neededLearnerIds.addAll(session.learnerIds);
+      }
+
+      final learnerNamesById = <String, String>{};
+      for (final learnerId in neededLearnerIds) {
+        learnerNamesById[learnerId] = await _loadLearnerName(learnerId);
+      }
+
+      final learners = <String, _LearnerStats>{};
+      for (final session in teacher.sessions) {
+        session.courseTitle = _courseTitles[session.courseId] ?? session.courseId;
+        session.learnerNames
+          ..clear()
+          ..addAll(session.learnerIds.map((id) => learnerNamesById[id] ?? id));
+
+        for (final learnerId in session.learnerIds) {
+          final learnerName = learnerNamesById[learnerId] ?? learnerId;
+          final detail = _LearnerSessionInfo(
+            learnerId: learnerId,
+            learnerName: learnerName,
+            sessionNo: session.sessionNo,
+            dateStr: session.dateStr,
+            timeStr: session.timeStr,
+            courseId: session.courseId,
+          )
+            ..courseTitle = session.courseTitle
+            ..sessionTitle = _sessionLabel(session.courseId, session.sessionNo);
+
+          final bookingKey = _bookingKey(
+            detail.courseId,
+            detail.dateStr,
+            detail.timeStr,
+          );
+          try {
+            final attendanceSnap = await _db
+                .child(
+                  'booking_progress/${detail.learnerId}/${detail.courseId}/online_attendance/$bookingKey',
+                )
+                .get();
+            detail.attendanceStatus =
+                attendanceSnap.exists && attendanceSnap.value is Map
+                    ? _attendanceStatusFromMap(
+                        Map<dynamic, dynamic>.from(attendanceSnap.value as Map),
+                      )
+                    : 'Pending';
+          } catch (_) {
+            detail.attendanceStatus = 'Pending';
+          }
+
+          learners.putIfAbsent(
+            learnerId,
+            () => _LearnerStats(learnerId: learnerId, learnerName: learnerName),
+          );
+          learners[learnerId]!.sessions.add(detail);
+          learners[learnerId]!.sessionCount++;
+        }
+      }
+
+      teacher.learners = learners;
+      teacher.detailsLoaded = true;
+    } finally {
+      if (mounted) {
+        setState(() => _loadingTeacherDetails.remove(key));
+      }
+    }
+  }
+
+  Future<void> _ensureAllTeacherDetails() async {
+    for (final teacher in _teachers) {
+      await _ensureTeacherDetails(teacher);
+    }
+  }
+
+  Future<void> _toggleTeacher(_TeacherStats teacher) async {
+    final key = _teacherKey(teacher);
+    final isExpanded = _expandedTeachers.contains(key);
+    setState(() {
+      if (isExpanded) {
+        _expandedTeachers.remove(key);
+        _expandedLearners.remove(key);
+      } else {
+        _expandedTeachers.add(key);
+      }
+    });
+
+    if (!isExpanded) {
+      await _ensureTeacherDetails(teacher);
     }
   }
 
@@ -867,7 +937,8 @@ class _AdminTeacherSessionCountScreenState
 
   Widget _buildTeacherCard(int rank, _TeacherStats teacher) {
     final courseCount = teacher.sessions.map((s) => s.courseId).toSet().length;
-    final isExpanded = _expandedTeachers.contains(teacher.teacherId);
+    final teacherKey = _teacherKey(teacher);
+    final isExpanded = _expandedTeachers.contains(teacherKey);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -888,16 +959,7 @@ class _AdminTeacherSessionCountScreenState
         children: [
           InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: () {
-              setState(() {
-                if (isExpanded) {
-                  _expandedTeachers.remove(teacher.teacherId);
-                  _expandedLearners.remove(teacher.teacherId);
-                } else {
-                  _expandedTeachers.add(teacher.teacherId);
-                }
-              });
-            },
+            onTap: () => _toggleTeacher(teacher),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -951,7 +1013,7 @@ class _AdminTeacherSessionCountScreenState
                   ),
                   const SizedBox(width: 6),
                   // Print per-teacher icon
-                  _printingTeacherId == teacher.teacherId
+                  _printingTeacherId == teacherKey
                       ? const SizedBox(
                           width: 20,
                           height: 20,
@@ -993,6 +1055,23 @@ class _AdminTeacherSessionCountScreenState
   }
 
   Widget _buildLearnerList(_TeacherStats teacher) {
+    final teacherKey = _teacherKey(teacher);
+    if (_loadingTeacherDetails.contains(teacherKey)) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F9FB),
+          borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(20)),
+          border: Border(
+            top: BorderSide(color: uiBorder.withValues(alpha: 0.6)),
+          ),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final sorted = teacher.learners.values.toList()
       ..sort((a, b) => b.sessionCount.compareTo(a.sessionCount));
 
@@ -1026,7 +1105,8 @@ class _AdminTeacherSessionCountScreenState
   }
 
   Widget _buildLearnerRow(_TeacherStats teacher, _LearnerStats learner) {
-    final expandedSet = _expandedLearners.putIfAbsent(teacher.teacherId, () => {});
+    final teacherKey = _teacherKey(teacher);
+    final expandedSet = _expandedLearners.putIfAbsent(teacherKey, () => {});
     final isExpanded = expandedSet.contains(learner.learnerId);
 
     return Container(
@@ -1182,8 +1262,9 @@ class _AdminTeacherSessionCountScreenState
   // ──────────────────────────────────────────────
 
   Future<void> _printTeacherSessions(_TeacherStats teacher) async {
-    setState(() => _printingTeacherId = teacher.teacherId);
+    setState(() => _printingTeacherId = _teacherKey(teacher));
     try {
+      await _ensureTeacherDetails(teacher);
       final bytes = await _buildTeacherPdf(teacher);
       await Printing.layoutPdf(
         name:
@@ -1200,6 +1281,7 @@ class _AdminTeacherSessionCountScreenState
   Future<void> _printAllTeachers() async {
     setState(() => _printingAll = true);
     try {
+      await _ensureAllTeacherDetails();
       final bytes = await _buildAllTeachersPdf();
       await Printing.layoutPdf(
         name: 'all_teachers_sessions.pdf',
@@ -1630,7 +1712,7 @@ class _SessionDetail {
   final int sessionNo;
   final int learnerCount;
   final List<String> learnerIds;
-  final List<String> learnerNames;
+  final List<String> learnerNames = [];
 
   _SessionDetail({
     required this.courseId,
@@ -1639,8 +1721,18 @@ class _SessionDetail {
     required this.sessionNo,
     required this.learnerCount,
     this.learnerIds = const [],
-    this.learnerNames = const [],
   });
+
+  _SessionDetail cloneSummary() {
+    return _SessionDetail(
+      courseId: courseId,
+      dateStr: dateStr,
+      timeStr: timeStr,
+      sessionNo: sessionNo,
+      learnerCount: learnerCount,
+      learnerIds: List<String>.from(learnerIds),
+    )..courseTitle = courseTitle;
+  }
 }
 
 class _LearnerSessionInfo {
@@ -1682,11 +1774,18 @@ class _TeacherStats {
   int sessionCount = 0;
   List<_SessionDetail> sessions = [];
   Map<String, _LearnerStats> learners = {};
+  bool detailsLoaded = false;
 
   _TeacherStats({
     required this.teacherId,
     required this.teacherName,
   });
+
+  _TeacherStats cloneSummary() {
+    return _TeacherStats(teacherId: teacherId, teacherName: teacherName)
+      ..sessionCount = sessionCount
+      ..sessions = sessions.map((s) => s.cloneSummary()).toList();
+  }
 }
 
 class _TeacherPdfRow {

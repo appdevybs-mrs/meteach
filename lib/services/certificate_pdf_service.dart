@@ -146,16 +146,13 @@ class CertificatePdfService {
     final issueDate = cert.createdAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
         : DateTime.now();
-    final instructor = (cert.instructorName ?? '').trim().isNotEmpty
-        ? cert.instructorName!.trim()
-        : 'Seddik. B';
-
     String two(int n) => n.toString().padLeft(2, '0');
     final dateStr =
         '${two(issueDate.day)}-${two(issueDate.month)}-${issueDate.year}';
 
     final cpdHours = cert.cpdHours.trim();
     final showCpd = cpdHours.isNotEmpty;
+    final showDescription = cert.shortDescription.trim().isNotEmpty;
 
     doc.addPage(
       pw.Page(
@@ -170,7 +167,7 @@ class CertificatePdfService {
                 ),
               pw.Positioned(
                 left: 66,
-                top: 270,
+                top: 255,
                 child: pw.Text(
                   cert.fullName.toUpperCase(),
                   style: pw.TextStyle(
@@ -182,7 +179,7 @@ class CertificatePdfService {
               ),
               pw.Positioned(
                 left: 64,
-                top: 472.5,
+                top: 444.5,
                 child: pw.Text(
                   cert.certificateTitle.toUpperCase(),
                   style: pw.TextStyle(
@@ -195,7 +192,7 @@ class CertificatePdfService {
               if (showCpd)
                 pw.Positioned(
                   left: 64,
-                  top: 499.5,
+                  top: 471.5,
                   child: pw.Text(
                     '$cpdHours Hours of Continuing Professional Development (CPD)',
                     style: pw.TextStyle(
@@ -205,9 +202,25 @@ class CertificatePdfService {
                     ),
                   ),
                 ),
+              if (showDescription)
+                pw.Positioned(
+                  left: 64,
+                  top: 507,
+                  child: pw.SizedBox(
+                    width: 460,
+                    child: pw.Text(
+                      cert.shortDescription.trim(),
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        font: pw.Font.helvetica(),
+                        color: PdfColor.fromInt(0xFF111827),
+                      ),
+                    ),
+                  ),
+                ),
               pw.Positioned(
                 left: 216,
-                top: 640,
+                top: 639,
                 child: pw.Text(
                   cert.cvn.toUpperCase(),
                   style: pw.TextStyle(
@@ -219,7 +232,7 @@ class CertificatePdfService {
               ),
               pw.Positioned(
                 left: 469,
-                top: 751,
+                top: 766,
                 child: pw.Text(
                   dateStr,
                   style: pw.TextStyle(
@@ -229,22 +242,7 @@ class CertificatePdfService {
                   ),
                 ),
               ),
-              pw.Positioned(
-                left: 297.5 - 150,
-                top: 751,
-                child: pw.SizedBox(
-                  width: 300,
-                  child: pw.Text(
-                    instructor,
-                    textAlign: pw.TextAlign.center,
-                    style: pw.TextStyle(
-                      fontSize: 8,
-                      font: pw.Font.helveticaBold(),
-                      color: PdfColor.fromInt(0xFF111827),
-                    ),
-                  ),
-                ),
-              ),
+
             ],
           );
         },

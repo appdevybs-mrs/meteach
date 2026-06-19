@@ -14,7 +14,8 @@ import '../shared/shared_story_study_screen.dart';
 import '../services/story_preload_service.dart';
 
 class LearnerStoriesScreen extends StatefulWidget {
-  const LearnerStoriesScreen({super.key});
+  final bool showAppBar;
+  const LearnerStoriesScreen({super.key, this.showAppBar = true});
 
   @override
   State<LearnerStoriesScreen> createState() => _LearnerStoriesScreenState();
@@ -1353,6 +1354,21 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       minWidth: 1280,
     );
 
+    if (!widget.showAppBar) {
+      return Column(
+        children: [
+          _buildPublicSearchBar(p),
+          Expanded(
+            child: learnerWebBodyFrame(
+              context: context,
+              maxWidth: 1600,
+              child: _buildStoriesBody(p, desktopWorkspace),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Scaffold(
       backgroundColor: p.appBg,
       appBar: AppBar(
@@ -1446,25 +1462,151 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
       body: learnerWebBodyFrame(
         context: context,
         maxWidth: 1600,
-        child: StreamBuilder<DatabaseEvent>(
-          stream: _storiesRef.onValue,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting &&
-                snap.data == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
+        child: _buildStoriesBody(p, desktopWorkspace),
+      ),
+    );
+  }
 
-            final rawValue = snap.data?.snapshot.value;
-            final warmItems = StoryPreloadService.warmStories();
+  Widget _buildPublicSearchBar(_StoriesPalette p) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: p.appBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: p.border.withValues(alpha: 0.92)),
+              ),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value.trim().toLowerCase();
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search stories...',
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(
+                    color: p.text.withValues(alpha: 0.55),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          _StoriesTopIconButton(
+            tooltip: 'Filters',
+            active: _showFilters,
+            activeColor: const Color(0xFFF59E0B),
+            onPressed: () {
+              setState(() {
+                _showFilters = !_showFilters;
+              });
+            },
+            icon: _showFilters
+                ? Icons.tune_rounded
+                : Icons.filter_alt_outlined,
+            iconColor: p.primary,
+          ),
+        ],
+      ),
+    );
+  }
 
-            if ((rawValue == null || rawValue is! Map) && warmItems.isEmpty) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Container(
+  Widget _buildStoriesBody(_StoriesPalette p, bool desktopWorkspace) {
+    return StreamBuilder<DatabaseEvent>(
+      stream: _storiesRef.onValue,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting &&
+            snap.data == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final rawValue = snap.data?.snapshot.value;
+        final warmItems = StoryPreloadService.warmStories();
+
+        if ((rawValue == null || rawValue is! Map) && warmItems.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxWidth: 520),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: p.cardBg,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: p.border.withValues(alpha: 0.85),
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.menu_book_rounded,
+                      size: 50,
+                      color: p.primary,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No stories available yet.',
+                      style: TextStyle(
+                        color: p.primary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        final items = (rawValue is Map)
+            ? Map<dynamic, dynamic>.from(rawValue).entries.map((entry) {
+                final storyId = entry.key.toString();
+                final storyValue = entry.value;
+                final story = storyValue is Map
+                    ? Map<String, dynamic>.from(storyValue)
+                    : <String, dynamic>{};
+                story['storyId'] = storyId;
+                return MapEntry(storyId, story);
+              }).toList()
+            : warmItems;
+
+        final allGenres = _extractAllGenres(items);
+        final allLevels = _extractAllLevels(items);
+        final allLengths = _extractAllLengths(items);
+        final visibleItems = _applyFiltersAndSort(items: items);
+        _scheduleThumbPrecache(visibleItems);
+        final groupedStories = _groupStoriesByGenre(visibleItems);
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final availableWidth = constraints.maxWidth;
+            final pagePadding = _pagePaddingForWidth(availableWidth);
+
+            final storiesList = ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: pagePadding,
+              children: [
+                if (visibleItems.isEmpty)
+                  Container(
                     width: double.infinity,
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
                       color: p.cardBg,
                       borderRadius: BorderRadius.circular(24),
@@ -1472,167 +1614,102 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         color: p.border.withValues(alpha: 0.85),
                       ),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.menu_book_rounded,
-                          size: 50,
-                          color: p.primary,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'No stories available yet.',
-                          style: TextStyle(
-                            color: p.primary,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      'No stories match your filters.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: p.text,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                else
+                  ...groupedStories.entries.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: _buildGenreShelf(
+                        title: entry.key,
+                        stories: entry.value,
+                      ),
                     ),
                   ),
-                ),
-              );
-            }
+              ],
+            );
 
-            final items = (rawValue is Map)
-                ? Map<dynamic, dynamic>.from(rawValue).entries.map((entry) {
-                    final storyId = entry.key.toString();
-                    final storyValue = entry.value;
-                    final story = storyValue is Map
-                        ? Map<String, dynamic>.from(storyValue)
-                        : <String, dynamic>{};
-                    story['storyId'] = storyId;
-                    return MapEntry(storyId, story);
-                  }).toList()
-                : warmItems;
-
-            final allGenres = _extractAllGenres(items);
-            final allLevels = _extractAllLevels(items);
-            final allLengths = _extractAllLengths(items);
-            final visibleItems = _applyFiltersAndSort(items: items);
-            _scheduleThumbPrecache(visibleItems);
-            final groupedStories = _groupStoriesByGenre(visibleItems);
-
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                final availableWidth = constraints.maxWidth;
-                final pagePadding = _pagePaddingForWidth(availableWidth);
-
-                final storiesList = ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: pagePadding,
-                  children: [
-                    if (visibleItems.isEmpty)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(22),
-                        decoration: BoxDecoration(
-                          color: p.cardBg,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: p.border.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        child: Text(
-                          'No stories match your filters.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: p.text,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      )
-                    else
-                      ...groupedStories.entries.map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 20),
-                          child: _buildGenreShelf(
-                            title: entry.key,
-                            stories: entry.value,
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    await _storiesRef.get();
-                  },
-                  child: desktopWorkspace
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SizedBox(
-                              width: 310,
-                              child: ListView(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                padding: pagePadding,
-                                children: [
-                                  _buildCompactFilters(
-                                    genres: allGenres,
-                                    levels: allLevels,
-                                    lengths: allLengths,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Expanded(child: storiesList),
-                          ],
-                        )
-                      : ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: pagePadding,
-                          children: [
-                            if (_showFilters) ...[
-                              const SizedBox(height: 6),
+            return RefreshIndicator(
+              onRefresh: () async {
+                await _storiesRef.get();
+              },
+              child: desktopWorkspace
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: 310,
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: pagePadding,
+                            children: [
                               _buildCompactFilters(
                                 genres: allGenres,
                                 levels: allLevels,
                                 lengths: allLengths,
                               ),
                             ],
-                            const SizedBox(height: 18),
-                            if (visibleItems.isEmpty)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(22),
-                                decoration: BoxDecoration(
-                                  color: p.cardBg,
-                                  borderRadius: BorderRadius.circular(24),
-                                  border: Border.all(
-                                    color: p.border.withValues(alpha: 0.85),
-                                  ),
-                                ),
-                                child: Text(
-                                  'No stories match your filters.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: p.text,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              )
-                            else
-                              ...groupedStories.entries.map(
-                                (entry) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 20),
-                                  child: _buildGenreShelf(
-                                    title: entry.key,
-                                    stories: entry.value,
-                                  ),
-                                ),
-                              ),
-                          ],
+                          ),
                         ),
-                );
-              },
+                        Expanded(child: storiesList),
+                      ],
+                    )
+                  : ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: pagePadding,
+                      children: [
+                        if (_showFilters) ...[
+                          const SizedBox(height: 6),
+                          _buildCompactFilters(
+                            genres: allGenres,
+                            levels: allLevels,
+                            lengths: allLengths,
+                          ),
+                        ],
+                        const SizedBox(height: 18),
+                        if (visibleItems.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(22),
+                            decoration: BoxDecoration(
+                              color: p.cardBg,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: p.border.withValues(alpha: 0.85),
+                              ),
+                            ),
+                            child: Text(
+                              'No stories match your filters.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: p.text,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          )
+                        else
+                          ...groupedStories.entries.map(
+                            (entry) => Padding(
+                              padding: const EdgeInsets.only(bottom: 20),
+                              child: _buildGenreShelf(
+                                title: entry.key,
+                                stories: entry.value,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
             );
           },
-        ),
-      ),
+        );
+      },
     );
   }
 }

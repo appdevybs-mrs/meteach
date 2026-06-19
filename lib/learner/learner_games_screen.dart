@@ -8,7 +8,8 @@ import '../shared/responsive_layout.dart';
 import '../shared/profile_avatar.dart';
 
 class LearnerGamesScreen extends StatefulWidget {
-  const LearnerGamesScreen({super.key});
+  final bool showScaffold;
+  const LearnerGamesScreen({super.key, this.showScaffold = true});
 
   @override
   State<LearnerGamesScreen> createState() => _LearnerGamesScreenState();
@@ -1054,115 +1055,117 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
       minWidth: 1280,
     );
 
-    return Scaffold(
-      body: learnerWebBodyFrame(
-        context: context,
-        maxWidth: 1540,
-        child: StreamBuilder<DatabaseEvent>(
-          stream: _gamesRef.onValue,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting &&
-                snap.data == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
+    final body = learnerWebBodyFrame(
+      context: context,
+      maxWidth: 1540,
+      child: StreamBuilder<DatabaseEvent>(
+        stream: _gamesRef.onValue,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              snap.data == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-            final value = snap.data?.snapshot.value;
+          final value = snap.data?.snapshot.value;
 
-            if (value == null || value is! Map) {
-              return _buildEmptyState(context, filtered: false);
-            }
+          if (value == null || value is! Map) {
+            return _buildEmptyState(context, filtered: false);
+          }
 
-            final raw = Map<dynamic, dynamic>.from(value);
+          final raw = Map<dynamic, dynamic>.from(value);
 
-            final items = raw.entries.map((entry) {
-              final gameValue = entry.value;
+          final items = raw.entries.map((entry) {
+            final gameValue = entry.value;
 
-              final game = gameValue is Map
-                  ? Map<String, dynamic>.from(gameValue)
-                  : <String, dynamic>{};
-              game['gameId'] = entry.key.toString();
+            final game = gameValue is Map
+                ? Map<String, dynamic>.from(gameValue)
+                : <String, dynamic>{};
+            game['gameId'] = entry.key.toString();
 
-              return MapEntry(entry.key.toString(), game);
-            }).toList();
+            return MapEntry(entry.key.toString(), game);
+          }).toList();
 
-            items.sort((a, b) {
-              final aUpdated = _toInt(a.value['updatedAt']);
-              final bUpdated = _toInt(b.value['updatedAt']);
-              return bUpdated.compareTo(aUpdated);
-            });
+          items.sort((a, b) {
+            final aUpdated = _toInt(a.value['updatedAt']);
+            final bUpdated = _toInt(b.value['updatedAt']);
+            return bUpdated.compareTo(aUpdated);
+          });
 
-            final tags = _allTags(items);
+          final tags = _allTags(items);
 
-            if (!tags.contains(_selectedTag)) {
-              _selectedTag = 'All';
-            }
+          if (!tags.contains(_selectedTag)) {
+            _selectedTag = 'All';
+          }
 
-            final filteredItems = items.where((item) {
-              final game = item.value;
-              return _matchesSearch(game: game, query: _searchQuery) &&
-                  _matchesTag(game: game, selectedTag: _selectedTag);
-            }).toList();
-            _scheduleThumbPrecache(filteredItems);
+          final filteredItems = items.where((item) {
+            final game = item.value;
+            return _matchesSearch(game: game, query: _searchQuery) &&
+                _matchesTag(game: game, selectedTag: _selectedTag);
+          }).toList();
+          _scheduleThumbPrecache(filteredItems);
 
-            final grouped = _groupByCategory(filteredItems);
+          final grouped = _groupByCategory(filteredItems);
 
-            final gamesList = ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-              children: [
-                if (filteredItems.isEmpty)
-                  _buildEmptyState(context, filtered: true)
-                else
-                  ...grouped.entries.map(
-                    (entry) => _buildCategoryRow(
-                      context: context,
-                      title: entry.key,
-                      games: entry.value,
-                    ),
+          final gamesList = ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+            children: [
+              if (filteredItems.isEmpty)
+                _buildEmptyState(context, filtered: true)
+              else
+                ...grouped.entries.map(
+                  (entry) => _buildCategoryRow(
+                    context: context,
+                    title: entry.key,
+                    games: entry.value,
                   ),
-              ],
-            );
+                ),
+            ],
+          );
 
-            return RefreshIndicator(
-              onRefresh: () async {
-                await _gamesRef.get();
-              },
-              child: desktopWorkspace
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: 320,
-                          child: ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(12, 12, 0, 20),
-                            children: [_buildSearchAndFilter(context, tags)],
+          return RefreshIndicator(
+            onRefresh: () async {
+              await _gamesRef.get();
+            },
+            child: desktopWorkspace
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 320,
+                        child: ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(12, 12, 0, 20),
+                          children: [_buildSearchAndFilter(context, tags)],
+                        ),
+                      ),
+                      Expanded(child: gamesList),
+                    ],
+                  )
+                : ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
+                    children: [
+                      _buildSearchAndFilter(context, tags),
+                      if (filteredItems.isEmpty)
+                        _buildEmptyState(context, filtered: true)
+                      else
+                        ...grouped.entries.map(
+                          (entry) => _buildCategoryRow(
+                            context: context,
+                            title: entry.key,
+                            games: entry.value,
                           ),
                         ),
-                        Expanded(child: gamesList),
-                      ],
-                    )
-                  : ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                      children: [
-                        _buildSearchAndFilter(context, tags),
-                        if (filteredItems.isEmpty)
-                          _buildEmptyState(context, filtered: true)
-                        else
-                          ...grouped.entries.map(
-                            (entry) => _buildCategoryRow(
-                              context: context,
-                              title: entry.key,
-                              games: entry.value,
-                            ),
-                          ),
-                      ],
-                    ),
-            );
-          },
-        ),
+                    ],
+                  ),
+          );
+        },
       ),
     );
+
+    if (!widget.showScaffold) return body;
+
+    return Scaffold(body: body);
   }
 }

@@ -1,6 +1,6 @@
 part of '../main.dart';
 
-enum AppMode { courses, gallery, media }
+enum AppMode { courses, gallery, games, stories }
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -30,8 +30,10 @@ class _HomeShellState extends State<HomeShell> {
         return 'Courses';
       case AppMode.gallery:
         return 'Gallery';
-      case AppMode.media:
-        return 'Media';
+      case AppMode.games:
+        return 'Games';
+      case AppMode.stories:
+        return 'Stories';
     }
   }
 
@@ -39,7 +41,8 @@ class _HomeShellState extends State<HomeShell> {
     final pages = const <Widget>[
       AssistantHome(),
       GalleryHome(),
-      MediaHome(),
+      GamesHome(),
+      StoriesHome(),
     ];
     return SafeArea(
       child: Row(
@@ -79,8 +82,12 @@ class _HomeShellState extends State<HomeShell> {
                     label: Text('Gallery'),
                   ),
                   NavigationRailDestination(
-                    icon: Icon(Icons.perm_media_rounded),
-                    label: Text('Media'),
+                    icon: Icon(Icons.sports_esports_rounded),
+                    label: Text('Games'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.menu_book_rounded),
+                    label: Text('Stories'),
                   ),
                 ],
                 leading: Padding(
@@ -194,7 +201,8 @@ class _HomeShellState extends State<HomeShell> {
           children: const [
             AssistantHome(),
             GalleryHome(),
-            MediaHome(),
+            GamesHome(),
+            StoriesHome(),
           ],
         ),
       ),
@@ -212,8 +220,12 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Gallery',
           ),
           NavigationDestination(
-            icon: Icon(Icons.perm_media_rounded),
-            label: 'Media',
+            icon: Icon(Icons.sports_esports_rounded),
+            label: 'Games',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.menu_book_rounded),
+            label: 'Stories',
           ),
         ],
       ),
@@ -267,203 +279,6 @@ class _PulsingLoginFabState extends State<_PulsingLoginFab>
       ),
     );
   }
-}
-
-class MediaHome extends StatefulWidget {
-  const MediaHome({super.key});
-
-  @override
-  State<MediaHome> createState() => _MediaHomeState();
-}
-
-class _MediaHomeState extends State<MediaHome> {
-  static const List<String> _descriptions = [
-    'Read teacher-curated and educational stories',
-    'Play learning games and activities',
-  ];
-
-  final List<_MediaCategoryTabData> _tabs = const [
-    _MediaCategoryTabData(
-      label: 'Stories',
-      icon: Icons.auto_stories_rounded,
-      accent: Color(0xFFE18A00),
-    ),
-    _MediaCategoryTabData(
-      label: 'Games',
-      icon: Icons.sports_esports_rounded,
-      accent: Color(0xFF0B8F87),
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: SoftBackground(
-        child: Column(
-          children: [
-            _buildLearnersHubHeader(context),
-            const Expanded(
-              child: TabBarView(
-                children: [StoriesHome(), GamesHome()],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLearnersHubHeader(BuildContext context) {
-    return Builder(
-      builder: (context) {
-        final controller = DefaultTabController.of(context);
-        return AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) {
-            final selected = controller.index;
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFFF8FBFF), Color(0xFFECF4FF)],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Brand.uiBorder.withValues(alpha: 0.9),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.96),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Brand.uiBorder),
-                          ),
-                          child: Image.asset(
-                            'assets/images/ybs_logo.png',
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, _, _) => const Icon(
-                              Icons.school_rounded,
-                              color: Brand.primaryBlue,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Learners\' Hub',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  color: Brand.primaryBlue,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.82),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Brand.uiBorder.withValues(alpha: 0.86),
-                        ),
-                      ),
-                      child: TabBar(
-                        dividerColor: Colors.transparent,
-                        indicator: BoxDecoration(
-                          color: Brand.primaryBlue,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                        tabs: List.generate(_tabs.length, (index) {
-                          final item = _tabs[index];
-                          final isSelected = selected == index;
-                          return Tab(
-                            height: 46,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  item.icon,
-                                  size: 18,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : item.accent,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  item.label,
-                                  style: TextStyle(
-                                    color: isSelected
-                                        ? Colors.white
-                                        : Brand.mainText.withValues(
-                                            alpha: 0.86,
-                                          ),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: Text(
-                        _descriptions[selected],
-                        key: ValueKey<int>(selected),
-                        style: TextStyle(
-                          color: Brand.primaryBlue.withValues(alpha: 0.86),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _MediaCategoryTabData {
-  const _MediaCategoryTabData({
-    required this.label,
-    required this.icon,
-    required this.accent,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color accent;
 }
 
 class JobsHome extends StatefulWidget {
@@ -1041,7 +856,16 @@ class StoriesHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SoftBackground(child: const LearnerStoriesScreen());
+    return SoftBackground(
+      child: Column(
+        children: [
+          const SimpleTopBar(title: 'Your Bridge School'),
+          Expanded(
+            child: LearnerStoriesScreen(showAppBar: false),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1050,7 +874,16 @@ class GamesHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SoftBackground(child: const LearnerGamesScreen());
+    return SoftBackground(
+      child: Column(
+        children: [
+          const SimpleTopBar(title: 'Your Bridge School'),
+          Expanded(
+            child: const LearnerGamesScreen(showScaffold: false),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1059,6 +892,13 @@ class GalleryHome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _PublicGalleryShowcase();
+    return SoftBackground(
+      child: Column(
+        children: [
+          const SimpleTopBar(title: 'Your Bridge School'),
+          Expanded(child: const _PublicGalleryShowcase()),
+        ],
+      ),
+    );
   }
 }

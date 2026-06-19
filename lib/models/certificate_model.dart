@@ -74,6 +74,7 @@ class Certificate {
   final String? instructorName;
   final String examCourse;
   final String cpdHours;
+  final String shortDescription;
 
   Certificate({
     this.key,
@@ -103,6 +104,7 @@ class Certificate {
     this.instructorName,
     this.examCourse = 'course',
     this.cpdHours = '40',
+    this.shortDescription = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -133,6 +135,7 @@ class Certificate {
       if (instructorName != null) 'instructorName': instructorName,
       'exam_course': examCourse,
       if (cpdHours.isNotEmpty) 'cpd_hours': cpdHours,
+      if (shortDescription.isNotEmpty) 'short_description': shortDescription,
     };
   }
 
@@ -171,6 +174,7 @@ class Certificate {
       instructorName: map['instructorName']?.toString(),
       examCourse: _parseExamCourse(map['exam_course']),
       cpdHours: (map['cpd_hours'] ?? '40').toString(),
+      shortDescription: (map['short_description'] ?? '').toString(),
     );
   }
 
@@ -214,6 +218,7 @@ class Certificate {
     String? instructorName,
     String? examCourse,
     String? cpdHours,
+    String? shortDescription,
   }) {
     return Certificate(
       key: key ?? this.key,
@@ -243,6 +248,7 @@ class Certificate {
       instructorName: instructorName ?? this.instructorName,
       examCourse: _parseExamCourse(examCourse ?? this.examCourse),
       cpdHours: cpdHours ?? this.cpdHours,
+      shortDescription: shortDescription ?? this.shortDescription,
     );
   }
 
