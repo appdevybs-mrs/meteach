@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'ui_constants.dart';
 
 class WatermarkBackground extends StatelessWidget {
   final Widget child;
@@ -17,19 +16,21 @@ class WatermarkBackground extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 1360),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.74),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: UiK.uiBorder),
+                    color: Colors.white.withValues(alpha: 0.70),
+                    borderRadius: BorderRadius.circular(26),
+                    border: Border.all(
+                      color: const Color(0xFF7C3AED).withValues(alpha: 0.12),
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 28,
-                        offset: const Offset(0, 14),
+                        color: const Color(0xFF172B85).withValues(alpha: 0.10),
+                        blurRadius: 34,
+                        offset: const Offset(0, 18),
                       ),
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(21),
+                    borderRadius: BorderRadius.circular(25),
                     child: child,
                   ),
                 ),
@@ -43,7 +44,7 @@ class WatermarkBackground extends StatelessWidget {
         Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFFFFFFFF), Color(0xFFFAFCFF), Color(0xFFF5F8FC)],
+              colors: [Color(0xFFFFFFFF), Color(0xFFF7F8FF), Color(0xFFEFF6FF)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -59,7 +60,7 @@ class WatermarkBackground extends StatelessWidget {
               height: 260,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.75),
+                color: const Color(0xFF7C3AED).withValues(alpha: 0.10),
               ),
             ),
           ),
@@ -74,7 +75,7 @@ class WatermarkBackground extends StatelessWidget {
               height: 240,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFFF8FBFF).withValues(alpha: 0.9),
+                color: const Color(0xFF06B6D4).withValues(alpha: 0.12),
               ),
             ),
           ),
@@ -83,7 +84,7 @@ class WatermarkBackground extends StatelessWidget {
         Positioned.fill(
           child: IgnorePointer(
             child: Opacity(
-              opacity: 0.035,
+              opacity: 0.025,
               child: Center(
                 child: FractionallySizedBox(
                   widthFactor: 0.68,

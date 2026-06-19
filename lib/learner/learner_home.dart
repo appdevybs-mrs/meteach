@@ -691,10 +691,32 @@ class _LearnerHomeState extends State<LearnerHome> {
 
         appBar: AppBar(
           toolbarHeight: isWebDashboard ? 74 : kToolbarHeight,
-          backgroundColor: p.primary,
+          backgroundColor: Colors.transparent,
           elevation: 0,
           centerTitle: false,
-          surfaceTintColor: p.primary,
+          surfaceTintColor: Colors.transparent,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+          ),
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF172B85), Color(0xFF2563EB)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(24),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF172B85).withValues(alpha: 0.22),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+          ),
           leading: webDesktop
               ? null
               : IconButton(
@@ -1475,9 +1497,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
     if ((planned <= 0) && classId.isNotEmpty) {
       try {
-        final snap = await _db.child('classes/$classId/schedule').get().timeout(
-          const Duration(seconds: 8),
-        );
+        final snap = await _db
+            .child('classes/$classId/schedule')
+            .get()
+            .timeout(const Duration(seconds: 8));
         if (snap.exists && snap.value is Map) {
           final m = Map<String, dynamic>.from(snap.value as Map);
           final n = _toInt(
@@ -2049,9 +2072,10 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
     if (uid.isEmpty) return [];
 
     try {
-      final snap = await _db.child('users/$uid/courses').get().timeout(
-        const Duration(seconds: 10),
-      );
+      final snap = await _db
+          .child('users/$uid/courses')
+          .get()
+          .timeout(const Duration(seconds: 10));
       final v = snap.value;
       if (v is! Map) return [];
 
@@ -2309,6 +2333,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             children: [
               const SizedBox(height: 8),
 
+              const _LearnerHeroCard(),
+              const SizedBox(height: 16),
+
               // Top row: Gallery, Stories, Games
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -2340,7 +2367,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                         ),
                       ),
                       SizedBox(width: gap),
-                      const Expanded(child: _LearnerMailHomeCard(compact: true)),
+                      const Expanded(
+                        child: _LearnerMailHomeCard(compact: true),
+                      ),
                       SizedBox(width: gap),
                       const Expanded(child: _RemindersHomeCard(compact: true)),
                     ],
@@ -2379,6 +2408,15 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
                 },
               ),
 
+              const SizedBox(height: 10),
+              Text(
+                'Your Progress',
+                style: TextStyle(
+                  color: p.text,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 20,
+                ),
+              ),
               const SizedBox(height: 10),
               KeyedSubtree(
                 key: widget.coursesListKey,
@@ -2561,6 +2599,123 @@ class _CourseProgressItem {
     required this.meetUrl,
     required this.teacherUid,
   });
+}
+
+class _LearnerHeroCard extends StatelessWidget {
+  const _LearnerHeroCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.of(context).size.width < 380;
+    return Container(
+      height: compact ? 150 : 168,
+      padding: const EdgeInsets.fromLTRB(20, 18, 16, 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF7C3AED), Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7C3AED).withValues(alpha: 0.24),
+            blurRadius: 26,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -34,
+            top: -42,
+            child: _HeroBubble(
+              size: 108,
+              color: Colors.white.withValues(alpha: 0.14),
+            ),
+          ),
+          Positioned(
+            right: 48,
+            bottom: -72,
+            child: _HeroBubble(
+              size: 170,
+              color: const Color(0xFF06B6D4).withValues(alpha: 0.18),
+            ),
+          ),
+          Positioned(
+            right: compact ? 20 : 34,
+            top: 26,
+            child: Icon(
+              Icons.auto_stories_rounded,
+              color: Colors.white.withValues(alpha: 0.18),
+              size: compact ? 54 : 66,
+            ),
+          ),
+          Positioned.fill(
+            right: compact ? 42 : 72,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Keep learning,',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: compact ? 24 : 28,
+                    height: 1.05,
+                  ),
+                ),
+                Text(
+                  'keep growing!',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: const Color(0xFFFFD84D),
+                    fontWeight: FontWeight.w900,
+                    fontSize: compact ? 24 : 28,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Your English journey continues today.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontWeight: FontWeight.w700,
+                    fontSize: compact ? 13 : 15,
+                    height: 1.24,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroBubble extends StatelessWidget {
+  const _HeroBubble({required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    );
+  }
 }
 
 class _LoadingCard extends StatelessWidget {
@@ -2817,7 +2972,7 @@ class _ProgressCard extends StatelessWidget {
     final hasMeet = item.meetUrl.trim().isNotEmpty;
 
     return Material(
-      color: palette.cardBg,
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -2828,28 +2983,28 @@ class _ProgressCard extends StatelessWidget {
             final compact = side < 180 || textScale > 1.15;
             final iconSize = compact ? 34.0 : 38.0;
             final ringSize = compact ? 64.0 : 84.0;
+            final cardStart = variantAccent;
+            final cardEnd = Color.lerp(variantAccent, Colors.white, 0.48)!;
 
             return Container(
               padding: EdgeInsets.all(compact ? 10 : 12),
               decoration: BoxDecoration(
-                color: completedAll
-                    ? palette.primary.withValues(alpha: 0.08)
-                    : (hasProgress
-                          ? palette.primary.withValues(alpha: 0.04)
-                          : palette.cardBg),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: hasProgress
-                      ? variantAccent.withValues(alpha: 0.34)
-                      : variantAccent.withValues(alpha: 0.20),
+                gradient: LinearGradient(
+                  colors: completedAll || hasProgress
+                      ? [cardStart, cardEnd]
+                      : [cardEnd.withValues(alpha: 0.84), Colors.white],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.58)),
                 boxShadow: [
                   BoxShadow(
                     color: hasProgress
-                        ? variantAccent.withValues(alpha: 0.10)
-                        : Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 7),
+                        ? variantAccent.withValues(alpha: 0.26)
+                        : variantAccent.withValues(alpha: 0.13),
+                    blurRadius: 20,
+                    offset: const Offset(0, 12),
                   ),
                 ],
               ),
@@ -2862,15 +3017,15 @@ class _ProgressCard extends StatelessWidget {
                         width: iconSize,
                         height: iconSize,
                         decoration: BoxDecoration(
-                          color: variantAccent.withValues(alpha: 0.10),
+                          color: Colors.white.withValues(alpha: 0.28),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: variantAccent.withValues(alpha: 0.18),
+                            color: Colors.white.withValues(alpha: 0.34),
                           ),
                         ),
                         child: Icon(
                           variantIcon,
-                          color: variantAccent,
+                          color: hasProgress ? Colors.white : variantAccent,
                           size: compact ? 18 : 20,
                         ),
                       ),
@@ -2881,7 +3036,9 @@ class _ProgressCard extends StatelessWidget {
                           maxLines: compact ? 1 : 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: palette.primary,
+                            color: hasProgress
+                                ? Colors.white
+                                : const Color(0xFF101B4D),
                             fontWeight: FontWeight.w900,
                             fontSize: compact ? 12 : 14,
                             height: 1.1,
@@ -2897,10 +3054,10 @@ class _ProgressCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: variantAccent.withValues(alpha: 0.10),
+                      color: Colors.white.withValues(alpha: 0.24),
                       borderRadius: BorderRadius.circular(999),
                       border: Border.all(
-                        color: variantAccent.withValues(alpha: 0.22),
+                        color: Colors.white.withValues(alpha: 0.30),
                       ),
                     ),
                     child: Text(
@@ -2908,7 +3065,7 @@ class _ProgressCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: variantAccent,
+                        color: hasProgress ? Colors.white : variantAccent,
                         fontWeight: FontWeight.w900,
                         fontSize: compact ? 9 : 10,
                       ),
@@ -2931,7 +3088,9 @@ class _ProgressCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: palette.text.withValues(alpha: 0.70),
+                      color: hasProgress
+                          ? Colors.white.withValues(alpha: 0.90)
+                          : palette.text.withValues(alpha: 0.70),
                       fontWeight: FontWeight.w700,
                       fontSize: compact ? 10 : 11,
                     ),
@@ -2942,7 +3101,9 @@ class _ProgressCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: palette.text.withValues(alpha: 0.64),
+                      color: hasProgress
+                          ? Colors.white.withValues(alpha: 0.82)
+                          : palette.text.withValues(alpha: 0.64),
                       fontWeight: FontWeight.w700,
                       fontSize: compact ? 9 : 10,
                     ),
@@ -6179,7 +6340,6 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
     final me = FirebaseAuth.instance.currentUser;
     final meUid = me?.uid ?? '';
     final ref = FirebaseDatabase.instance.ref('users/$meUid/courses');
-    final p = _paletteFromTheme();
 
     return StreamBuilder<DatabaseEvent>(
       stream: meUid.isEmpty ? const Stream.empty() : ref.onValue,
@@ -6234,18 +6394,19 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                           ? 8.0
                           : (compact ? 12.0 : 14.0);
 
+                      const accent = Color(0xFF2563EB);
                       return Container(
                         decoration: BoxDecoration(
-                          color: p.cardBg,
-                          borderRadius: BorderRadius.circular(20),
+                          color: Colors.white.withValues(alpha: 0.96),
+                          borderRadius: BorderRadius.circular(22),
                           border: Border.all(
-                            color: p.border.withValues(alpha: 0.85),
+                            color: accent.withValues(alpha: 0.16),
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 12,
-                              offset: const Offset(0, 7),
+                              color: accent.withValues(alpha: 0.12),
+                              blurRadius: 18,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
@@ -6261,17 +6422,17 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                                   width: iconBox,
                                   height: iconBox,
                                   decoration: BoxDecoration(
-                                    color: p.soft,
+                                    color: accent.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(
                                       tiny ? 12 : 15,
                                     ),
                                     border: Border.all(
-                                      color: p.border.withValues(alpha: 0.85),
+                                      color: accent.withValues(alpha: 0.18),
                                     ),
                                   ),
                                   child: Icon(
                                     LearnerIcons.homework,
-                                    color: p.primary,
+                                    color: accent,
                                     size: iconSize,
                                   ),
                                 ),
@@ -6312,7 +6473,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                             Text(
                               'Homework',
                               style: TextStyle(
-                                color: p.primary,
+                                color: const Color(0xFF101B4D),
                                 fontWeight: FontWeight.w900,
                                 fontSize: tiny ? 12 : 14,
                               ),
@@ -6354,7 +6515,6 @@ class _RemindersHomeCard extends StatelessWidget {
     final me = FirebaseAuth.instance.currentUser;
     final uid = me?.uid ?? '';
     final ref = FirebaseDatabase.instance.ref('reminders/$uid');
-    final p = _paletteFromTheme();
 
     return StreamBuilder<DatabaseEvent>(
       stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
@@ -6387,16 +6547,17 @@ class _RemindersHomeCard extends StatelessWidget {
               final iconSize = tiny ? 18.0 : 22.0;
               final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
 
+              const accent = Color(0xFF8B5CF6);
               return Container(
                 decoration: BoxDecoration(
-                  color: p.cardBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                  color: Colors.white.withValues(alpha: 0.96),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: accent.withValues(alpha: 0.16)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 12,
-                      offset: const Offset(0, 7),
+                      color: accent.withValues(alpha: 0.12),
+                      blurRadius: 18,
+                      offset: const Offset(0, 10),
                     ),
                   ],
                 ),
@@ -6412,15 +6573,15 @@ class _RemindersHomeCard extends StatelessWidget {
                           width: iconBox,
                           height: iconBox,
                           decoration: BoxDecoration(
-                            color: p.soft,
+                            color: accent.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(tiny ? 12 : 15),
                             border: Border.all(
-                              color: p.border.withValues(alpha: 0.85),
+                              color: accent.withValues(alpha: 0.18),
                             ),
                           ),
                           child: Icon(
                             LearnerIcons.reminders,
-                            color: p.primary,
+                            color: accent,
                             size: iconSize,
                           ),
                         ),
@@ -6457,7 +6618,7 @@ class _RemindersHomeCard extends StatelessWidget {
                     Text(
                       'Reminders',
                       style: TextStyle(
-                        color: p.primary,
+                        color: const Color(0xFF101B4D),
                         fontWeight: FontWeight.w900,
                         fontSize: tiny ? 12 : (compact ? 12 : 14),
                       ),
@@ -6482,7 +6643,6 @@ class _LearnerMailHomeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final ref = FirebaseDatabase.instance.ref('mail_index/$uid');
-    final p = _paletteFromTheme();
 
     return StreamBuilder<DatabaseEvent>(
       stream: uid.isEmpty ? const Stream.empty() : ref.onValue,
@@ -6518,16 +6678,17 @@ class _LearnerMailHomeCard extends StatelessWidget {
               final iconSize = tiny ? 18.0 : 22.0;
               final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
 
+              const accent = Color(0xFF06B6D4);
               return Container(
                 decoration: BoxDecoration(
-                  color: p.cardBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
+                  color: Colors.white.withValues(alpha: 0.96),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: accent.withValues(alpha: 0.16)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 12,
-                      offset: const Offset(0, 7),
+                      color: accent.withValues(alpha: 0.12),
+                      blurRadius: 18,
+                      offset: const Offset(0, 10),
                     ),
                   ],
                 ),
@@ -6543,15 +6704,15 @@ class _LearnerMailHomeCard extends StatelessWidget {
                           width: iconBox,
                           height: iconBox,
                           decoration: BoxDecoration(
-                            color: p.soft,
+                            color: accent.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(tiny ? 12 : 15),
                             border: Border.all(
-                              color: p.border.withValues(alpha: 0.85),
+                              color: accent.withValues(alpha: 0.18),
                             ),
                           ),
                           child: Icon(
                             LearnerIcons.mail,
-                            color: p.primary,
+                            color: accent,
                             size: iconSize,
                           ),
                         ),
@@ -6588,7 +6749,7 @@ class _LearnerMailHomeCard extends StatelessWidget {
                     Text(
                       'Mail',
                       style: TextStyle(
-                        color: p.primary,
+                        color: const Color(0xFF101B4D),
                         fontWeight: FontWeight.w900,
                         fontSize: tiny ? 12 : (compact ? 12 : 14),
                       ),
@@ -6604,6 +6765,105 @@ class _LearnerMailHomeCard extends StatelessWidget {
   }
 }
 
+class _VividShortcutCard extends StatelessWidget {
+  const _VividShortcutCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = _paletteFromTheme();
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tiny = compact && constraints.maxWidth < 112;
+          final iconBox = tiny ? 36.0 : (compact ? 42.0 : 48.0);
+          final iconSize = tiny ? 18.0 : 23.0;
+          final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
+
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: accent.withValues(alpha: 0.16)),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            padding: EdgeInsets.all(contentPadding),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: iconBox,
+                  height: iconBox,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        accent.withValues(alpha: 0.18),
+                        accent.withValues(alpha: 0.08),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(tiny ? 13 : 16),
+                  ),
+                  child: Icon(icon, color: accent, size: iconSize),
+                ),
+                SizedBox(height: tiny ? 8 : 10),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: const Color(0xFF101B4D),
+                    fontWeight: FontWeight.w900,
+                    fontSize: tiny ? 12 : (compact ? 14 : 16),
+                  ),
+                ),
+                if (!tiny) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.62),
+                      fontWeight: FontWeight.w700,
+                      fontSize: compact ? 10 : 12,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _GalleryHomeCard extends StatelessWidget {
   const _GalleryHomeCard({this.compact = false});
 
@@ -6611,10 +6871,12 @@ class _GalleryHomeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = _paletteFromTheme();
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
+    return _VividShortcutCard(
+      compact: compact,
+      icon: LearnerIcons.gallery,
+      title: 'Gallery',
+      subtitle: 'View media',
+      accent: const Color(0xFF7C3AED),
       onTap: () {
         unawaited(
           WindowAccessService.instance.guardOpen(
@@ -6629,55 +6891,6 @@ class _GalleryHomeCard extends StatelessWidget {
           ),
         );
       },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final tiny = compact && constraints.maxWidth < 112;
-          final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
-          final iconSize = tiny ? 18.0 : 22.0;
-          final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
-
-          return Container(
-            decoration: BoxDecoration(
-              color: p.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.all(contentPadding),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: iconBox,
-                  height: iconBox,
-                  decoration: BoxDecoration(
-                    color: p.soft,
-                    borderRadius: BorderRadius.circular(tiny ? 12 : 15),
-                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
-                  ),
-                  child: Icon(LearnerIcons.gallery, color: p.primary, size: iconSize),
-                ),
-                SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
-                Text(
-                  'Gallery',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: tiny ? 12 : (compact ? 14 : 16),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
     );
   }
 }
@@ -6689,10 +6902,12 @@ class _StoriesHomeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = _paletteFromTheme();
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
+    return _VividShortcutCard(
+      compact: compact,
+      icon: LearnerIcons.stories,
+      title: 'Stories',
+      subtitle: 'Read & explore',
+      accent: const Color(0xFFEC4899),
       onTap: () {
         unawaited(
           WindowAccessService.instance.guardOpen(
@@ -6707,55 +6922,6 @@ class _StoriesHomeCard extends StatelessWidget {
           ),
         );
       },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final tiny = compact && constraints.maxWidth < 112;
-          final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
-          final iconSize = tiny ? 18.0 : 22.0;
-          final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
-
-          return Container(
-            decoration: BoxDecoration(
-              color: p.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.all(contentPadding),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: iconBox,
-                  height: iconBox,
-                  decoration: BoxDecoration(
-                    color: p.soft,
-                    borderRadius: BorderRadius.circular(tiny ? 12 : 15),
-                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
-                  ),
-                  child: Icon(LearnerIcons.stories, color: p.primary, size: iconSize),
-                ),
-                SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
-                Text(
-                  'Stories',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: tiny ? 12 : (compact ? 14 : 16),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
     );
   }
 }
@@ -6767,10 +6933,12 @@ class _GamesHomeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = _paletteFromTheme();
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
+    return _VividShortcutCard(
+      compact: compact,
+      icon: LearnerIcons.games,
+      title: 'Games',
+      subtitle: 'Learn & play',
+      accent: const Color(0xFFF59E0B),
       onTap: () {
         unawaited(
           WindowAccessService.instance.guardOpen(
@@ -6785,55 +6953,6 @@ class _GamesHomeCard extends StatelessWidget {
           ),
         );
       },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final tiny = compact && constraints.maxWidth < 112;
-          final iconBox = tiny ? 34.0 : (compact ? 40.0 : 46.0);
-          final iconSize = tiny ? 18.0 : 22.0;
-          final contentPadding = tiny ? 8.0 : (compact ? 12.0 : 14.0);
-
-          return Container(
-            decoration: BoxDecoration(
-              color: p.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: p.border.withValues(alpha: 0.85)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 12,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            padding: EdgeInsets.all(contentPadding),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: iconBox,
-                  height: iconBox,
-                  decoration: BoxDecoration(
-                    color: p.soft,
-                    borderRadius: BorderRadius.circular(tiny ? 12 : 15),
-                    border: Border.all(color: p.border.withValues(alpha: 0.85)),
-                  ),
-                  child: Icon(LearnerIcons.games, color: p.primary, size: iconSize),
-                ),
-                SizedBox(height: tiny ? 10 : (compact ? 12 : 18)),
-                Text(
-                  'Games',
-                  style: TextStyle(
-                    color: p.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: tiny ? 12 : (compact ? 14 : 16),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
     );
   }
 }
@@ -7076,7 +7195,7 @@ class _LearnerDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
-      backgroundColor: palette.appBg,
+      backgroundColor: const Color(0xFFF7F8FF),
       child: SafeArea(
         child: Column(
           children: [
@@ -7085,8 +7204,19 @@ class _LearnerDrawer extends StatelessWidget {
               margin: const EdgeInsets.all(14),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: palette.primary,
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF172B85), Color(0xFF7C3AED)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF172B85).withValues(alpha: 0.20),
+                    blurRadius: 22,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
               ),
               child: FutureBuilder<String>(
                 future: profilePhotoFuture,
@@ -7102,13 +7232,13 @@ class _LearnerDrawer extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 48,
-                            height: 48,
+                            width: 58,
+                            height: 58,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white24,
+                              color: Colors.white.withValues(alpha: 0.18),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.35),
+                                color: Colors.white.withValues(alpha: 0.42),
                                 width: 2,
                               ),
                             ),
@@ -7119,14 +7249,14 @@ class _LearnerDrawer extends StatelessWidget {
                                     fit: BoxFit.cover,
                                     filterQuality: FilterQuality.low,
                                     cacheWidth:
-                                        (48 *
+                                        (58 *
                                                 MediaQuery.of(
                                                   context,
                                                 ).devicePixelRatio)
                                             .round()
                                             .clamp(96, 320),
                                     cacheHeight:
-                                        (48 *
+                                        (58 *
                                                 MediaQuery.of(
                                                   context,
                                                 ).devicePixelRatio)
@@ -7135,13 +7265,13 @@ class _LearnerDrawer extends StatelessWidget {
                                     errorBuilder: (_, _, _) => const Icon(
                                       Icons.person_rounded,
                                       color: Colors.white,
-                                      size: 28,
+                                      size: 32,
                                     ),
                                   )
                                 : const Icon(
                                     Icons.person_rounded,
                                     color: Colors.white,
-                                    size: 28,
+                                    size: 32,
                                   ),
                           ),
                           const SizedBox(height: 12),
@@ -7157,7 +7287,7 @@ class _LearnerDrawer extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Learner Menu',
+                            'Ready to learn today?',
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.82),
                               fontWeight: FontWeight.w700,
@@ -7180,6 +7310,7 @@ class _LearnerDrawer extends StatelessWidget {
                     targetKey: coachTileKey,
                     palette: palette,
                     icon: LearnerIcons.studyCoach,
+                    accent: const Color(0xFF06B6D4),
                     title: 'Study Coach',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -7190,6 +7321,7 @@ class _LearnerDrawer extends StatelessWidget {
                     targetKey: profileTileKey,
                     palette: palette,
                     icon: LearnerIcons.profile,
+                    accent: const Color(0xFF2563EB),
                     title: 'Profile',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -7200,6 +7332,7 @@ class _LearnerDrawer extends StatelessWidget {
                     targetKey: regulationsTileKey,
                     palette: palette,
                     icon: LearnerIcons.regulations,
+                    accent: const Color(0xFFF59E0B),
                     title: 'Regulations',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -7210,6 +7343,7 @@ class _LearnerDrawer extends StatelessWidget {
                     targetKey: settingsTileKey,
                     palette: palette,
                     icon: Icons.settings_rounded,
+                    accent: const Color(0xFF7C3AED),
                     title: 'Settings',
                     onTap: () {
                       Navigator.of(context).pop();
@@ -7227,7 +7361,7 @@ class _LearnerDrawer extends StatelessWidget {
                   key: logoutButtonKey,
                   onPressed: onLogout,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: palette.accent,
+                    backgroundColor: const Color(0xFFEF4444),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -7257,6 +7391,7 @@ class _DrawerTile extends StatelessWidget {
     required this.title,
     required this.onTap,
     this.targetKey,
+    this.accent,
   });
 
   final _HomePalette palette;
@@ -7264,15 +7399,17 @@ class _DrawerTile extends StatelessWidget {
   final String title;
   final VoidCallback onTap;
   final GlobalKey? targetKey;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
+    final tileAccent = accent ?? palette.primary;
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 9),
       child: KeyedSubtree(
         key: targetKey,
         child: Material(
-          color: palette.cardBg,
+          color: Colors.white.withValues(alpha: 0.98),
           borderRadius: BorderRadius.circular(18),
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
@@ -7281,9 +7418,14 @@ class _DrawerTile extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: palette.border.withValues(alpha: 0.85),
-                ),
+                border: Border.all(color: tileAccent.withValues(alpha: 0.14)),
+                boxShadow: [
+                  BoxShadow(
+                    color: tileAccent.withValues(alpha: 0.08),
+                    blurRadius: 14,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -7291,10 +7433,10 @@ class _DrawerTile extends StatelessWidget {
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(
-                      color: palette.soft,
+                      color: tileAccent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: Icon(icon, color: palette.primary),
+                    child: Icon(icon, color: tileAccent),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -7304,7 +7446,7 @@ class _DrawerTile extends StatelessWidget {
                         Text(
                           title,
                           style: TextStyle(
-                            color: palette.primary,
+                            color: const Color(0xFF101B4D),
                             fontWeight: FontWeight.w900,
                           ),
                         ),
