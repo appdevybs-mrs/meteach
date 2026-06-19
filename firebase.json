@@ -1,1 +1,33 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"dreamenglishacademy-3efcd","appId":"1:337224826950:android:1e14ed96fb3966bff48a47","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"dreamenglishacademy-3efcd","configurations":{"android":"1:337224826950:android:1e14ed96fb3966bff48a47","ios":"1:337224826950:ios:af9ceafb6bdf419bf48a47","macos":"1:337224826950:ios:af9ceafb6bdf419bf48a47","web":"1:337224826950:web:1a7531226595f79ff48a47","windows":"1:337224826950:web:32aabd79e82dcfb4f48a47"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "dreamenglishacademy-3efcd",
+          "appId": "1:337224826950:android:1e14ed96fb3966bff48a47",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "dreamenglishacademy-3efcd",
+          "configurations": {
+            "android": "1:337224826950:android:1e14ed96fb3966bff48a47",
+            "ios": "1:337224826950:ios:af9ceafb6bdf419bf48a47",
+            "macos": "1:337224826950:ios:af9ceafb6bdf419bf48a47",
+            "web": "1:337224826950:web:1a7531226595f79ff48a47",
+            "windows": "1:337224826950:web:32aabd79e82dcfb4f48a47"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "hosting",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

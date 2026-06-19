@@ -47,6 +47,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   // --- Tab 1: Recorded Achievements (existing) ---
   List<RecordedCertificateEntry> _recordedCertificates = [];
   List<RecordedCertificateEntry> _filteredRecordedCertificates = [];
+  List<_UserCertGroup> _groupedRecordedCerts = [];
+  final Set<String> _expandedUserIds = {};
   bool _loadingRecorded = true;
 
   int _activeTab = 0;
@@ -240,6 +242,21 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       }
       return true;
     }).toList();
+    _buildUserGroups();
+  }
+
+  void _buildUserGroups() {
+    final Map<String, _UserCertGroup> groups = {};
+    for (final entry in _filteredRecordedCertificates) {
+      final uid = entry.learnerUid;
+      groups.putIfAbsent(uid, () => _UserCertGroup(
+        learnerUid: uid,
+        fullName: entry.certificate.fullName,
+      )).entries.add(entry);
+    }
+    final sorted = groups.values.toList()
+      ..sort((a, b) => a.fullName.compareTo(b.fullName));
+    _groupedRecordedCerts = sorted;
   }
 
   void _onSearchChanged(String value) {
@@ -531,7 +548,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_filteredRecordedCertificates.isEmpty) {
+    if (_groupedRecordedCerts.isEmpty) {
       return Center(
         child: Text(
           _recordedCertificates.isEmpty
@@ -544,14 +561,24 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      itemCount: _filteredRecordedCertificates.length,
+      itemCount: _groupedRecordedCerts.length,
       itemBuilder: (context, index) {
-        final entry = _filteredRecordedCertificates[index];
-        final cert = entry.certificate;
-        return _CertificateListItem(
-          certificate: cert,
-          onView: () => _showViewRecordedCertificate(cert),
-          onPrint: () => _printCertificate(cert),
+        final group = _groupedRecordedCerts[index];
+        final isExpanded = _expandedUserIds.contains(group.learnerUid);
+        return _UserCertGroupCard(
+          group: group,
+          isExpanded: isExpanded,
+          onToggle: () {
+            setState(() {
+              if (isExpanded) {
+                _expandedUserIds.remove(group.learnerUid);
+              } else {
+                _expandedUserIds.add(group.learnerUid);
+              }
+            });
+          },
+          onView: (cert) => _showViewRecordedCertificate(cert),
+          onPrint: (cert) => _printCertificate(cert),
         );
       },
     );
@@ -3129,6 +3156,119 @@ class _KindChip extends StatelessWidget {
   }
 }
 
+class _UserCertGroupCard extends StatelessWidget {
+  final _UserCertGroup group;
+  final bool isExpanded;
+  final VoidCallback onToggle;
+  final void Function(Certificate cert) onView;
+  final void Function(Certificate cert) onPrint;
+
+  const _UserCertGroupCard({
+    required this.group,
+    required this.isExpanded,
+    required this.onToggle,
+    required this.onView,
+    required this.onPrint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _uiBorder),
+      ),
+      child: Column(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onToggle,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: _primaryBlue.withValues(alpha: 0.1),
+                    child: Text(
+                      group.fullName.isNotEmpty
+                          ? group.fullName[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        color: _primaryBlue,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.fullName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: _primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${group.entries.length} certificate${group.entries.length == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                            color: _softText,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: isExpanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(
+                      Icons.expand_more,
+                      color: _softText,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: group.entries.map((entry) {
+                  final cert = entry.certificate;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: _CertificateListItem(
+                      certificate: cert,
+                      onView: () => onView(cert),
+                      onPrint: () => onPrint(cert),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            crossFadeState: isExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 200),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CertificateListItem extends StatelessWidget {
   final Certificate certificate;
   final VoidCallback onView;
@@ -3165,12 +3305,11 @@ class _CertificateListItem extends StatelessWidget {
         certificate.effectiveStatus == CertificateStatus.expired &&
         certificate.status == CertificateStatus.valid;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
+        border: Border.all(
           color: isAutoExpired ? Colors.orange.shade200 : _uiBorder,
           width: isAutoExpired ? 2 : 1,
         ),
@@ -3282,22 +3421,10 @@ class _CertificateListItem extends StatelessWidget {
                     ),
                   ],
                   const Spacer(),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, color: _softText),
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'view':
-                          onView();
-                          break;
-                        case 'print':
-                          onPrint();
-                          break;
-                      }
-                    },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'view', child: Text('View')),
-                      PopupMenuItem(value: 'print', child: Text('Print')),
-                    ],
+                  IconButton(
+                    icon: const Icon(Icons.print, size: 20, color: _softText),
+                    tooltip: 'Print PDF',
+                    onPressed: onPrint,
                   ),
                 ],
               ),
@@ -3384,6 +3511,18 @@ class _InfoChip extends StatelessWidget {
       ),
     );
   }
+}
+
+class _UserCertGroup {
+  final String learnerUid;
+  final String fullName;
+  final List<RecordedCertificateEntry> entries;
+
+  _UserCertGroup({
+    required this.learnerUid,
+    required this.fullName,
+    List<RecordedCertificateEntry>? entries,
+  }) : entries = entries ?? [];
 }
 
 class _CertificateViewSheet extends StatelessWidget {

@@ -69,6 +69,7 @@ class AppWindowKeys {
   static const adminSettings = 'settings';
   static const adminJobApplications = 'job_applications';
   static const adminDiary = 'diary';
+  static const adminTeacherSessionCount = 'teacher_session_count';
 }
 
 class AppWindowDefinition {
@@ -428,6 +429,14 @@ class WindowAccessService {
       key: AppWindowKeys.adminOnlineBooking,
       labelEn: 'Online Booking',
       labelAr: 'الحجز أونلاين',
+      tab: 'Operations',
+      canClose: true,
+    ),
+    AppWindowDefinition(
+      role: AppWindowRole.admin,
+      key: AppWindowKeys.adminTeacherSessionCount,
+      labelEn: 'Teacher Session Count',
+      labelAr: 'عدد حصص المدرسين',
       tab: 'Operations',
       canClose: true,
     ),

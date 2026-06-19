@@ -2089,6 +2089,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required String trainingDate,
     required String kind,
     String? moduleKey,
+    String cpdHours = '40',
   }) async {
     final identity = await _learnerIdentity();
     final fullName = (identity['fullName'] ?? 'Learner').trim();
@@ -2113,6 +2114,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       kind: kind,
       instructorName: instructorName,
       moduleKey: moduleKey,
+      cpdHours: cpdHours,
     );
   }
 
@@ -2486,11 +2488,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
     try {
       final certId = 'course_${_sanitizeIdPart(_courseId)}';
+      final cpdHours = (widget.courseData['cpd_hours'] ?? '40').toString();
       final cert = await _issueRecordedCertificate(
         certId: certId,
         certificateTitle: _title,
         trainingDate: _courseCompletionDate(),
         kind: 'course',
+        cpdHours: cpdHours,
       );
       final bytes = await _certificatePdfService.generateCertificatePdfBytes(
         cert,

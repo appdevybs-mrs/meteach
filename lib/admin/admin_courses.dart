@@ -1596,6 +1596,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   late final TextEditingController shortDescC;
   late final TextEditingController longDescC;
   late final TextEditingController durationC;
+  late final TextEditingController cpdHoursC;
   late final TextEditingController contentC;
   late final TextEditingController instructorsC;
   late final TextEditingController levelC;
@@ -1752,6 +1753,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     shortDescC = TextEditingController(text: initial?.shortDescription ?? '');
     longDescC = TextEditingController(text: initial?.longDescription ?? '');
     durationC = TextEditingController(text: initial?.duration ?? '');
+    cpdHoursC = TextEditingController(text: initial?.cpdHours ?? '');
     contentC = TextEditingController(text: initial?.contentText ?? '');
     instructorsC = TextEditingController(
       text: initial?.instructors.join(', ') ?? '',
@@ -1859,6 +1861,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     shortDescC.dispose();
     longDescC.dispose();
     durationC.dispose();
+    cpdHoursC.dispose();
     contentC.dispose();
     instructorsC.dispose();
     levelC.dispose();
@@ -1971,6 +1974,12 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       controller: durationC,
                       label: 'Duration',
                       hint: 'Example: 6 hours / 12 lessons',
+                    ),
+                    const SizedBox(height: 12),
+                    _TextField(
+                      controller: cpdHoursC,
+                      label: 'CPD Hours',
+                      hint: 'e.g. 40',
                     ),
                     const SizedBox(height: 12),
                     _TextField(
@@ -2188,6 +2197,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         shortDescription: shortDescC.text.trim(),
         longDescription: longDescC.text.trim(),
         duration: durationC.text.trim(),
+        cpdHours: cpdHoursC.text.trim(),
         contentText: contentC.text.trim(),
         instructors: _splitCsv(instructorsC.text),
         level: levelC.text.trim(),
@@ -2790,6 +2800,7 @@ class Course {
     required this.shortDescription,
     required this.longDescription,
     required this.duration,
+    this.cpdHours = '',
     required this.contentText,
     required this.instructors,
     required this.level,
@@ -2813,6 +2824,7 @@ class Course {
   final String shortDescription;
   final String longDescription;
   final String duration;
+  final String cpdHours;
   final String contentText;
   final List<String> instructors;
   final String level;
@@ -2842,6 +2854,7 @@ class Course {
       'short_description': shortDescription,
       'long_description': longDescription,
       'duration': duration,
+      'cpd_hours': cpdHours,
       'content': contentText,
       'instructors': instructors,
       'level': level,
@@ -2903,6 +2916,7 @@ class Course {
       shortDescription: (m['short_description'] ?? '').toString(),
       longDescription: (m['long_description'] ?? '').toString(),
       duration: (m['duration'] ?? '').toString(),
+      cpdHours: (m['cpd_hours'] ?? '').toString(),
       contentText: (m['content'] ?? '').toString(),
       instructors: parseList(m['instructors']),
       level: (m['level'] ?? '').toString(),

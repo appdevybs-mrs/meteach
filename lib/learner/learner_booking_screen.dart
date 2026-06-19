@@ -124,6 +124,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
   static const Duration _teacherFullCacheTtl = Duration(minutes: 5);
   final ScrollController _pageScrollCtrl = ScrollController();
   final GlobalKey _byTeacherSelectionKey = GlobalKey();
+  final GlobalKey _timeStepKey = GlobalKey();
+  final GlobalKey _teacherStepKey = GlobalKey();
   String? _appliedRecommendationKey;
   bool _teachersCollapsed = false;
   bool _teachersCollapseTouched = false;
@@ -217,6 +219,20 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         ],
       ),
     );
+  }
+
+  void _scrollTo(GlobalKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = key.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.15,
+          duration: const Duration(milliseconds: 350),
+        );
+      }
+    });
   }
 
   bool _isAtEntryStep() => flowStep == _BookingFlowStep.lessonChoice;
@@ -6718,6 +6734,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                 selectedDay = null;
                                 selectedTime = null;
                               });
+                              _scrollTo(_byTeacherSelectionKey);
                             }
                           : null,
                       child: Text(
@@ -6758,6 +6775,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                       selectedDay = d;
                       selectedTime = null;
                     });
+                    _scrollTo(_timeStepKey);
                   },
                   teacherId: selectedTeacherFirstId,
                 ),
@@ -6771,6 +6789,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                SizedBox(key: _timeStepKey),
                 _buildStepLabel(
                   3,
                   isAr ? 'اختر وقت' : 'Choose a time',
@@ -7014,25 +7033,27 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
               _buildCalendarDayGrid(
                 days: days,
                 selectedDay: selectedDay,
-                onDaySelected: (d) {
-                  setState(() {
-                    selectedDay = d;
-                    selectedTime = null;
-                    selectedTeacherId = null;
-                  });
-                },
-              ),
-            ],
+            onDaySelected: (d) {
+              setState(() {
+                selectedDay = d;
+                selectedTime = null;
+                selectedTeacherId = null;
+              });
+              _scrollTo(_timeStepKey);
+            },
           ),
-        ),
-        if (selectedDay != null)
-          _buildStepCard(
-            isActive: selectedTime == null,
-            isCompleted: selectedTime != null,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildStepLabel(
+        ],
+      ),
+    ),
+    if (selectedDay != null)
+      _buildStepCard(
+        isActive: selectedTime == null,
+        isCompleted: selectedTime != null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(key: _timeStepKey),
+            _buildStepLabel(
                   2,
                   isAr ? 'اختر وقت' : 'Choose a time',
                   hint: isAr
@@ -7078,6 +7099,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                             selectedTime = t;
                             selectedTeacherId = null;
                           });
+                          _scrollTo(_teacherStepKey);
                         },
                         status: () {
                           final candidates = _slotsForCurrentLesson().where(
@@ -7179,6 +7201,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                SizedBox(key: _teacherStepKey),
                 _buildStepLabel(
                   3,
                   isAr ? 'اختر معلم' : 'Choose a teacher',

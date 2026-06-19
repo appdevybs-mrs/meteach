@@ -23,6 +23,7 @@ import 'admin_job_applications_screen.dart';
 import 'admin_shared_files_screen.dart';
 import '../shared/session_manager.dart';
 import 'admin_booking.dart';
+import 'admin_teacher_session_count_screen.dart';
 import 'admin_attendance_overview_screen.dart';
 import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
@@ -492,6 +493,27 @@ class _AdminHomeState extends State<AdminHome> {
         'Online Booking management',
         windowKey: AppWindowKeys.adminOnlineBooking,
         child: _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
+      ),
+      card(
+        'Teacher Sessions',
+        'Session count per teacher',
+        windowKey: AppWindowKeys.adminTeacherSessionCount,
+        child: _DashCard(
+          title: 'Teacher Sessions',
+          subtitle: 'Session count per teacher',
+          tags: const ['Sessions', 'Count'],
+          icon: AdminIcons.onlineBooking,
+          color: AdminHome.accentGreen,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminTeacherSessionCount,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminTeacherSessionCountScreen(),
+              ),
+            ),
+          ),
+        ),
       ),
       card(
         'Reminders',

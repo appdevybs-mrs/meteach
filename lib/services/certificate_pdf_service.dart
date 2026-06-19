@@ -135,21 +135,137 @@ class CertificatePdfService {
 
   Future<Uint8List> generateCertificatePdfBytes(Certificate cert) async {
     final doc = pw.Document();
+    const double pageHeight = 842;
+
+    final isExam = cert.examCourse == 'exam';
+    if (isExam) {
+      return _generateExamCertificatePdfBytes(cert, doc);
+    }
+
+    final template = await _loadPdfTemplate('assets/images/cpd.pdf');
+    final issueDate = cert.createdAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
+        : DateTime.now();
+    final instructor = (cert.instructorName ?? '').trim().isNotEmpty
+        ? cert.instructorName!.trim()
+        : 'Seddik. B';
+
+    String two(int n) => n.toString().padLeft(2, '0');
+    final dateStr =
+        '${two(issueDate.day)}-${two(issueDate.month)}-${issueDate.year}';
+
+    final cpdHours = cert.cpdHours.trim();
+    final showCpd = cpdHours.isNotEmpty;
+
+    doc.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(595, pageHeight),
+        margin: pw.EdgeInsets.zero,
+        build: (_) {
+          return pw.Stack(
+            children: [
+              if (template != null)
+                pw.Positioned.fill(
+                  child: pw.Image(template, fit: pw.BoxFit.fill),
+                ),
+              pw.Positioned(
+                left: 66,
+                top: 270,
+                child: pw.Text(
+                  cert.fullName.toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 22,
+                    font: pw.Font.helveticaBold(),
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 64,
+                top: 472.5,
+                child: pw.Text(
+                  cert.certificateTitle.toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    font: pw.Font.helveticaBold(),
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              if (showCpd)
+                pw.Positioned(
+                  left: 64,
+                  top: 499.5,
+                  child: pw.Text(
+                    '$cpdHours Hours of Continuing Professional Development (CPD)',
+                    style: pw.TextStyle(
+                      fontSize: 10,
+                      font: pw.Font.helveticaBold(),
+                      color: PdfColor.fromInt(0xFF111827),
+                    ),
+                  ),
+                ),
+              pw.Positioned(
+                left: 216,
+                top: 640,
+                child: pw.Text(
+                  cert.cvn.toUpperCase(),
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    font: pw.Font.helvetica(),
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 469,
+                top: 751,
+                child: pw.Text(
+                  dateStr,
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    font: pw.Font.helvetica(),
+                    color: PdfColor.fromInt(0xFF111827),
+                  ),
+                ),
+              ),
+              pw.Positioned(
+                left: 297.5 - 150,
+                top: 751,
+                child: pw.SizedBox(
+                  width: 300,
+                  child: pw.Text(
+                    instructor,
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      font: pw.Font.helveticaBold(),
+                      color: PdfColor.fromInt(0xFF111827),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    return doc.save();
+  }
+
+  Future<Uint8List> _generateExamCertificatePdfBytes(
+    Certificate cert,
+    pw.Document doc,
+  ) async {
     pw.MemoryImage? template;
     pw.Font? playfairRegular;
     pw.Font? playfairBold;
-    final isExam = cert.examCourse == 'exam';
-    if (isExam) {
-      template = await _loadPdfTemplate('assets/images/digital_cert_exam.pdf');
-      template ??= await _loadPngTemplate(
-        'assets/images/digital_cert_exam.png',
-      );
-    } else {
-      template = await _loadPdfTemplate('assets/images/DigitalCertificate.pdf');
-      template ??= await _loadPngTemplate(
-        'assets/images/DigitalCertificate.png',
-      );
-    }
+
+    template = await _loadPdfTemplate('assets/images/digital_cert_exam.pdf');
+    template ??= await _loadPngTemplate(
+      'assets/images/digital_cert_exam.png',
+    );
     template ??= await _loadPngTemplate('assets/images/DigitalCertificate.png');
     try {
       final bytes = await rootBundle.load(
@@ -165,8 +281,6 @@ class CertificatePdfService {
     } catch (_) {}
     const double pageHeight = 842;
 
-    // Measured bottom-origin Y values converted to top-origin:
-    // top = pageHeight - y
     const double learnerNameTop = 322;
     const double courseTitleTop = 444;
     const double issuedDateTop = 565.00;
@@ -246,18 +360,17 @@ class CertificatePdfService {
                   ),
                 ),
               ),
-              if (!isExam)
-                centeredText(
-                  centerX: 142,
-                  top: instructorTop,
-                  boxWidth: 210,
-                  text: instructor,
-                  style: pw.TextStyle(
-                    fontSize: 14,
-                    font: playfairBold,
-                    color: PdfColor.fromInt(0xFF1F2937),
-                  ),
+              centeredText(
+                centerX: 142,
+                top: instructorTop,
+                boxWidth: 210,
+                text: instructor,
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  font: playfairBold,
+                  color: PdfColor.fromInt(0xFF1F2937),
                 ),
+              ),
               centeredText(
                 centerX: 466,
                 top: academicDirectorTop,

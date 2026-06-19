@@ -73,6 +73,7 @@ class Certificate {
   final String? moduleKey;
   final String? instructorName;
   final String examCourse;
+  final String cpdHours;
 
   Certificate({
     this.key,
@@ -101,6 +102,7 @@ class Certificate {
     this.moduleKey,
     this.instructorName,
     this.examCourse = 'course',
+    this.cpdHours = '40',
   });
 
   Map<String, dynamic> toMap() {
@@ -130,6 +132,7 @@ class Certificate {
       if (moduleKey != null) 'moduleKey': moduleKey,
       if (instructorName != null) 'instructorName': instructorName,
       'exam_course': examCourse,
+      if (cpdHours.isNotEmpty) 'cpd_hours': cpdHours,
     };
   }
 
@@ -167,6 +170,7 @@ class Certificate {
       moduleKey: map['moduleKey']?.toString(),
       instructorName: map['instructorName']?.toString(),
       examCourse: _parseExamCourse(map['exam_course']),
+      cpdHours: (map['cpd_hours'] ?? '40').toString(),
     );
   }
 
@@ -209,6 +213,7 @@ class Certificate {
     String? moduleKey,
     String? instructorName,
     String? examCourse,
+    String? cpdHours,
   }) {
     return Certificate(
       key: key ?? this.key,
@@ -237,6 +242,7 @@ class Certificate {
       moduleKey: moduleKey ?? this.moduleKey,
       instructorName: instructorName ?? this.instructorName,
       examCourse: _parseExamCourse(examCourse ?? this.examCourse),
+      cpdHours: cpdHours ?? this.cpdHours,
     );
   }
 

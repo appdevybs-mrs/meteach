@@ -83,11 +83,6 @@ flutter:
   assets:
     - assets/images/ybs_logo.png
     - assets/images/character.png
-    - assets/images/DigitalCertificate.pdf
-    - assets/images/DigitalCertificate.png
-    - assets/images/digital_cert_exam.pdf
-    - assets/images/digital_cert_exam.png
-    - assets/images/certificate_template.pdf
     - assets/fonts/PlayfairDisplay-Regular.ttf
     - assets/fonts/PlayfairDisplay-Bold.ttf
     - assets/fonts/HughIsLife.ttf
