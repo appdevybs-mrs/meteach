@@ -1257,10 +1257,32 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 onLogout: () => _logout(context),
               ),
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: Colors.transparent,
           elevation: 0,
           centerTitle: false,
-          surfaceTintColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+          ),
+          flexibleSpace: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF172B85), Color(0xFF0F766E)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(24),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF172B85).withValues(alpha: 0.20),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+          ),
           leading: webDesktop
               ? null
               : Padding(
@@ -1285,9 +1307,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                     : displayName,
                                 photoUrl: photoUrl,
                                 radius: 20,
-                                fallbackBg: p.primary,
+                                fallbackBg: Colors.white.withValues(
+                                  alpha: 0.24,
+                                ),
                                 fallbackFg: Colors.white,
-                                borderColor: p.primary.withValues(alpha: 0.14),
+                                borderColor: Colors.white.withValues(
+                                  alpha: 0.34,
+                                ),
                               ),
                             ),
                           );
@@ -1306,7 +1332,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   Text(
                     'Teacher Dashboard',
                     style: TextStyle(
-                      color: p.primary,
+                      color: Colors.white,
                       fontWeight: FontWeight.w900,
                       fontSize: 16,
                     ),
@@ -1317,7 +1343,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: p.text.withValues(alpha: 0.72),
+                      color: Colors.white.withValues(alpha: 0.78),
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -1329,7 +1355,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           actions: [
             IconButton(
               tooltip: 'Logout',
-              icon: Icon(TeacherIcons.logout, color: p.accent),
+              icon: const Icon(TeacherIcons.logout, color: Colors.white),
               onPressed: () => _logout(context),
             ),
           ],
@@ -1365,8 +1391,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
-                                Colors.white.withValues(alpha: 0.56),
-                                Colors.white.withValues(alpha: 0.32),
+                                const Color(0xFFF7FAFC).withValues(alpha: 0.82),
+                                const Color(0xFFEFF6FF).withValues(alpha: 0.62),
                               ],
                             ),
                           ),
@@ -1428,6 +1454,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       key: _inboxCardKey,
                                       child: _MiniStatCard(
                                         palette: p,
+                                        label: 'Inbox',
+                                        accent: const Color(0xFF06B6D4),
                                         value: unread == 0 ? '0' : '$unread',
                                         icon: TeacherIcons.mailStat,
                                         badgeCount: unread,
@@ -1455,6 +1483,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                           key: _homeworkCardKey,
                                           child: _MiniStatCard(
                                             palette: p,
+                                            label: 'Homework',
+                                            accent: const Color(0xFFF59E0B),
                                             value: unreviewed == 0
                                                 ? '0'
                                                 : '$unreviewed',
@@ -1482,6 +1512,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       key: _remindersCardKey,
                                       child: _MiniStatCard(
                                         palette: p,
+                                        label: 'Reminders',
+                                        accent: const Color(0xFF7C3AED),
                                         value: pending == 0 ? '0' : '$pending',
                                         icon: TeacherIcons.reminderStat,
                                         badgeCount: pending,
@@ -1761,9 +1793,18 @@ class _TeacherHomeWebRail extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(8, 6, 0, 6),
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: palette.border.withValues(alpha: 0.9)),
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: const Color(0xFF0F766E).withValues(alpha: 0.14),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF172B85).withValues(alpha: 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1783,48 +1824,56 @@ class _TeacherHomeWebRail extends StatelessWidget {
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.classes,
+                    accent: const Color(0xFF2563EB),
                     title: 'My Classes',
                     onTap: onOpenClasses,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.schedule,
+                    accent: const Color(0xFF0F766E),
                     title: 'Schedule',
                     onTap: onOpenSchedule,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.mail,
+                    accent: const Color(0xFF06B6D4),
                     title: 'Mail',
                     onTap: onOpenMail,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.reminders,
+                    accent: const Color(0xFF7C3AED),
                     title: 'Reminders',
                     onTap: onOpenReminders,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.onlineBooking,
+                    accent: const Color(0xFF10B981),
                     title: 'Online Booking',
                     onTap: onOpenBooking,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.gallery,
+                    accent: const Color(0xFF8B5CF6),
                     title: 'Gallery',
                     onTap: onOpenGallery,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.syllabi,
+                    accent: const Color(0xFFF59E0B),
                     title: 'Syllabi',
                     onTap: onOpenSyllabi,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: TeacherIcons.wages,
+                    accent: const Color(0xFF0F766E),
                     title: 'Wages',
                     onTap: onOpenWages,
                   ),
@@ -1835,6 +1884,7 @@ class _TeacherHomeWebRail extends StatelessWidget {
             _DrawerTile(
               palette: palette,
               icon: TeacherIcons.logout,
+              accent: const Color(0xFFEF4444),
               title: 'Logout',
               onTap: onLogout,
             ),
@@ -1868,9 +1918,18 @@ class _TeacherHomeWebAside extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(0, 6, 8, 6),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: palette.border.withValues(alpha: 0.9)),
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: const Color(0xFF0F766E).withValues(alpha: 0.14),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF172B85).withValues(alpha: 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1887,24 +1946,28 @@ class _TeacherHomeWebAside extends StatelessWidget {
             _DrawerTile(
               palette: palette,
               icon: TeacherIcons.mail,
+              accent: const Color(0xFF06B6D4),
               title: 'Open Mail',
               onTap: onOpenMail,
             ),
             _DrawerTile(
               palette: palette,
               icon: TeacherIcons.homeworkStat,
+              accent: const Color(0xFFF59E0B),
               title: 'Homework Inbox',
               onTap: onOpenHomework,
             ),
             _DrawerTile(
               palette: palette,
               icon: TeacherIcons.reminderStat,
+              accent: const Color(0xFF7C3AED),
               title: 'Open Reminders',
               onTap: onOpenReminders,
             ),
             _DrawerTile(
               palette: palette,
               icon: TeacherIcons.classes,
+              accent: const Color(0xFF2563EB),
               title: 'Open Classes',
               onTap: onOpenClasses,
             ),
@@ -1913,7 +1976,7 @@ class _TeacherHomeWebAside extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: palette.soft.withValues(alpha: 0.75),
+                color: const Color(0xFFE0F2FE).withValues(alpha: 0.72),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Text(
@@ -2215,7 +2278,7 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
     final orderedEntries = _orderedEntries();
 
     return Drawer(
-      backgroundColor: widget.palette.appBg,
+      backgroundColor: const Color(0xFFF7FAFC),
       child: SafeArea(
         child: Column(
           children: [
@@ -2223,6 +2286,71 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
                 children: [
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(4, 4, 4, 14),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF172B85), Color(0xFF0F766E)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF172B85,
+                          ).withValues(alpha: 0.18),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.28),
+                            ),
+                          ),
+                          child: const Icon(
+                            TeacherIcons.menu,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Teacher Menu',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Your tools and workspace',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.78),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   for (final entry in orderedEntries)
                     _DrawerTile(
                       key: ValueKey(entry.id),
@@ -2254,6 +2382,7 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
                     icon: _editMode
                         ? TeacherIcons.themeSelected
                         : TeacherIcons.menu,
+                    accent: const Color(0xFF0F766E),
                     title: _editMode ? 'Done reordering' : 'Reorder menu',
                     subtitle: _editMode
                         ? 'Tap arrows to move items'
@@ -2271,7 +2400,7 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
                 child: ElevatedButton.icon(
                   onPressed: widget.onLogout,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.palette.accent,
+                    backgroundColor: const Color(0xFFEF4444),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -2324,6 +2453,7 @@ class _DrawerTile extends StatelessWidget {
     this.onMoveDown,
     this.highlighted = false,
     this.subtitle = '',
+    this.accent,
   });
 
   final _HomePalette palette;
@@ -2337,15 +2467,17 @@ class _DrawerTile extends StatelessWidget {
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
   final bool highlighted;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
+    final tileAccent = accent ?? const Color(0xFF0F766E);
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 9),
       child: Material(
         color: highlighted
-            ? palette.soft.withValues(alpha: 0.65)
-            : Colors.white,
+            ? tileAccent.withValues(alpha: 0.10)
+            : Colors.white.withValues(alpha: 0.98),
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
           borderRadius: BorderRadius.circular(18),
@@ -2354,7 +2486,14 @@ class _DrawerTile extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: palette.border.withValues(alpha: 0.85)),
+              border: Border.all(color: tileAccent.withValues(alpha: 0.14)),
+              boxShadow: [
+                BoxShadow(
+                  color: tileAccent.withValues(alpha: 0.07),
+                  blurRadius: 13,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -2362,10 +2501,10 @@ class _DrawerTile extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: palette.soft,
+                    color: tileAccent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(icon, color: palette.primary),
+                  child: Icon(icon, color: tileAccent),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -2375,7 +2514,7 @@ class _DrawerTile extends StatelessWidget {
                       Text(
                         title,
                         style: TextStyle(
-                          color: palette.primary,
+                          color: const Color(0xFF101B4D),
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -2400,7 +2539,7 @@ class _DrawerTile extends StatelessWidget {
                     icon: Icon(
                       Icons.keyboard_arrow_up_rounded,
                       color: canMoveUp
-                          ? palette.primary
+                          ? tileAccent
                           : palette.text.withValues(alpha: 0.2),
                     ),
                   ),
@@ -2410,7 +2549,7 @@ class _DrawerTile extends StatelessWidget {
                     icon: Icon(
                       Icons.keyboard_arrow_down_rounded,
                       color: canMoveDown
-                          ? palette.primary
+                          ? tileAccent
                           : palette.text.withValues(alpha: 0.2),
                     ),
                   ),
@@ -2446,64 +2585,113 @@ class _HeroSummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [palette.primary, palette.primary.withValues(alpha: 0.88)],
+        gradient: const LinearGradient(
+          colors: [Color(0xFF172B85), Color(0xFF0F766E)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(26),
         boxShadow: [
           BoxShadow(
-            color: palette.primary.withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
+            color: const Color(0xFF172B85).withValues(alpha: 0.22),
+            blurRadius: 24,
+            offset: const Offset(0, 13),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          Text(
-            'Peace Be Upon You',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.80),
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
+          Positioned(
+            right: -30,
+            top: -36,
+            child: Container(
+              width: 130,
+              height: 130,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.10),
+              ),
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            teacherName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 24,
-              height: 1.1,
+          Positioned(
+            right: 30,
+            bottom: -52,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF06B6D4).withValues(alpha: 0.16),
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Row(
+          Positioned(
+            right: 22,
+            top: 24,
+            child: Icon(
+              TeacherIcons.calendarSchedule,
+              color: Colors.white.withValues(alpha: 0.15),
+              size: 70,
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _HeroActionButton(
-                  label: 'Profile',
-                  icon: TeacherIcons.profile,
-                  fillColor: Colors.white,
-                  textColor: palette.primary,
-                  onTap: onOpenProfile,
+              Text(
+                'Peace Be Upon You',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.80),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HeroActionButton(
-                  label: 'Schedule',
-                  icon: TeacherIcons.calendarSchedule,
-                  fillColor: Colors.white12,
-                  textColor: Colors.white,
-                  onTap: onOpenSchedule,
+              const SizedBox(height: 6),
+              Text(
+                teacherName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 25,
+                  height: 1.08,
                 ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                'Ready for today\'s classes?',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.76),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _HeroActionButton(
+                      label: 'Profile',
+                      icon: TeacherIcons.profile,
+                      fillColor: Colors.white,
+                      textColor: const Color(0xFF172B85),
+                      onTap: onOpenProfile,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HeroActionButton(
+                      label: 'Schedule',
+                      icon: TeacherIcons.calendarSchedule,
+                      fillColor: Colors.white.withValues(alpha: 0.14),
+                      textColor: Colors.white,
+                      onTap: onOpenSchedule,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2577,14 +2765,16 @@ class _OverviewPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: palette.cardBg,
+        color: Colors.white.withValues(alpha: 0.98),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: palette.border.withValues(alpha: 0.75)),
+        border: Border.all(
+          color: const Color(0xFF0F766E).withValues(alpha: 0.12),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
+            color: const Color(0xFF172B85).withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -2592,9 +2782,9 @@ class _OverviewPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Overview',
+            'Teaching Overview',
             style: TextStyle(
-              color: palette.primary,
+              color: const Color(0xFF101B4D),
               fontWeight: FontWeight.w900,
               fontSize: 17,
             ),
@@ -2605,6 +2795,7 @@ class _OverviewPanel extends StatelessWidget {
               Expanded(
                 child: _OverviewStatBox(
                   palette: palette,
+                  accent: const Color(0xFF2563EB),
                   label: 'Classes',
                   value: '$classesCount',
                   icon: TeacherIcons.classes,
@@ -2615,6 +2806,7 @@ class _OverviewPanel extends StatelessWidget {
               Expanded(
                 child: _OverviewStatBox(
                   palette: palette,
+                  accent: const Color(0xFF10B981),
                   label: 'Learners',
                   value: '$learnersCount',
                   icon: TeacherIcons.overviewLearners,
@@ -2624,6 +2816,7 @@ class _OverviewPanel extends StatelessWidget {
               Expanded(
                 child: _OverviewStatBox(
                   palette: palette,
+                  accent: const Color(0xFF7C3AED),
                   label: 'Online',
                   value: '$upcomingOnlineCount',
                   icon: TeacherIcons.overviewOnline,
@@ -2643,6 +2836,7 @@ class _OverviewPanel extends StatelessWidget {
 class _OverviewStatBox extends StatelessWidget {
   const _OverviewStatBox({
     required this.palette,
+    required this.accent,
     required this.label,
     required this.value,
     required this.icon,
@@ -2652,6 +2846,7 @@ class _OverviewStatBox extends StatelessWidget {
   });
 
   final _HomePalette palette;
+  final Color accent;
   final String label;
   final String value;
   final IconData icon;
@@ -2664,22 +2859,23 @@ class _OverviewStatBox extends StatelessWidget {
     final content = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       decoration: BoxDecoration(
-        color: palette.soft.withValues(alpha: 0.7),
+        color: accent.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.14)),
       ),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Column(
             children: [
-              Icon(icon, color: palette.primary, size: 20),
+              Icon(icon, color: accent, size: 20),
               const SizedBox(height: 7),
               Text(
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: palette.primary,
+                  color: const Color(0xFF101B4D),
                   fontWeight: FontWeight.w900,
                   fontSize: 15,
                 ),
@@ -2771,22 +2967,24 @@ class _NextComingClassCard extends StatelessWidget {
 
   Widget _buildEmptyCard() {
     return Material(
-      color: palette.cardBg,
-      borderRadius: BorderRadius.circular(20),
+      color: Colors.white.withValues(alpha: 0.98),
+      borderRadius: BorderRadius.circular(22),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         onTap: onTapEmpty,
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: palette.border.withValues(alpha: 0.8)),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: const Color(0xFF0F766E).withValues(alpha: 0.14),
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
+                color: const Color(0xFF172B85).withValues(alpha: 0.07),
+                blurRadius: 16,
+                offset: const Offset(0, 9),
               ),
             ],
           ),
@@ -2794,16 +2992,16 @@ class _NextComingClassCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Next Coming Class',
+                'Next Class',
                 style: TextStyle(
-                  color: palette.primary,
+                  color: const Color(0xFF101B4D),
                   fontWeight: FontWeight.w900,
                   fontSize: 15,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                'No upcoming classes found.',
+                'No upcoming classes found. Tap to review your schedule.',
                 style: TextStyle(
                   color: palette.text.withValues(alpha: 0.70),
                   fontWeight: FontWeight.w700,
@@ -2851,19 +3049,13 @@ class _NextComingClassCard extends StatelessWidget {
             final isWarn = isUpcoming && untilStart.inSeconds <= 1800;
 
             final itemPrimary = isLive
-                ? const Color(0xFF1B5E20)
-                : (isOnline ? const Color(0xFF0B5E8A) : palette.primary);
-            final itemSoft = isLive
-                ? const Color(0xFFE8F5E9)
-                : (isOnline ? const Color(0xFFEAF6FF) : palette.soft);
-            final itemCardBg = isLive
-                ? const Color(0xFFF1FBF3)
-                : (isOnline ? const Color(0xFFF7FCFF) : palette.cardBg);
-            final itemBorder = isLive
-                ? const Color(0xFF9AD5AB)
+                ? const Color(0xFF10B981)
                 : (isOnline
-                      ? const Color(0xFFB5DDF2)
-                      : palette.border.withValues(alpha: 0.8));
+                      ? const Color(0xFF06B6D4)
+                      : const Color(0xFF2563EB));
+            final itemSoft = itemPrimary.withValues(alpha: 0.12);
+            final itemCardBg = Colors.white.withValues(alpha: 0.98);
+            final itemBorder = itemPrimary.withValues(alpha: 0.18);
 
             final countdownText = isLive
                 ? 'LIVE'
@@ -2899,29 +3091,33 @@ class _NextComingClassCard extends StatelessWidget {
                 bottom: index == visibleClasses.length - 1 ? 0 : 10,
               ),
               child: Material(
-                color: itemCardBg,
-                borderRadius: BorderRadius.circular(20),
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(22),
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(22),
                   onTap: () => onTapClass(c),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: itemCardBg,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(22),
                       border: Border.all(
                         color: isLive
-                            ? itemBorder
-                            : (isSoon ? const Color(0xFFE57373) : itemBorder),
+                            ? const Color(0xFF10B981).withValues(alpha: 0.34)
+                            : (isSoon
+                                  ? const Color(
+                                      0xFFEF4444,
+                                    ).withValues(alpha: 0.34)
+                                  : itemBorder),
                       ),
                       boxShadow: [
                         BoxShadow(
                           color: isLive
-                              ? const Color(0xFF1B5E20).withValues(alpha: 0.10)
-                              : Colors.black.withValues(alpha: 0.03),
-                          blurRadius: isLive ? 14 : 10,
-                          offset: const Offset(0, 5),
+                              ? const Color(0xFF10B981).withValues(alpha: 0.16)
+                              : itemPrimary.withValues(alpha: 0.10),
+                          blurRadius: isLive ? 20 : 16,
+                          offset: const Offset(0, 9),
                         ),
                       ],
                     ),
@@ -2937,12 +3133,12 @@ class _NextComingClassCard extends StatelessWidget {
                                           ? 'Next Online Class (2 sessions)'
                                           : 'Next Coming Class (2 sessions)')
                                     : index == 0
-                                        ? (isOnline
-                                              ? 'Next Online Class'
-                                              : 'Next Coming Class')
-                                        : (isOnline
-                                              ? 'Upcoming Online Class'
-                                              : 'Upcoming Class'),
+                                    ? (isOnline
+                                          ? 'Next Online Class'
+                                          : 'Next Coming Class')
+                                    : (isOnline
+                                          ? 'Upcoming Online Class'
+                                          : 'Upcoming Class'),
                                 style: TextStyle(
                                   color: itemPrimary,
                                   fontWeight: FontWeight.w900,
@@ -3053,8 +3249,8 @@ class _NextComingClassCard extends StatelessWidget {
                                   const SizedBox(height: 3),
                                   Text(
                                     c.isMerged
-                                      ? '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}  &  ${DateFormat('hh:mm a').format(c.secondStart!)} - ${DateFormat('hh:mm a').format(c.secondEnd!)}'
-                                      : '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
+                                        ? '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}  &  ${DateFormat('hh:mm a').format(c.secondStart!)} - ${DateFormat('hh:mm a').format(c.secondEnd!)}'
+                                        : '${c.courseCode.isNotEmpty ? c.courseCode : 'No course code'} • ${DateFormat('hh:mm a').format(c.start)} - ${DateFormat('hh:mm a').format(c.end)}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -3086,8 +3282,8 @@ class _NextComingClassCard extends StatelessWidget {
                               text: c.isMerged
                                   ? '2 sessions today'
                                   : c.isOnline
-                                      ? 'Online booking'
-                                      : 'In-class session',
+                                  ? 'Online booking'
+                                  : 'In-class session',
                             ),
                           ],
                         ),
@@ -3209,6 +3405,8 @@ class _InfoChip extends StatelessWidget {
 class _MiniStatCard extends StatelessWidget {
   const _MiniStatCard({
     required this.palette,
+    required this.label,
+    required this.accent,
     required this.value,
     required this.icon,
     this.onTap,
@@ -3217,6 +3415,8 @@ class _MiniStatCard extends StatelessWidget {
   });
 
   final _HomePalette palette;
+  final String label;
+  final Color accent;
   final String value;
   final IconData icon;
   final VoidCallback? onTap;
@@ -3242,14 +3442,14 @@ class _MiniStatCard extends StatelessWidget {
             vertical: verticalPadding,
           ),
           decoration: BoxDecoration(
-            color: palette.cardBg,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: palette.border.withValues(alpha: 0.65)),
+            color: Colors.white.withValues(alpha: 0.98),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: accent.withValues(alpha: 0.14)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 6),
+                color: accent.withValues(alpha: 0.10),
+                blurRadius: 16,
+                offset: const Offset(0, 9),
               ),
             ],
           ),
@@ -3262,10 +3462,10 @@ class _MiniStatCard extends StatelessWidget {
                     width: iconBoxSize,
                     height: iconBoxSize,
                     decoration: BoxDecoration(
-                      color: palette.soft,
+                      color: accent.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(icon, color: palette.primary, size: iconSize),
+                    child: Icon(icon, color: accent, size: iconSize),
                   ),
                   if (badgeCount > 0)
                     Positioned(
@@ -3295,15 +3495,34 @@ class _MiniStatCard extends StatelessWidget {
               ),
               SizedBox(width: gap),
               Expanded(
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.primary,
-                    fontWeight: FontWeight.w900,
-                    fontSize: valueFontSize,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: const Color(0xFF101B4D),
+                        fontWeight: FontWeight.w900,
+                        fontSize: valueFontSize + 2,
+                      ),
+                    ),
+                    if (!compact) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.text.withValues(alpha: 0.62),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               if (showChevron)
@@ -3339,10 +3558,11 @@ class _WebQuickActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const accent = Color(0xFF0F766E);
     return SizedBox(
       width: 210,
       child: Material(
-        color: palette.cardBg,
+        color: Colors.white.withValues(alpha: 0.98),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -3351,7 +3571,14 @@ class _WebQuickActionTile extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: palette.border.withValues(alpha: 0.8)),
+              border: Border.all(color: accent.withValues(alpha: 0.14)),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.07),
+                  blurRadius: 12,
+                  offset: const Offset(0, 7),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -3359,10 +3586,10 @@ class _WebQuickActionTile extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: palette.soft,
+                    color: accent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(icon, color: palette.primary, size: 18),
+                  child: Icon(icon, color: accent, size: 18),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -3371,7 +3598,7 @@ class _WebQuickActionTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: palette.primary,
+                      color: const Color(0xFF101B4D),
                       fontWeight: FontWeight.w800,
                       fontSize: 12,
                     ),
