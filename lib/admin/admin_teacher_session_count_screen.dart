@@ -35,6 +35,7 @@ class _AdminTeacherSessionCountScreenState
   final List<_TeacherStats> _teachers = [];
   int _totalSessions = 0;
   final Map<String, String> _courseTitles = {};
+  final Map<String, Map<int, String>> _sessionTitlesByCourse = {};
   final Set<String> _expandedTeachers = {};
   final Map<String, Set<String>> _expandedLearners = {};
   String? _printingTeacherId;
@@ -89,6 +90,90 @@ class _AdminTeacherSessionCountScreenState
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  String _learnerNameFromReservationValue(dynamic value) {
+    if (value == null || value == true || value == false) return '';
+    if (value is Map) return _learnerNameFromUserMap(value);
+    final s = value.toString().trim();
+    return (s == 'true' || s == 'false') ? '' : s;
+  }
+
+  String _learnerNameFromUserMap(Map<dynamic, dynamic> raw) {
+    final m = raw.map((k, v) => MapEntry(k.toString(), v));
+    final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
+    final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
+    final full = '$first $last'.trim();
+    if (full.isNotEmpty) return full;
+    return (m['fullName'] ?? m['displayName'] ?? m['name'] ?? '')
+        .toString()
+        .trim();
+  }
+
+  String _bookingKey(String courseId, String dayKey, String hhmm) =>
+      '$courseId|$dayKey|$hhmm';
+
+  String _attendanceStatusFromMap(Map<dynamic, dynamic>? raw) {
+    if (raw == null || !raw.containsKey('present')) return 'Pending';
+    return raw['present'] == true ? 'Present' : 'Absent';
+  }
+
+  String _sessionLabel(String courseId, int sessionNo) {
+    if (sessionNo <= 0) return 'Session -';
+    final title = (_sessionTitlesByCourse[courseId]?[sessionNo] ?? '').trim();
+    return title.isEmpty ? 'Session $sessionNo' : 'Session $sessionNo - $title';
+  }
+
+  Future<Map<int, String>> _loadSessionTitles(String courseId) async {
+    final out = <int, String>{};
+    final cid = courseId.trim();
+    if (cid.isEmpty) return out;
+
+    try {
+      final flexibleSnap = await _db.child('syllabi/$cid/flexible').get();
+      if (flexibleSnap.exists && flexibleSnap.value is Map) {
+        final root = Map<dynamic, dynamic>.from(flexibleSnap.value as Map);
+        final rawUnits = root['units'];
+        var sessionNo = 1;
+        if (rawUnits is List) {
+          for (final unitRaw in rawUnits) {
+            if (unitRaw is! Map) continue;
+            final unit = Map<dynamic, dynamic>.from(unitRaw);
+            final rawSessions = unit['sessions'];
+            if (rawSessions is! List) continue;
+            for (final sessionRaw in rawSessions) {
+              if (sessionRaw is! Map) continue;
+              final session = Map<dynamic, dynamic>.from(sessionRaw);
+              final title =
+                  (session['sessionTitle'] ?? session['title'] ?? '')
+                      .toString()
+                      .trim();
+              if (title.isNotEmpty) out[sessionNo] = title;
+              sessionNo += 1;
+            }
+          }
+        }
+      }
+
+      final curricSnap = await _db.child('booking_curriculum/$cid/sessions').get();
+      if (curricSnap.exists && curricSnap.value is Map) {
+        final root = Map<dynamic, dynamic>.from(curricSnap.value as Map);
+        for (final entry in root.entries) {
+          final raw = entry.value;
+          if (raw is! Map) continue;
+          final m = Map<dynamic, dynamic>.from(raw);
+          var no = _toInt(m['sessionNo']);
+          if (no <= 0) no = _toInt(m['sessionNumber']);
+          if (no <= 0) no = _toInt(m['order']);
+          if (no <= 0) no = int.tryParse(entry.key.toString()) ?? 0;
+          if (no <= 0 || out.containsKey(no)) continue;
+          final title = (m['sessionTitle'] ?? m['title'] ?? '').toString().trim();
+          if (title.isNotEmpty) out[no] = title;
+        }
+      }
+    } catch (_) {}
+
+    return out;
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -96,6 +181,7 @@ class _AdminTeacherSessionCountScreenState
       _teachers.clear();
       _totalSessions = 0;
       _courseTitles.clear();
+      _sessionTitlesByCourse.clear();
       _expandedTeachers.clear();
       _expandedLearners.clear();
     });
@@ -111,6 +197,8 @@ class _AdminTeacherSessionCountScreenState
       final byCourse = Map<dynamic, dynamic>.from(snap.value as Map);
       final Map<String, _TeacherStats> teacherMap = {};
       final Set<String> neededCourseIds = {};
+      final Set<String> neededLearnerIds = {};
+      final Map<String, String> learnerNamesById = {};
 
       for (final courseEntry in byCourse.entries) {
         final courseId = courseEntry.key.toString();
@@ -152,10 +240,19 @@ class _AdminTeacherSessionCountScreenState
               final learnersRaw = slotNode['learners'];
               final learnerCount = (learnersRaw is Map) ? learnersRaw.length : 0;
               final learnerNames = <String>[];
+              final learnerIds = <String>[];
               if (learnersRaw is Map) {
                 for (final lEntry in learnersRaw.entries) {
                   final lId = lEntry.key.toString();
-                  final lName = lEntry.value.toString();
+                  final rawLearnerName = _learnerNameFromReservationValue(
+                    lEntry.value,
+                  );
+                  if (rawLearnerName.isNotEmpty) {
+                    learnerNamesById[lId] = rawLearnerName;
+                  }
+                  neededLearnerIds.add(lId);
+                  final lName = rawLearnerName.isNotEmpty ? rawLearnerName : lId;
+                  learnerIds.add(lId);
                   learnerNames.add(lName);
 
                   final teacher = teacherMap[key]!;
@@ -181,6 +278,7 @@ class _AdminTeacherSessionCountScreenState
                 timeStr: hhmm,
                 sessionNo: _toInt(slotNode['sessionNo']),
                 learnerCount: learnerCount,
+                learnerIds: learnerIds,
                 learnerNames: learnerNames,
               ));
               teacherMap[key]!.sessionCount++;
@@ -205,6 +303,23 @@ class _AdminTeacherSessionCountScreenState
         }
       }
 
+      // Booking reservations store learners as {uid: true}; resolve real names.
+      for (final uid in neededLearnerIds) {
+        if ((learnerNamesById[uid] ?? '').trim().isNotEmpty) continue;
+        try {
+          final userSnap = await _db.child('users/$uid').get();
+          if (userSnap.exists && userSnap.value is Map) {
+            final userMap = Map<dynamic, dynamic>.from(userSnap.value as Map);
+            final name = _learnerNameFromUserMap(userMap);
+            learnerNamesById[uid] = name.isNotEmpty ? name : uid;
+          } else {
+            learnerNamesById[uid] = uid;
+          }
+        } catch (_) {
+          learnerNamesById[uid] = uid;
+        }
+      }
+
       // Fetch course titles
       for (final cid in neededCourseIds) {
         try {
@@ -222,16 +337,49 @@ class _AdminTeacherSessionCountScreenState
         } catch (_) {
           _courseTitles[cid] = cid;
         }
+        _sessionTitlesByCourse[cid] = await _loadSessionTitles(cid);
+      }
+
+      // Fetch learner attendance status for each online booking row.
+      for (final teacher in teacherMap.values) {
+        for (final learner in teacher.learners.values) {
+          for (final s in learner.sessions) {
+            final bookingKey = _bookingKey(s.courseId, s.dateStr, s.timeStr);
+            try {
+              final attendanceSnap = await _db
+                  .child(
+                    'booking_progress/${s.learnerId}/${s.courseId}/online_attendance/$bookingKey',
+                  )
+                  .get();
+              s.attendanceStatus = attendanceSnap.exists && attendanceSnap.value is Map
+                  ? _attendanceStatusFromMap(
+                      Map<dynamic, dynamic>.from(attendanceSnap.value as Map),
+                    )
+                  : 'Pending';
+            } catch (_) {
+              s.attendanceStatus = 'Pending';
+            }
+          }
+        }
       }
 
       // Apply course titles to sessions
       for (final teacher in teacherMap.values) {
         for (final session in teacher.sessions) {
           session.courseTitle = _courseTitles[session.courseId] ?? session.courseId;
+          session.learnerNames
+            ..clear()
+            ..addAll(
+              session.learnerIds.map((id) => learnerNamesById[id] ?? id),
+            );
         }
         for (final learner in teacher.learners.values) {
+          learner.learnerName =
+              learnerNamesById[learner.learnerId] ?? learner.learnerId;
           for (final s in learner.sessions) {
             s.courseTitle = _courseTitles[s.courseId] ?? s.courseId;
+            s.sessionTitle = _sessionLabel(s.courseId, s.sessionNo);
+            s.learnerName = learnerNamesById[s.learnerId] ?? s.learnerId;
           }
         }
       }
@@ -1066,11 +1214,14 @@ class _AdminTeacherSessionCountScreenState
 
   Future<Uint8List> _buildTeacherPdf(_TeacherStats teacher) async {
     final doc = pw.Document();
-    final sorted = teacher.sessions.toList()
+    final fonts = await _loadPdfFonts();
+    final rows = _teacherPdfRows(teacher)
       ..sort((a, b) {
         final c = a.dateStr.compareTo(b.dateStr);
         if (c != 0) return c;
-        return a.timeStr.compareTo(b.timeStr);
+        final t = a.timeStr.compareTo(b.timeStr);
+        if (t != 0) return t;
+        return a.learnerName.compareTo(b.learnerName);
       });
 
     final stamp =
@@ -1082,6 +1233,11 @@ class _AdminTeacherSessionCountScreenState
         pageTheme: pw.PageTheme(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.fromLTRB(28, 28, 28, 28),
+          theme: pw.ThemeData.withFont(
+            base: fonts.base,
+            bold: fonts.bold,
+            fontFallback: [fonts.arabic, fonts.arabicBold],
+          ),
         ),
         build: (ctx) => [
           pw.Header(
@@ -1126,40 +1282,39 @@ class _AdminTeacherSessionCountScreenState
                 color: PdfColors.black, width: 0.5),
             columnWidths: {
               0: const pw.FixedColumnWidth(28),
-              1: const pw.FlexColumnWidth(1.4),
-              2: const pw.FixedColumnWidth(70),
-              3: const pw.FixedColumnWidth(60),
-              4: const pw.FlexColumnWidth(1.8),
-              5: const pw.FixedColumnWidth(60),
+              1: const pw.FlexColumnWidth(1.2),
+              2: const pw.FlexColumnWidth(1.7),
+              3: const pw.FlexColumnWidth(1.6),
+              4: const pw.FlexColumnWidth(1.5),
+              5: const pw.FixedColumnWidth(58),
             },
             children: [
               pw.TableRow(
                 decoration: const pw.BoxDecoration(
                     color: PdfColors.blue700),
                 children: [
-                  _pdfCell('#', isHeader: true, center: true),
-                  _pdfCell('Date', isHeader: true, center: true),
-                  _pdfCell('Time', isHeader: true, center: true),
-                  _pdfCell('Session #', isHeader: true, center: true),
-                  _pdfCell('Course', isHeader: true, center: true),
-                  _pdfCell('Learners', isHeader: true, center: true),
+                  _pdfCell('N°', fonts, isHeader: true, center: true),
+                  _pdfCell('Date & Time', fonts, isHeader: true, center: true),
+                  _pdfCell('Session', fonts, isHeader: true, center: true),
+                  _pdfCell('Learner / Status', fonts, isHeader: true, center: true),
+                  _pdfCell('Course', fonts, isHeader: true, center: true),
+                  _pdfCell('', fonts, isHeader: true, center: true),
                 ],
               ),
-              ...List.generate(sorted.length, (i) {
-                final s = sorted[i];
+              ...List.generate(rows.length, (i) {
+                final row = rows[i];
                 return pw.TableRow(
                   decoration: pw.BoxDecoration(
                     color:
                         i.isOdd ? PdfColors.grey50 : PdfColors.white,
                   ),
                   children: [
-                    _pdfCell('${i + 1}', center: true),
-                    _pdfCell(s.dateStr, center: true),
-                    _pdfCell(s.timeStr, center: true),
-                    _pdfCell('${s.sessionNo}', center: true),
-                    _pdfCell(s.courseTitle),
-                    _pdfCell(
-                        '${s.learnerCount} ${s.learnerCount == 1 ? 'learner' : 'learners'}'),
+                    _pdfCell('${i + 1}', fonts, center: true),
+                    _pdfCell('${row.dateStr} ${row.timeStr}', fonts, center: true),
+                    _pdfCell(row.sessionLabel, fonts),
+                    _pdfCell('${row.learnerName} - ${row.attendanceStatus}', fonts),
+                    _pdfCell(row.courseTitle, fonts),
+                    _pdfCell('', fonts),
                   ],
                 );
               }),
@@ -1174,6 +1329,7 @@ class _AdminTeacherSessionCountScreenState
 
   Future<Uint8List> _buildAllTeachersPdf() async {
     final doc = pw.Document();
+    final fonts = await _loadPdfFonts();
 
     final stamp =
         '${DateTime.now().year}-${_two(DateTime.now().month)}-${_two(DateTime.now().day)} '
@@ -1184,6 +1340,11 @@ class _AdminTeacherSessionCountScreenState
         pageTheme: pw.PageTheme(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.fromLTRB(28, 28, 28, 28),
+          theme: pw.ThemeData.withFont(
+            base: fonts.base,
+            bold: fonts.bold,
+            fontFallback: [fonts.arabic, fonts.arabicBold],
+          ),
         ),
         build: (ctx) => [
           pw.Header(
@@ -1220,11 +1381,13 @@ class _AdminTeacherSessionCountScreenState
           pw.SizedBox(height: 16),
           // Build each teacher's table
           ..._teachers.expand((teacher) {
-            final sorted = teacher.sessions.toList()
+            final rows = _teacherPdfRows(teacher)
               ..sort((a, b) {
                 final c = a.dateStr.compareTo(b.dateStr);
                 if (c != 0) return c;
-                return a.timeStr.compareTo(b.timeStr);
+                final t = a.timeStr.compareTo(b.timeStr);
+                if (t != 0) return t;
+                return a.learnerName.compareTo(b.learnerName);
               });
             final courseCount =
                 teacher.sessions.map((s) => s.courseId).toSet().length;
@@ -1247,29 +1410,27 @@ class _AdminTeacherSessionCountScreenState
                     color: PdfColors.black, width: 0.5),
                 columnWidths: {
                   0: const pw.FixedColumnWidth(28),
-                  1: const pw.FlexColumnWidth(1.4),
-                  2: const pw.FixedColumnWidth(70),
-                  3: const pw.FixedColumnWidth(60),
-                  4: const pw.FlexColumnWidth(1.8),
-                  5: const pw.FixedColumnWidth(60),
+                  1: const pw.FlexColumnWidth(1.2),
+                  2: const pw.FlexColumnWidth(1.7),
+                  3: const pw.FlexColumnWidth(1.6),
+                  4: const pw.FlexColumnWidth(1.5),
+                  5: const pw.FixedColumnWidth(58),
                 },
                 children: [
                   pw.TableRow(
                     decoration: const pw.BoxDecoration(
                         color: PdfColors.blue700),
                     children: [
-                      _pdfCell('#', isHeader: true, center: true),
-                      _pdfCell('Date', isHeader: true, center: true),
-                      _pdfCell('Time', isHeader: true, center: true),
-                      _pdfCell('Session #',
-                          isHeader: true, center: true),
-                      _pdfCell('Course', isHeader: true, center: true),
-                      _pdfCell('Learners',
-                          isHeader: true, center: true),
+                      _pdfCell('N°', fonts, isHeader: true, center: true),
+                      _pdfCell('Date & Time', fonts, isHeader: true, center: true),
+                      _pdfCell('Session', fonts, isHeader: true, center: true),
+                      _pdfCell('Learner / Status', fonts, isHeader: true, center: true),
+                      _pdfCell('Course', fonts, isHeader: true, center: true),
+                      _pdfCell('', fonts, isHeader: true, center: true),
                     ],
                   ),
-                  ...List.generate(sorted.length, (i) {
-                    final s = sorted[i];
+                  ...List.generate(rows.length, (i) {
+                    final row = rows[i];
                     return pw.TableRow(
                       decoration: pw.BoxDecoration(
                         color: i.isOdd
@@ -1277,13 +1438,12 @@ class _AdminTeacherSessionCountScreenState
                             : PdfColors.white,
                       ),
                       children: [
-                        _pdfCell('${i + 1}', center: true),
-                        _pdfCell(s.dateStr, center: true),
-                        _pdfCell(s.timeStr, center: true),
-                        _pdfCell('${s.sessionNo}', center: true),
-                        _pdfCell(s.courseTitle),
-                        _pdfCell(
-                            '${s.learnerCount} ${s.learnerCount == 1 ? 'learner' : 'learners'}'),
+                        _pdfCell('${i + 1}', fonts, center: true),
+                        _pdfCell('${row.dateStr} ${row.timeStr}', fonts, center: true),
+                        _pdfCell(row.sessionLabel, fonts),
+                        _pdfCell('${row.learnerName} - ${row.attendanceStatus}', fonts),
+                        _pdfCell(row.courseTitle, fonts),
+                        _pdfCell('', fonts),
                       ],
                     );
                   }),
@@ -1299,21 +1459,69 @@ class _AdminTeacherSessionCountScreenState
     return doc.save();
   }
 
+  Future<_PdfFonts> _loadPdfFonts() async {
+    return _PdfFonts(
+      base: await PdfGoogleFonts.notoSansRegular(),
+      bold: await PdfGoogleFonts.notoSansBold(),
+      arabic: await PdfGoogleFonts.notoNaskhArabicRegular(),
+      arabicBold: await PdfGoogleFonts.notoNaskhArabicBold(),
+    );
+  }
+
+  bool _hasArabic(String text) {
+    return RegExp(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]').hasMatch(text);
+  }
+
+  List<_TeacherPdfRow> _teacherPdfRows(_TeacherStats teacher) {
+    final rows = <_TeacherPdfRow>[];
+    for (final learner in teacher.learners.values) {
+      for (final session in learner.sessions) {
+        rows.add(_TeacherPdfRow(
+          dateStr: session.dateStr,
+          timeStr: session.timeStr,
+          sessionLabel: session.sessionTitle.isNotEmpty
+              ? session.sessionTitle
+              : _sessionLabel(session.courseId, session.sessionNo),
+          learnerName: session.learnerName,
+          attendanceStatus: session.attendanceStatus,
+          courseTitle: session.courseTitle,
+        ));
+      }
+    }
+    return rows;
+  }
+
   pw.Widget _pdfCell(
-    String text, {
+    String text,
+    _PdfFonts fonts, {
     bool isHeader = false,
     bool center = false,
   }) {
+    final hasArabic = _hasArabic(text);
+    final font = isHeader
+        ? (hasArabic ? fonts.arabicBold : fonts.bold)
+        : (hasArabic ? fonts.arabic : fonts.base);
+    final align = center
+        ? pw.Alignment.center
+        : (hasArabic ? pw.Alignment.centerRight : pw.Alignment.centerLeft);
+    final textDirection = hasArabic ? pw.TextDirection.rtl : pw.TextDirection.ltr;
+
     return pw.Container(
+      alignment: align,
       padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-      child: pw.Text(
-        text,
-        textAlign: center ? pw.TextAlign.center : pw.TextAlign.left,
-        style: pw.TextStyle(
-          fontSize: isHeader ? 9 : 8,
-          fontWeight:
-              isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
-          color: isHeader ? PdfColors.white : PdfColors.black,
+      child: pw.Directionality(
+        textDirection: textDirection,
+        child: pw.Text(
+          text,
+          textAlign: center
+              ? pw.TextAlign.center
+              : (hasArabic ? pw.TextAlign.right : pw.TextAlign.left),
+          style: pw.TextStyle(
+            fontSize: isHeader ? 9 : 8,
+            font: font,
+            fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: isHeader ? PdfColors.white : PdfColors.black,
+          ),
         ),
       ),
     );
@@ -1421,6 +1629,7 @@ class _SessionDetail {
   final String timeStr;
   final int sessionNo;
   final int learnerCount;
+  final List<String> learnerIds;
   final List<String> learnerNames;
 
   _SessionDetail({
@@ -1429,18 +1638,21 @@ class _SessionDetail {
     required this.timeStr,
     required this.sessionNo,
     required this.learnerCount,
+    this.learnerIds = const [],
     this.learnerNames = const [],
   });
 }
 
 class _LearnerSessionInfo {
   final String learnerId;
-  final String learnerName;
+  String learnerName;
   final int sessionNo;
   final String dateStr;
   final String timeStr;
   final String courseId;
   String courseTitle = '';
+  String sessionTitle = '';
+  String attendanceStatus = 'Pending';
 
   _LearnerSessionInfo({
     required this.learnerId,
@@ -1454,7 +1666,7 @@ class _LearnerSessionInfo {
 
 class _LearnerStats {
   final String learnerId;
-  final String learnerName;
+  String learnerName;
   int sessionCount = 0;
   List<_LearnerSessionInfo> sessions = [];
 
@@ -1474,5 +1686,37 @@ class _TeacherStats {
   _TeacherStats({
     required this.teacherId,
     required this.teacherName,
+  });
+}
+
+class _TeacherPdfRow {
+  final String dateStr;
+  final String timeStr;
+  final String sessionLabel;
+  final String learnerName;
+  final String attendanceStatus;
+  final String courseTitle;
+
+  _TeacherPdfRow({
+    required this.dateStr,
+    required this.timeStr,
+    required this.sessionLabel,
+    required this.learnerName,
+    required this.attendanceStatus,
+    required this.courseTitle,
+  });
+}
+
+class _PdfFonts {
+  final pw.Font base;
+  final pw.Font bold;
+  final pw.Font arabic;
+  final pw.Font arabicBold;
+
+  _PdfFonts({
+    required this.base,
+    required this.bold,
+    required this.arabic,
+    required this.arabicBold,
   });
 }

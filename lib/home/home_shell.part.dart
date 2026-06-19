@@ -10,7 +10,7 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  AppMode mode = AppMode.courses;
+  AppMode mode = AppMode.gallery;
 
   static const double _desktopShellMinWidth = 1100;
 
