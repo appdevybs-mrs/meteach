@@ -3418,18 +3418,12 @@ class _CertificateListItem extends StatelessWidget {
                     child: const Icon(Icons.print, size: 20, color: _softText),
                   ),
                 ),
-                GestureDetector(
-                  onTap: onDelete,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    child: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 12),
             InkWell(
               onTap: onView,
+              onLongPress: onDelete,
               borderRadius: BorderRadius.circular(8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
