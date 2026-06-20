@@ -747,10 +747,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         }
 
         final occurrences = _generateOccurrencesForHome(c);
+        final examLearnersCount = await _examLearnerCountForClass(c);
 
         for (final occ in occurrences) {
           if (!occ.end.isAfter(now)) continue;
-          candidates.add(occ);
+          candidates.add(occ.copyWith(examLearnersCount: examLearnersCount));
         }
       }
 
@@ -819,6 +820,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               isOnline: first.isOnline,
               secondStart: second.start,
               secondEnd: second.end,
+              examLearnersCount:
+                  first.examLearnersCount > second.examLearnersCount
+                  ? first.examLearnersCount
+                  : second.examLearnersCount,
             ),
           ];
         }
@@ -873,6 +878,52 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   Future<_HomeTeacherIdentity> _loadTeacherIdentityForHome(String uid) async {
     final identity = await TeacherScheduleDataService.loadViewerIdentity(uid);
     return _HomeTeacherIdentity(name: identity.name, serial: identity.serial);
+  }
+
+  List<String> _learnerUidsForClassHome(Map<String, dynamic> classData) {
+    final learners =
+        classData['learners'] ??
+        classData['students'] ??
+        classData['enrolled_learners'] ??
+        classData['enrolledLearners'];
+    final out = <String>[];
+
+    if (learners is Map) {
+      for (final entry in learners.entries) {
+        final uid = entry.key.toString().trim();
+        if (uid.isNotEmpty) out.add(uid);
+      }
+    } else if (learners is List) {
+      for (final item in learners) {
+        if (item is Map) {
+          final m = Map<String, dynamic>.from(item);
+          final uid = (m['uid'] ?? m['learnerUid'] ?? m['studentUid'] ?? '')
+              .toString()
+              .trim();
+          if (uid.isNotEmpty) out.add(uid);
+        } else {
+          final uid = item.toString().trim();
+          if (uid.isNotEmpty) out.add(uid);
+        }
+      }
+    }
+
+    return out.toSet().toList();
+  }
+
+  Future<int> _examLearnerCountForClass(Map<String, dynamic> classData) async {
+    final uids = _learnerUidsForClassHome(classData);
+    if (uids.isEmpty) return 0;
+
+    var count = 0;
+    for (final uid in uids) {
+      try {
+        final snap = await _db.child('users/$uid/examMode').get();
+        final isExam = snap.value == true || snap.value?.toString() == 'true';
+        if (isExam) count += 1;
+      } catch (_) {}
+    }
+    return count;
   }
 
   bool _matchesTeacherForHome(
@@ -1720,6 +1771,7 @@ class _HomeUpcomingClass {
     this.isOnline = false,
     this.secondStart,
     this.secondEnd,
+    this.examLearnersCount = 0,
   });
 
   final String classId;
@@ -1730,8 +1782,23 @@ class _HomeUpcomingClass {
   final bool isOnline;
   final DateTime? secondStart;
   final DateTime? secondEnd;
+  final int examLearnersCount;
 
   bool get isMerged => secondStart != null;
+
+  _HomeUpcomingClass copyWith({int? examLearnersCount}) {
+    return _HomeUpcomingClass(
+      classId: classId,
+      courseCode: courseCode,
+      courseTitle: courseTitle,
+      start: start,
+      end: end,
+      isOnline: isOnline,
+      secondStart: secondStart,
+      secondEnd: secondEnd,
+      examLearnersCount: examLearnersCount ?? this.examLearnersCount,
+    );
+  }
 }
 
 class _HomeTeacherIdentity {
@@ -3169,6 +3236,31 @@ class _NextComingClassCard extends StatelessWidget {
                                   ),
                                 ),
                               ),
+                            if (c.examLearnersCount > 0)
+                              Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: Colors.purple.withValues(alpha: 0.28),
+                                  ),
+                                ),
+                                child: Text(
+                                  c.examLearnersCount == 1
+                                      ? 'EXAM'
+                                      : 'EXAM ${c.examLearnersCount}',
+                                  style: const TextStyle(
+                                    color: Colors.purple,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
                             AnimatedScale(
                               scale: pulseScale,
                               duration: const Duration(milliseconds: 550),
@@ -3285,6 +3377,14 @@ class _NextComingClassCard extends StatelessWidget {
                                   ? 'Online booking'
                                   : 'In-class session',
                             ),
+                            if (c.examLearnersCount > 0)
+                              _InfoChip(
+                                palette: palette,
+                                icon: Icons.school_rounded,
+                                text: c.examLearnersCount == 1
+                                    ? '1 exam learner'
+                                    : '${c.examLearnersCount} exam learners',
+                              ),
                           ],
                         ),
                         const SizedBox(height: 10),

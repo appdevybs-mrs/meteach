@@ -2553,6 +2553,47 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
     );
   }
 
+  Future<int> _examLearnerCountForUids(List<String> uids) async {
+    if (uids.isEmpty) return 0;
+    var count = 0;
+    for (final uid in uids.toSet()) {
+      try {
+        final snap = await _db.child('users/$uid/examMode').get();
+        final isExam = snap.value == true || snap.value?.toString() == 'true';
+        if (isExam) count += 1;
+      } catch (_) {}
+    }
+    return count;
+  }
+
+  Future<int> _examLearnerCountForClass(Map<String, dynamic> c) {
+    final uids = _inClassLearnersList(c)
+        .map((e) => (e['uid'] ?? '').trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    return _examLearnerCountForUids(uids);
+  }
+
+  Widget _examBadge([int? count]) {
+    final label = count == null || count <= 1 ? 'Exam' : 'Exam $count';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.purple.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.purple.withValues(alpha: 0.28)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.purple,
+          fontWeight: FontWeight.w900,
+          fontSize: 10,
+        ),
+      ),
+    );
+  }
+
   Widget _classCard(Map<String, dynamic> c) {
     final classId = _safeStr(c['id'] ?? c['class_id']);
     final title = _safeStr(c['course_title']).isEmpty
@@ -2607,7 +2648,29 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                 _firstSessionDate(c),
               ),
               const SizedBox(height: 4),
-              _miniInfoLine(Icons.groups_rounded, 'Learners', '$learnersCount'),
+              FutureBuilder<int>(
+                future: _examLearnerCountForClass(c),
+                builder: (context, snap) {
+                  final examCount = snap.data ?? 0;
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: _miniInfoLine(
+                          Icons.groups_rounded,
+                          'Learners',
+                          examCount > 0
+                              ? '$learnersCount total, $examCount exam'
+                              : '$learnersCount',
+                        ),
+                      ),
+                      if (examCount > 0) ...[
+                        const SizedBox(width: 8),
+                        _examBadge(examCount),
+                      ],
+                    ],
+                  );
+                },
+              ),
               const SizedBox(height: 12),
               FutureBuilder<_ClassProg>(
                 future: classId.isEmpty
@@ -3235,6 +3298,17 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                     ),
                   ),
                 ),
+                FutureBuilder<int>(
+                  future: _examLearnerCountForUids(b.learnerUids),
+                  builder: (context, snap) {
+                    final examCount = snap.data ?? 0;
+                    if (examCount <= 0) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: _examBadge(examCount),
+                    );
+                  },
+                ),
                 IconButton(
                   onPressed: () {
                     setState(() {
@@ -3352,6 +3426,37 @@ class _TeacherClassesScreenState extends State<TeacherClassesScreen>
                           Icons.groups_rounded,
                           'Learners',
                           '${b.learnerUids.length}',
+                        ),
+                        FutureBuilder<int>(
+                          future: _examLearnerCountForUids(b.learnerUids),
+                          builder: (context, snap) {
+                            final examCount = snap.data ?? 0;
+                            if (examCount <= 0) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: Colors.purple.withValues(alpha: 0.18),
+                                  ),
+                                ),
+                                child: Text(
+                                  examCount == 1
+                                      ? '1 learner is in exam mode - no attendance needed.'
+                                      : '$examCount learners are in exam mode - no attendance needed.',
+                                  style: const TextStyle(
+                                    color: Colors.purple,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 4),
                         FutureBuilder<String>(

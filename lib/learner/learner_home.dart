@@ -2496,6 +2496,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
                             return _ProgressCard(
                               palette: p,
                               item: items[i],
+                              examMode: _examMode,
                               onTap: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -2810,11 +2811,13 @@ class _ProgressCard extends StatelessWidget {
   const _ProgressCard({
     required this.palette,
     required this.item,
+    required this.examMode,
     required this.onTap,
   });
 
   final _HomePalette palette;
   final _CourseProgressItem item;
+  final bool examMode;
   final VoidCallback onTap;
 
   bool _canJoinNow(int startMs) {
@@ -3093,6 +3096,32 @@ class _ProgressCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (examMode) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: Colors.purple.withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: Text(
+                        'Exam Mode',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: hasProgress ? Colors.white : Colors.purple,
+                          fontWeight: FontWeight.w900,
+                          fontSize: compact ? 9 : 10,
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Expanded(
                     child: Center(

@@ -2895,6 +2895,8 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               : _examMode
               ? _examMergedBody(
                   desktopWorkspace: desktopWorkspace,
+                  meetingsHeld: meetingsHeld,
+                  syllabusPct: syllabusPct,
                   coveredLessons: coveredLessons,
                   totalLessons: totalLessons,
                 )
@@ -2918,11 +2920,14 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   Widget _examMergedBody({
     required bool desktopWorkspace,
+    required int meetingsHeld,
+    required int syllabusPct,
     required int coveredLessons,
     required int totalLessons,
   }) {
     final mq = MediaQuery.of(context);
     final bottomPad = mq.viewPadding.bottom;
+    final units = _groupSyllabiByUnit();
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -2950,11 +2955,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'You are in exam mode — no attendance, payments, or schedule tracking.',
+                    'You are in exam mode. Please complete your exam within the given time period to keep your learning privileges active.',
                     style: TextStyle(
                       color: Colors.purple,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
                     ),
                   ),
                 ),
@@ -2963,31 +2968,99 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           ),
         ),
         const SizedBox(height: 16),
-        if (totalLessons > 0)
-          _sectionCard(
-            icon: Icons.menu_book_rounded,
-            title: 'Progress',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    value: (coveredLessons / totalLessons).clamp(0, 1),
-                    minHeight: 10,
-                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.10),
-                    valueColor:
-                        const AlwaysStoppedAnimation(UiK.actionOrange),
+        _sectionCard(
+          icon: Icons.menu_book_rounded,
+          title: 'Progress & Syllabus',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.event_available_rounded,
+                    size: 18,
+                    color: UiK.actionOrange,
                   ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Meetings completed',
+                    style: TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$meetingsHeld',
+                    style: const TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.menu_book_rounded,
+                    size: 18,
+                    color: UiK.actionOrange,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Syllabus',
+                    style: TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$syllabusPct%',
+                    style: const TextStyle(
+                      color: UiK.mainText,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: totalLessons == 0
+                      ? 0
+                      : (coveredLessons / totalLessons).clamp(0, 1),
+                  minHeight: 10,
+                  backgroundColor: UiK.primaryBlue.withValues(alpha: 0.10),
+                  valueColor: const AlwaysStoppedAnimation(UiK.actionOrange),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Covered: $coveredLessons / $totalLessons lessons',
-                  style: UiK.subtleText(),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Covered: $coveredLessons / $totalLessons lessons',
+                style: UiK.subtleText(),
+              ),
+            ],
           ),
+        ),
+        const SizedBox(height: 14),
+        if (_syllabiFlat.isEmpty)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Syllabus not found for this course.',
+                style: TextStyle(
+                  color: UiK.mainText,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          )
+        else
+          ...units.map(_unitModuleCard),
       ],
     );
   }

@@ -2167,6 +2167,17 @@ class _LearnersListState extends State<_LearnersList>
                                         uid: row.uid,
                                         db: _db,
                                         methods: _methods,
+                                        onExamModeChanged: (enabled) {
+                                          setState(() {
+                                            if (enabled) {
+                                              _payFlagCache[row.uid] =
+                                                  _PayFlag.exam;
+                                            } else {
+                                              _payFlagCache.remove(row.uid);
+                                            }
+                                          });
+                                          if (!enabled) _loadPayFlagForUid(row.uid);
+                                        },
                                       ),
                                     )
                                   : const SizedBox.shrink(),
@@ -3421,11 +3432,13 @@ class _LearnerExpandedTabs extends StatefulWidget {
     required this.uid,
     required this.db,
     required this.methods,
+    required this.onExamModeChanged,
   });
 
   final String uid;
   final FirebaseDatabase db;
   final List<String> methods;
+  final ValueChanged<bool> onExamModeChanged;
 
   @override
   State<_LearnerExpandedTabs> createState() => _LearnerExpandedTabsState();
@@ -3459,8 +3472,48 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   Future<void> _toggleExamMode() async {
     final newVal = !_examMode;
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(newVal ? 'Turn Exam Mode ON?' : 'Turn Exam Mode OFF?'),
+            content: Text(
+              newVal
+                  ? 'This learner will be marked as Exam. Payments, attendance, and schedule checks will be ignored for them.'
+                  : 'This learner will return to normal mode. Payments, attendance, and schedule checks will apply again.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: newVal ? Colors.purple : null,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(newVal ? 'Turn ON' : 'Turn OFF'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    final oldVal = _examMode;
     setState(() => _examMode = newVal);
-    await widget.db.ref('users/${widget.uid}/examMode').set(newVal);
+    try {
+      await widget.db.ref('users/${widget.uid}/examMode').set(newVal);
+      widget.onExamModeChanged(newVal);
+      await _loadExamMode();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _examMode = oldVal);
+      AppToast.show(
+        context,
+        'Could not update exam mode. Please try again.',
+        type: AppToastType.error,
+      );
+    }
   }
 
   Map<String, Map<String, dynamic>> _allCourses = {};
