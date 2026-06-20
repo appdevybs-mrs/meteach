@@ -401,7 +401,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     if (!_isCompleted &&
         durationMs > 0 &&
-        positionMs >= (durationMs - 800) &&
+        positionMs >= (durationMs * 0.95).round() &&
         !value.isBuffering) {
       _markVideoCompleted();
     }
@@ -498,6 +498,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     if (controller.value.isPlaying) {
       await controller.pause();
+      await _persistProgressNow();
     } else {
       await controller.play();
       _startHideControlsTimer();
@@ -1898,17 +1899,119 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Widget _buildFullscreenLayout() {
     final orientation = MediaQuery.of(context).orientation;
     final isLandscape = orientation == Orientation.landscape;
+    final title = widget.sessionTitle.trim().isEmpty
+        ? 'Session Video'
+        : widget.sessionTitle.trim();
 
     return Container(
       color: Colors.black,
       width: double.infinity,
       height: double.infinity,
+      child: Stack(
+        children: [
+          SafeArea(
+            top: false,
+            bottom: false,
+            left: false,
+            right: false,
+            child: _buildVideoArea(isLandscape: isLandscape),
+          ),
+          if (kIsWeb) _buildWebFullscreenOverlay(title),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebFullscreenOverlay(String title) {
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
       child: SafeArea(
-        top: false,
         bottom: false,
-        left: false,
-        right: false,
-        child: _buildVideoArea(isLandscape: isLandscape),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.6),
+                Colors.transparent,
+              ],
+            ),
+          ),
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () {
+                  if (_isFullscreen) _exitFullscreen();
+                  Navigator.pop(context);
+                },
+              ),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.more_vert, color: Colors.white),
+                tooltip: 'Features',
+                onPressed: _openFeaturesBottomSheet,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openFeaturesBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildCompactActionPanel(isLandscape: true),
+                const SizedBox(height: 10),
+                _buildCommentsPreviewSection(),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -2016,6 +2119,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             context: context,
             maxWidth: 5000,
             padding: EdgeInsets.zero,
+            fullWidth: true,
             child: _busy
                 ? const Center(
                     child: BrandedInlineLoader(message: 'Loading video...'),

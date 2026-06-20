@@ -236,6 +236,13 @@ class _LearnerHomeState extends State<LearnerHome> {
     if (uid == null || uid.isEmpty) return;
 
     try {
+      final userSnap = await _db.child('users').child(uid).get();
+      if (userSnap.value is Map) {
+        final userMap = userSnap.value as Map;
+        final isExam = userMap['examMode'] == true ||
+            userMap['examMode']?.toString() == 'true';
+        if (isExam) return;
+      }
       final snap = await _db.child('users').child(uid).child('courses').get();
       if (!snap.exists || snap.value is! Map) return;
 
@@ -852,22 +859,23 @@ class _LearnerDashboardLite extends StatefulWidget {
   State<_LearnerDashboardLite> createState() => _LearnerDashboardLiteState();
 }
 
-class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
+class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
+    with WidgetsBindingObserver {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   Future<List<_CourseProgressItem>>? _progressFuture;
   Future<bool>? _hasFlexibleBookableCourseFuture;
   final ValueNotifier<_JoinFabPayload?> _joinFabPayload =
       ValueNotifier<_JoinFabPayload?>(null);
-  Timer? _progressRefreshTimer;
-  Timer? _joinFabRefreshTimer;
   List<_CourseProgressItem> _cachedProgressItems =
       const <_CourseProgressItem>[];
   bool _hasLoadedProgressOnce = false;
   bool? _cachedHasFlexibleBookableCourse;
+  bool _examMode = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _progressFuture = _loadProgressItems().then((items) {
       _cachedProgressItems = items;
       _hasLoadedProgressOnce = true;
@@ -878,35 +886,49 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
       return v;
     });
     unawaited(_refreshJoinFabPayload());
-    _progressRefreshTimer = Timer.periodic(const Duration(seconds: 45), (_) {
-      if (!mounted) return;
-      if (AppConnectivity.instance.isOffline) return;
-      setState(() {
-        _progressFuture = _loadProgressItems().then((items) {
-          _cachedProgressItems = items;
-          _hasLoadedProgressOnce = true;
-          return items;
-        });
-        _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse().then((
-          v,
-        ) {
-          _cachedHasFlexibleBookableCourse = v;
-          return v;
-        });
-      });
-    });
-    _joinFabRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-      if (!mounted) return;
-      unawaited(_refreshJoinFabPayload());
-    });
+    _loadExamMode();
+  }
+
+  Future<void> _loadExamMode() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      final snap = await _db.child('users/$uid/examMode').get();
+      final isExam =
+          snap.value == true || snap.value?.toString() == 'true';
+      if (mounted) setState(() => _examMode = isExam);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
-    _progressRefreshTimer?.cancel();
-    _joinFabRefreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _joinFabPayload.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _refreshOnForeground();
+    }
+  }
+
+  Future<void> _refreshOnForeground() async {
+    if (AppConnectivity.instance.isOffline) return;
+    setState(() {
+      _progressFuture = _loadProgressItems().then((items) {
+        _cachedProgressItems = items;
+        _hasLoadedProgressOnce = true;
+        return items;
+      });
+      _hasFlexibleBookableCourseFuture = _hasFlexibleBookableCourse().then((v) {
+        _cachedHasFlexibleBookableCourse = v;
+        return v;
+      });
+    });
+    unawaited(_refreshJoinFabPayload());
+    _loadExamMode();
   }
 
   Future<void> _refreshJoinFabPayload() async {
@@ -2389,7 +2411,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
 
                   final hasFlexible =
                       snap.data ?? _cachedHasFlexibleBookableCourse ?? false;
-                  if (!hasFlexible) {
+                  if (!hasFlexible || _examMode) {
                     return const SizedBox.shrink();
                   }
 
@@ -2501,7 +2523,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite> {
             child: ValueListenableBuilder<_JoinFabPayload?>(
               valueListenable: _joinFabPayload,
               builder: (context, payload, _) {
-                if (payload == null) return const SizedBox.shrink();
+                if (payload == null || _examMode) return const SizedBox.shrink();
 
                 if (isNarrowPhone) {
                   return SizedBox(

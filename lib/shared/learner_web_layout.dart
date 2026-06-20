@@ -13,6 +13,7 @@ Widget learnerWebBodyFrame({
   required Widget child,
   double maxWidth = 1560,
   EdgeInsetsGeometry? padding,
+  bool fullWidth = false,
 }) {
   if (!kIsWeb) return child;
   return webPageFrame(
@@ -20,5 +21,6 @@ Widget learnerWebBodyFrame({
     child: child,
     maxWidth: maxWidth,
     padding: padding,
+    fullWidth: fullWidth,
   );
 }

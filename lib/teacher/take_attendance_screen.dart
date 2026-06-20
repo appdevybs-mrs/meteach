@@ -66,6 +66,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
   // Attendance switches
   final Map<String, bool> _present = {};
   List<String> _learnerUids = [];
+  final Set<String> _examLearnerUids = {};
   final Map<String, Map<String, dynamic>> _learnerInfo = {};
 
   // Homework
@@ -285,7 +286,8 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
       _learnerUids = learnerSet.toList()..sort();
 
-      // load learners info
+      // load learners info and check exam mode
+      _examLearnerUids.clear();
       await Future.wait(
         _learnerUids.map((uid) async {
           final snap = await _db.child('users').child(uid).get();
@@ -301,8 +303,18 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
             'name': fullName.isEmpty ? uid : fullName,
             'serial': (m['serial'] ?? '').toString(),
           };
+          final isExam =
+              m['examMode'] == true || m['examMode']?.toString() == 'true';
+          if (isExam) {
+            _examLearnerUids.add(uid);
+          }
         }),
       );
+
+      // remove exam learners from attendance list
+      _learnerUids = _learnerUids
+          .where((uid) => !_examLearnerUids.contains(uid))
+          .toList();
 
       // load syllabus sessions for picker (+ include sessionNumber + snapshot fields)
       if (_courseId.isNotEmpty) {
@@ -1795,6 +1807,43 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
     );
   }
 
+  Widget _buildExamLearnerTile(String uid) {
+    final info = _learnerInfo[uid] ?? {'name': uid, 'serial': ''};
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.purple.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+      ),
+      child: ListTile(
+        title: Text(
+          (info['name'] ?? uid).toString(),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.purple.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Text(
+            'Exam — no attendance',
+            style: TextStyle(
+              color: Colors.purple,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ),
+        leading: CircleAvatar(
+          backgroundColor: Colors.purple.withValues(alpha: 0.1),
+          child: const Icon(Icons.school_rounded, color: Colors.purple, size: 20),
+        ),
+      ),
+    );
+  }
+
   Widget _buildErrorState() => Center(
     child: Text(_error!, style: const TextStyle(color: Colors.red)),
   );
@@ -1940,6 +1989,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         ],
       ),
       ..._learnerUids.map(_buildLearnerTile),
+      if (_examLearnerUids.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        _sectionLabel("EXAM LEARNERS"),
+        ..._examLearnerUids.map(_buildExamLearnerTile),
+      ],
     ];
 
     if (!desktopWorkspace) {

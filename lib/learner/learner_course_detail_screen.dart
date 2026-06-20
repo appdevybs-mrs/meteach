@@ -125,6 +125,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   bool _mailingTeacher = false;
   final bool _showFlexibleDetails = false;
   String? _expandedFlexibleUnitKey;
+  bool _examMode = false;
 
   @override
   void initState() {
@@ -1557,6 +1558,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
 
+      final examSnap = await _db.child('users/$_uid/examMode').get();
+      _examMode =
+          examSnap.value == true || examSnap.value?.toString() == 'true';
+
       // Offline: skip Firebase and try cached recorded course data
       if (AppConnectivity.instance.isOffline &&
           resolveCourseDeliveryKey(widget.courseData) == 'recorded') {
@@ -2887,6 +2892,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     ),
                   ),
                 )
+              : _examMode
+              ? _examMergedBody(
+                  desktopWorkspace: desktopWorkspace,
+                  coveredLessons: coveredLessons,
+                  totalLessons: totalLessons,
+                )
               : isRecordedCourse
               ? _recordedMergedBody()
               : _flexibleMergedBody(
@@ -2902,6 +2913,82 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         ),
       ),
       floatingActionButton: null,
+    );
+  }
+
+  Widget _examMergedBody({
+    required bool desktopWorkspace,
+    required int coveredLessons,
+    required int totalLessons,
+  }) {
+    final mq = MediaQuery.of(context);
+    final bottomPad = mq.viewPadding.bottom;
+
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        desktopWorkspace ? 60 : 14,
+        8,
+        desktopWorkspace ? 60 : 14,
+        bottomPad + 80,
+      ),
+      children: [
+        _sectionCard(
+          icon: Icons.info_rounded,
+          title: 'Exam Mode',
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.purple.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.purple.withValues(alpha: 0.2),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.school_rounded, color: Colors.purple, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'You are in exam mode — no attendance, payments, or schedule tracking.',
+                    style: TextStyle(
+                      color: Colors.purple,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (totalLessons > 0)
+          _sectionCard(
+            icon: Icons.menu_book_rounded,
+            title: 'Progress',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: (coveredLessons / totalLessons).clamp(0, 1),
+                    minHeight: 10,
+                    backgroundColor: UiK.primaryBlue.withValues(alpha: 0.10),
+                    valueColor:
+                        const AlwaysStoppedAnimation(UiK.actionOrange),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Covered: $coveredLessons / $totalLessons lessons',
+                  style: UiK.subtleText(),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 

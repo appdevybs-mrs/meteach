@@ -616,7 +616,7 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   }
 }
 
-enum _PayFlag { ok, yellow, red, black, exempt, noCourse }
+enum _PayFlag { ok, yellow, red, black, exempt, noCourse, exam }
 
 enum _RowAction { edit, pause, delete, block, restore, deleteForever }
 
@@ -1087,6 +1087,19 @@ class _LearnersListState extends State<_LearnersList>
     _payFlagLoading.add(key);
 
     try {
+      final userSnap = await _db.ref('users/$key').get();
+      final userVal = userSnap.value;
+      if (userVal is Map) {
+        final userMap = userVal.map((k, vv) => MapEntry(k.toString(), vv));
+        final examMode = userMap['examMode'] == true ||
+            userMap['examMode']?.toString() == 'true';
+        if (examMode) {
+          if (!mounted) return;
+          setState(() => _payFlagCache[key] = _PayFlag.exam);
+          return;
+        }
+      }
+
       final snap = await _db.ref('users/$key/courses').get();
       final v = snap.value;
       if (v is! Map) {
@@ -1119,6 +1132,8 @@ class _LearnersListState extends State<_LearnersList>
             return 1;
           case _PayFlag.ok:
           case _PayFlag.noCourse:
+            return 0;
+          case _PayFlag.exam:
             return 0;
         }
       }
@@ -1884,6 +1899,12 @@ class _LearnersListState extends State<_LearnersList>
                             alpha: 0.45,
                           );
                           rowBgColor = Colors.orange.withValues(alpha: 0.03);
+                          break;
+                        case _PayFlag.exam:
+                          avatarBg = Colors.purple;
+                          avatarFg = Colors.white;
+                          rowBorderColor = Colors.purple.withValues(alpha: 0.45);
+                          rowBgColor = Colors.purple.withValues(alpha: 0.03);
                           break;
                         case _PayFlag.ok:
                           avatarBg = AdminLearnersScreen.appBg;
@@ -3244,6 +3265,7 @@ class Learner {
     required this.profilePhotos,
     this.deleteAuth = false,
     this.selfDeleteDone = false,
+    this.examMode = false,
   });
 
   final String uid;
@@ -3263,6 +3285,7 @@ class Learner {
   final List<String> profilePhotos;
   final bool deleteAuth;
   final bool selfDeleteDone;
+  final bool examMode;
 
   String get fullName => '${firstName.trim()} ${lastName.trim()}'.trim();
 
@@ -3292,6 +3315,7 @@ class Learner {
       'profile_photos': profilePhotos,
       'deleteAuth': deleteAuth,
       'selfDeleteDone': selfDeleteDone,
+      'examMode': examMode,
     };
   }
 
@@ -3327,6 +3351,8 @@ class Learner {
       selfDeleteDone:
           (m['selfDeleteDone'] == true) ||
           (m['selfDeleteDone']?.toString() == 'true'),
+      examMode:
+          (m['examMode'] == true) || (m['examMode']?.toString() == 'true'),
     );
   }
 
@@ -3412,6 +3438,30 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   String? _selectedCourseKey;
   Map<String, dynamic> _userCourses = {};
+
+  bool _examMode = false;
+  bool _examLoading = true;
+
+  Future<void> _loadExamMode() async {
+    try {
+      final snap =
+          await widget.db.ref('users/${widget.uid}/examMode').get();
+      if (!mounted) return;
+      setState(() {
+        _examMode = snap.value == true || snap.value?.toString() == 'true';
+        _examLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _examLoading = false);
+    }
+  }
+
+  Future<void> _toggleExamMode() async {
+    final newVal = !_examMode;
+    setState(() => _examMode = newVal);
+    await widget.db.ref('users/${widget.uid}/examMode').set(newVal);
+  }
 
   Map<String, Map<String, dynamic>> _allCourses = {};
   bool _loadingAllCourses = false;
@@ -3728,6 +3778,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
         _loadedTabIndexes.add(_tab.index);
       });
     });
+    _loadExamMode();
   }
 
   @override
@@ -4332,7 +4383,37 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
             label: const Text('Assign courses'),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: _examLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : FilledButton.tonalIcon(
+                  onPressed: _toggleExamMode,
+                  icon: Icon(
+                    _examMode
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: _examMode ? Colors.purple : Colors.grey,
+                  ),
+                  label: Text(
+                    _examMode ? 'Exam: ON' : 'Exam: OFF',
+                    style: TextStyle(
+                      color: _examMode ? Colors.purple : Colors.grey,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        _examMode ? Colors.purple.withValues(alpha: 0.1) : null,
+                  ),
+                ),
+        ),
+        const SizedBox(height: 8),
         TabBar(
           controller: _tab,
           labelColor: AdminLearnersScreen.primaryBlue,

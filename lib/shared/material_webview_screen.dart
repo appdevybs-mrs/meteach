@@ -363,7 +363,7 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
           return;
         }
 
-        final bool launched = await launchUrl(uri, webOnlyWindowName: '_self');
+        final bool launched = await launchUrl(uri, webOnlyWindowName: '_blank');
 
         if (!mounted) return;
         setState(() {
@@ -375,8 +375,9 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
             _lastError = 'Could not open this page in the browser.';
           }
         });
-        if (launched) {
+        if (launched && mounted) {
           _trackReadInteractionOnce();
+          Navigator.pop(context);
         }
         return;
       }
@@ -1343,6 +1344,24 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: Colors.white,
+        appBar: kIsWeb
+            ? AppBar(
+                title: Text(widget.title),
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                actions: _openedWebUrl
+                    ? [
+                        IconButton(
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          tooltip: 'Open again',
+                          onPressed: () => unawaited(_openUrlAgain()),
+                        ),
+                      ]
+                    : null,
+              )
+            : null,
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () {

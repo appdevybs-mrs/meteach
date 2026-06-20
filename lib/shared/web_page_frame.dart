@@ -8,8 +8,33 @@ Widget webPageFrame({
   required Widget child,
   double maxWidth = 1380,
   EdgeInsetsGeometry? padding,
+  bool fullWidth = false,
 }) {
   if (!kIsWeb) return child;
+
+  if (fullWidth) {
+    final resolvedPadding =
+        padding ??
+        AppResponsive.pagePadding(
+          context,
+          phone: 12,
+          tablet: 16,
+          desktop: 24,
+          largeDesktop: 28,
+          topPhone: 10,
+          topTablet: 12,
+          topDesktop: 18,
+          topLargeDesktop: 20,
+          bottomPhone: 12,
+          bottomTablet: 16,
+          bottomDesktop: 24,
+          bottomLargeDesktop: 28,
+        );
+    return Padding(
+      padding: resolvedPadding,
+      child: child,
+    );
+  }
 
   final resolvedPadding =
       padding ??

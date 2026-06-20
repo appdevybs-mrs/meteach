@@ -2602,6 +2602,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }) {
     if (learner == null) return const _LearnerPaymentProgress.empty();
 
+    final isExam = learner['examMode'] == true ||
+        learner['examMode']?.toString() == 'true';
+    if (isExam) return const _LearnerPaymentProgress.empty();
+
     final classId = (cls['class_id'] ?? '').toString().trim();
     final courseId = (cls['course_id'] ?? '').toString().trim();
     final variantKey = _normalizeVariantKey(

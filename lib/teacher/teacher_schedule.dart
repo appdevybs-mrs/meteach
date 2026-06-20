@@ -611,22 +611,25 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   Future<Map<String, String>> _loadLearnerMini(String uid) async {
     final k = uid.trim();
-    if (k.isEmpty) return const {'full': '', 'profilePhoto': ''};
+    if (k.isEmpty) return const {'full': '', 'profilePhoto': '', 'examMode': ''};
     if (_learnerMiniCache.containsKey(k)) return _learnerMiniCache[k]!;
     try {
       final snap = await _db.child('users').child(k).get();
       if (snap.exists && snap.value is Map) {
         final m = Map<String, dynamic>.from(snap.value as Map);
+        final examMode = m['examMode'] == true ||
+            m['examMode']?.toString() == 'true';
         final out = {
           'full': '${_safeStr(m['first_name'])} ${_safeStr(m['last_name'])}'
               .trim(),
           'profilePhoto': _safeStr(m['profile_photo_url']),
+          'examMode': examMode ? 'true' : '',
         };
         _learnerMiniCache[k] = out;
         return out;
       }
     } catch (_) {}
-    const out = {'full': '', 'profilePhoto': ''};
+    const out = {'full': '', 'profilePhoto': '', 'examMode': ''};
     _learnerMiniCache[k] = out;
     return out;
   }
@@ -2358,6 +2361,10 @@ class _SessionCardState extends State<_SessionCard> {
                                                 (snap.data?['profilePhoto'] ??
                                                         '')
                                                     .trim();
+                                            final isExam =
+                                                (snap.data?['examMode'] ?? '')
+                                                        .toString() ==
+                                                    'true';
 
                                             return Container(
                                               margin: const EdgeInsets.only(
@@ -2365,12 +2372,19 @@ class _SessionCardState extends State<_SessionCard> {
                                               ),
                                               padding: const EdgeInsets.all(8),
                                               decoration: BoxDecoration(
-                                                color: palette.cardBg,
+                                                color: isExam
+                                                    ? Colors.purple
+                                                        .withValues(alpha: 0.03)
+                                                    : palette.cardBg,
                                                 borderRadius:
                                                     BorderRadius.circular(10),
                                                 border: Border.all(
-                                                  color: palette.border
-                                                      .withValues(alpha: 0.82),
+                                                  color: isExam
+                                                      ? Colors.purple
+                                                          .withValues(alpha: 0.3)
+                                                      : palette.border
+                                                          .withValues(
+                                                              alpha: 0.82),
                                                 ),
                                               ),
                                               child: Column(
@@ -2391,13 +2405,46 @@ class _SessionCardState extends State<_SessionCard> {
                                                           overflow: TextOverflow
                                                               .ellipsis,
                                                           style: TextStyle(
-                                                            color: palette.text,
+                                                            color: isExam
+                                                                ? Colors.purple
+                                                                : palette.text,
                                                             fontWeight:
                                                                 FontWeight.w800,
                                                             fontSize: 12,
                                                           ),
                                                         ),
                                                       ),
+                                                      if (isExam)
+                                                        Container(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                            horizontal: 6,
+                                                            vertical: 2,
+                                                          ),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color: Colors.purple
+                                                                .withValues(
+                                                                    alpha:
+                                                                        0.1),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        6),
+                                                          ),
+                                                          child: const Text(
+                                                            'Exam',
+                                                            style: TextStyle(
+                                                              color:
+                                                                  Colors.purple,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w900,
+                                                              fontSize: 10,
+                                                            ),
+                                                          ),
+                                                        ),
                                                     ],
                                                   ),
                                                   if (!o.isOnline)

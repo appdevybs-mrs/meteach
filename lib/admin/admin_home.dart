@@ -2463,7 +2463,7 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
 
 // ===================== PAY FLAG =====================
 
-enum _PayFlag { ok, yellow, red, black, exempt, noCourse }
+enum _PayFlag { ok, yellow, red, black, exempt, noCourse, exam }
 
 class _PayLegend {
   static const String noCourseLabel = 'No course';
@@ -2471,12 +2471,14 @@ class _PayLegend {
   static const String redLabel = 'Due now';
   static const String yellowLabel = 'Warning';
   static const String okLabel = 'OK';
+  static const String examLabel = 'Exam';
 
   static const Color noCourseColor = Colors.blue;
   static const Color blackColor = Colors.black;
   static const Color redColor = Colors.red;
   static const Color yellowColor = AdminHome.actionOrange;
   static const Color okColor = AdminHome.primaryBlue;
+  static const Color examColor = Colors.purple;
 }
 
 class _PaymentAttentionSummary {
@@ -2487,6 +2489,7 @@ class _PaymentAttentionSummary {
     required this.red,
     required this.yellow,
     required this.ok,
+    this.exam = 0,
   });
 
   final int totalLearners;
@@ -2495,9 +2498,10 @@ class _PaymentAttentionSummary {
   final int red;
   final int yellow;
   final int ok;
+  final int exam;
 
   int get attention => black + red;
-  int get tracked => black + red + yellow + ok;
+  int get tracked => black + red + yellow + ok + exam;
 
   static _PaymentAttentionSummary fromUsers(dynamic usersVal) {
     int totalLearners = 0;
@@ -2506,6 +2510,7 @@ class _PaymentAttentionSummary {
     int red = 0;
     int yellow = 0;
     int ok = 0;
+    int exam = 0;
 
     if (usersVal is Map) {
       usersVal.forEach((uid, userVal) {
@@ -2518,6 +2523,13 @@ class _PaymentAttentionSummary {
         }
 
         totalLearners++;
+
+        final isExam = userMap['examMode'] == true ||
+            userMap['examMode']?.toString() == 'true';
+        if (isExam) {
+          exam++;
+          return;
+        }
 
         final courses = userMap['courses'];
         if (courses is! Map || courses.isEmpty) {
@@ -2565,6 +2577,9 @@ class _PaymentAttentionSummary {
           case _PayFlag.noCourse:
             noCourse++;
             break;
+          case _PayFlag.exam:
+            exam++;
+            break;
         }
       });
     }
@@ -2576,6 +2591,7 @@ class _PaymentAttentionSummary {
       red: red,
       yellow: yellow,
       ok: ok,
+      exam: exam,
     );
   }
 }
@@ -2588,6 +2604,7 @@ class _PaymentAttentionDetails {
     required this.dueNowLearners,
     required this.warningLearners,
     required this.okLearners,
+    this.examLearners = const <String>[],
   });
 
   final _PaymentAttentionSummary summary;
@@ -2596,6 +2613,7 @@ class _PaymentAttentionDetails {
   final List<String> dueNowLearners;
   final List<String> warningLearners;
   final List<String> okLearners;
+  final List<String> examLearners;
 
   static _PaymentAttentionDetails fromUsers(dynamic usersVal) {
     final noCourse = <String>[];
@@ -2603,6 +2621,7 @@ class _PaymentAttentionDetails {
     final dueNow = <String>[];
     final warning = <String>[];
     final ok = <String>[];
+    final exam = <String>[];
 
     if (usersVal is Map) {
       usersVal.forEach((uid, userVal) {
@@ -2624,6 +2643,13 @@ class _PaymentAttentionDetails {
         final displayName = ('$fn $ln').trim().isNotEmpty
             ? ('$fn $ln').trim()
             : (email.isNotEmpty ? email : uid.toString());
+
+        final isExam = userMap['examMode'] == true ||
+            userMap['examMode']?.toString() == 'true';
+        if (isExam) {
+          exam.add(displayName);
+          return;
+        }
 
         final courses = userMap['courses'];
         if (courses is! Map || courses.isEmpty) {
@@ -2671,6 +2697,9 @@ class _PaymentAttentionDetails {
           case _PayFlag.noCourse:
             noCourse.add(displayName);
             break;
+          case _PayFlag.exam:
+            exam.add(displayName);
+            break;
         }
       });
     }
@@ -2682,6 +2711,7 @@ class _PaymentAttentionDetails {
     dueNow.sort(sortCaseInsensitive);
     warning.sort(sortCaseInsensitive);
     ok.sort(sortCaseInsensitive);
+    exam.sort(sortCaseInsensitive);
 
     return _PaymentAttentionDetails(
       summary: _PaymentAttentionSummary.fromUsers(usersVal),
@@ -2690,6 +2720,7 @@ class _PaymentAttentionDetails {
       dueNowLearners: dueNow,
       warningLearners: warning,
       okLearners: ok,
+      examLearners: exam,
     );
   }
 }
@@ -2747,6 +2778,8 @@ class _PaymentAttentionLogic {
       case _PayFlag.ok:
         return 1;
       case _PayFlag.noCourse:
+        return 0;
+      case _PayFlag.exam:
         return 0;
     }
   }
@@ -3093,6 +3126,16 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                           names: details.noCourseLearners,
                         ),
                       ),
+                      _MiniStatChip(
+                        label: '${_PayLegend.examLabel} ${summary.exam}',
+                        color: _PayLegend.examColor,
+                        background: const Color(0xFFF3E8FF),
+                        onTap: () => _showLearnersSheet(
+                          context,
+                          title: _PayLegend.examLabel,
+                          names: details.examLearners,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -3122,12 +3165,14 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                 red: 0,
                 yellow: 0,
                 ok: 0,
+                exam: 0,
               ),
               noCourseLearners: <String>[],
               overdueLearners: <String>[],
               dueNowLearners: <String>[],
               warningLearners: <String>[],
               okLearners: <String>[],
+              examLearners: <String>[],
             ),
             loading: true,
           );
@@ -3297,6 +3342,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
       case _PayFlag.ok:
       case _PayFlag.noCourse:
         return 0;
+      case _PayFlag.exam:
+        return 0;
     }
   }
 
@@ -3441,6 +3488,7 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
     final dueNow = <String>[];
     final warning = <String>[];
     final ok = <String>[];
+    final exam = <String>[];
 
     if (usersVal is Map) {
       for (final entry in usersVal.entries) {
@@ -3463,6 +3511,13 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
         final displayName = ('$fn $ln').trim().isNotEmpty
             ? ('$fn $ln').trim()
             : (email.isNotEmpty ? email : uid);
+
+        final isExam = userMap['examMode'] == true ||
+            userMap['examMode']?.toString() == 'true';
+        if (isExam) {
+          exam.add(displayName);
+          continue;
+        }
 
         try {
           final coursesSnap = await FirebaseDatabase.instance
@@ -3510,6 +3565,9 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
             case _PayFlag.noCourse:
               noCourse.add(displayName);
               break;
+            case _PayFlag.exam:
+              exam.add(displayName);
+              break;
           }
         } catch (_) {
           continue;
@@ -3524,6 +3582,7 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
     dueNow.sort(sortCaseInsensitive);
     warning.sort(sortCaseInsensitive);
     ok.sort(sortCaseInsensitive);
+    exam.sort(sortCaseInsensitive);
 
     if (!mounted) return;
     setState(() {
@@ -3534,18 +3593,21 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
               overdue.length +
               dueNow.length +
               warning.length +
-              ok.length,
+              ok.length +
+              exam.length,
           noCourse: noCourse.length,
           black: overdue.length,
           red: dueNow.length,
           yellow: warning.length,
           ok: ok.length,
+          exam: exam.length,
         ),
         noCourseLearners: noCourse,
         overdueLearners: overdue,
         dueNowLearners: dueNow,
         warningLearners: warning,
         okLearners: ok,
+        examLearners: exam,
       );
       _manualLoading = false;
     });
@@ -3576,11 +3638,13 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
               yellow: 0,
               ok: 0,
               blue: 0,
+              exam: 0,
               noCourseNames: const <String>[],
               blackNames: const <String>[],
               redNames: const <String>[],
               yellowNames: const <String>[],
               okNames: const <String>[],
+              examNames: const <String>[],
               loading: true,
               isReceptionistStyle: widget.isReceptionistStyle,
             ),
@@ -3598,11 +3662,13 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
             yellow: summary.yellow,
             ok: summary.ok,
             blue: summary.noCourse,
+            exam: summary.exam,
             noCourseNames: details.noCourseLearners,
             blackNames: details.overdueLearners,
             redNames: details.dueNowLearners,
             yellowNames: details.warningLearners,
             okNames: details.okLearners,
+            examNames: details.examLearners,
             loading: _manualLoading,
             isReceptionistStyle: widget.isReceptionistStyle,
           ),
@@ -3619,11 +3685,13 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
     required int yellow,
     required int ok,
     required int blue,
+    required int exam,
     required List<String> noCourseNames,
     required List<String> blackNames,
     required List<String> redNames,
     required List<String> yellowNames,
     required List<String> okNames,
+    required List<String> examNames,
     required bool loading,
     required bool isReceptionistStyle,
   }) {
@@ -3761,6 +3829,16 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                         context,
                         title: _PayLegend.okLabel,
                         names: okNames,
+                      ),
+                    ),
+                    _MiniStatChip(
+                      label: '${_PayLegend.examLabel} $exam',
+                      color: _PayLegend.examColor,
+                      background: const Color(0xFFF3E8FF),
+                      onTap: () => _showLearnersSheet(
+                        context,
+                        title: _PayLegend.examLabel,
+                        names: examNames,
                       ),
                     ),
                   ],

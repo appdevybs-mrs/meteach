@@ -4,14 +4,14 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -30,7 +30,11 @@ import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/responsive_layout.dart';
+import '../shared/web_download.dart';
 import 'recorded_video_player_screen.dart';
+
+part 'recorded_course_models.dart';
+part 'recorded_course_certificate_handler.dart';
 
 const int _kYbsDeepBlueHex = 0xFF0B2545;
 const int _kYbsDeepOrangeHex = 0xFFE56A00;
@@ -65,8 +69,27 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   static const String _recordedProgressNode = 'recorded_progress';
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
-  final CertificateService _certificateService = CertificateService();
-  final CertificatePdfService _certificatePdfService = CertificatePdfService();
+  late final _CertificateHandler _certHandler = _CertificateHandler(
+    certificateService: CertificateService(),
+    certificatePdfService: CertificatePdfService(),
+    getUid: () => _uid,
+    getCourseId: () => _courseId,
+    getCourseKey: () => widget.courseKey,
+    getTitle: () => _title,
+    getCachedCpdHours: () => _cachedCpdHours,
+    getCachedShortDescription: () => _cachedShortDescription,
+    getFlatSessions: () => _flatSessions,
+    progressOf: _progressOf,
+    isSessionCompleted: _isSessionCompleted,
+    sessionCompletionAt: _sessionCompletionAt,
+    isModuleCompleted: _isModuleCompleted,
+    sanitizeIdPart: _sanitizeIdPart,
+    fmtYmd: _fmtYmd,
+    oneYearAfter: _oneYearAfter,
+    learnerIdentity: _learnerIdentity,
+    resolveInstructorName: _resolveInstructorName,
+    snack: _snack,
+  );
   final RecordedOfflineVideoService _offlineVideos =
       RecordedOfflineVideoService.instance;
   final RecordedCourseOfflineCacheService _offlineCourseCache =
@@ -98,10 +121,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   String? _openingVideoSessionId;
   final Set<String> _expandedUnitDetails = <String>{};
   final Set<String> _expandedLessonDetails = <String>{};
-  final Set<String> _generatingModuleCertificateKeys = <String>{};
   final Map<String, String> _teacherNameByUidCache = <String, String>{};
   final Map<String, StorageCheckResult> _storageCheckCacheByUrl =
       <String, StorageCheckResult>{};
+  bool _hasLoaded = false;
+  String _cachedCpdHours = '40';
+  String _cachedShortDescription = '';
+  String _cachedInstructorName = '';
+  Map<String, String> _cachedIdentity = <String, String>{};
 
   late final ConfettiController _confettiController =
       ConfettiController(duration: const Duration(seconds: 4));
@@ -110,6 +137,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   @override
   void initState() {
     super.initState();
+    _cachedCpdHours =
+        (widget.courseData['cpd_hours'] ?? '40').toString();
+    _cachedShortDescription =
+        (widget.courseData['short_description'] ?? '').toString();
     _offlineVideos.addListener(_onOfflineVideosChanged);
     unawaited(_offlineVideos.ensureLoaded());
     _loadAll();
@@ -260,6 +291,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         );
       }
 
+      _cachedCpdHours =
+          (widget.courseData['cpd_hours'] ?? '40').toString();
+      _cachedShortDescription =
+          (widget.courseData['short_description'] ?? '').toString();
+
       if (!mounted) return;
       setState(() {
         _expiresAt = expiresAt;
@@ -272,6 +308,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _ensureExpandedModules();
         _ensureSelectedUnits();
         _busy = false;
+        _hasLoaded = true;
       });
       _celebrateIfComplete();
       _debug(
@@ -288,6 +325,33 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _busy = false;
       });
     }
+  }
+
+  Future<void> _refreshProgressFromSync() async {
+    if (!_hasLoaded || _units.isEmpty) {
+      await _loadAll();
+      return;
+    }
+    for (final unit in _units) {
+      for (final session in unit.sessions) {
+        final existing = _progressOf(session.id);
+        final merged = await _progressSync.mergeWithLocalProgress(
+          uid: _uid,
+          courseKey: widget.courseKey,
+          sessionId: session.id,
+          firebaseProgress: existing.toMap(),
+        );
+        if (merged.isNotEmpty) {
+          _progressBySessionId[session.id] = _RecordedProgress.fromMap(merged);
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _ensureExpandedModules();
+      _ensureSelectedUnits();
+    });
+    _celebrateIfComplete();
   }
 
   Map<String, _RecordedProgress> _parseProgress(dynamic raw) {
@@ -400,6 +464,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _ensureSelectedUnits();
       _error = null;
       _busy = false;
+      _hasLoaded = true;
     });
     return true;
   }
@@ -436,12 +501,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
   }
 
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
+
 
   static List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
     final out = <Map<String, dynamic>>[];
@@ -752,6 +812,45 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  Future<void> _markVideoCompletedManually(_RecordedSession session) async {
+    _debug('markVideoCompletedManually sessionId=${session.id}');
+    if (_progressOf(session.id).videoCompleted) return;
+    final current = _progressOf(session.id);
+    final updated = current.copyWith(
+      videoCompleted: true,
+      videoCompletedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    final completed = _resolveCompleted(session, updated);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+
+    await _progressSync.updateProgress(
+      progressRef: _recordedProgressRef.child(session.id),
+      uid: _uid,
+      courseKey: widget.courseKey,
+      sessionId: session.id,
+      patch: {
+        'videoCompleted': updated.videoCompleted,
+        'materialsCompleted': updated.materialsCompleted,
+        'videoCompletedAt': updated.videoCompletedAt,
+        'materialsCompletedAt': updated.materialsCompletedAt,
+        'videoPositionMs': 0,
+        'videoDurationMs': 0,
+        'completed': completed,
+        'updatedAt': ServerValue.timestamp,
+        'lastOpenedAt': nowMs,
+      },
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _progressBySessionId[session.id] = updated.copyWith(completed: completed);
+    });
+    _celebrateIfComplete();
+    _debug(
+      'markVideoCompletedManually done sessionId=${session.id} completed=$completed',
+    );
+  }
+
   bool _resolveCompleted(_RecordedSession session, _RecordedProgress progress) {
     final requiresVideo = _sessionRequiresVideo(session);
     final requiresMaterials = _sessionRequiresMaterials(session);
@@ -1047,77 +1146,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
   }
 
-  Widget _buildCompletionBanner() {
-    if (!_courseCertificateUnlocked) return const SizedBox.shrink();
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF0FDF4), Color(0xFFDCFCE7)],
-        ),
-        border: Border.all(color: const Color(0xFF86EFAC)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFF22C55E),
-              borderRadius: BorderRadius.circular(19),
-            ),
-            child: const Icon(Icons.check_rounded, color: Colors.white, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Course Complete!',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                    color: Color(0xFF166534),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$_completedSessions/$_totalSessions lessons',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11.5,
-                    color: Color(0xFF22C55E),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          FilledButton.icon(
-            onPressed: _onCertificateTap,
-            icon: const Icon(Icons.workspace_premium_rounded, size: 16),
-            label: const Text('Certificate'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF166534),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              textStyle: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildCompletionBanner() => _certHandler._buildCompletionBanner(
+        certificateUnlocked: _courseCertificateUnlocked,
+        completedSessions: _completedSessions,
+        totalSessions: _totalSessions,
+        onCertificateTap: _onCertificateTap,
+      );
 
   Widget _buildTopOverviewCard() {
     final style = _expiryStyle;
@@ -1692,13 +1726,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       );
 
       if (!mounted) return;
-      await _loadAll();
+      await _refreshProgressFromSync();
     } finally {
       if (mounted) setState(() => _openingVideoSessionId = null);
     }
   }
 
   Future<Map<String, String>> _learnerIdentity() async {
+    if (_cachedIdentity.containsKey('fullName') &&
+        _cachedIdentity['fullName'] != 'Learner') {
+      return Map<String, String>.from(_cachedIdentity);
+    }
     final out = <String, String>{'fullName': 'Learner', 'nationalIdNumber': ''};
     try {
       final snap = await _usersRef.child(_uid).get().timeout(
@@ -1713,6 +1751,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           .toString();
       if (full.isNotEmpty) out['fullName'] = full;
       out['nationalIdNumber'] = nationalId.trim();
+      _cachedIdentity = Map<String, String>.from(out);
     } catch (_) {}
     return out;
   }
@@ -2016,6 +2055,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<String> _resolveInstructorName() async {
+    if (_cachedInstructorName.isNotEmpty) return _cachedInstructorName;
+
+    try {
+      final localNames = await _instructorNamesFromCourseMap(widget.courseData);
+      final joined = _joinedInstructorNames(localNames);
+      if (joined.isNotEmpty) {
+        _cachedInstructorName = joined;
+        return joined;
+      }
+    } catch (_) {}
+
     try {
       if (_courseId.isNotEmpty) {
         final byCourseId = await _coursesRef
@@ -2027,600 +2077,28 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             Map<String, dynamic>.from(byCourseId.value as Map),
           );
           final joined = _joinedInstructorNames(names);
-          if (joined.isNotEmpty) return joined;
-        }
-      }
-
-      if (widget.courseKey.trim().isNotEmpty) {
-        final byCourseKey = await _coursesRef
-            .child(widget.courseKey)
-            .get()
-            .timeout(const Duration(seconds: 10));
-        if (byCourseKey.exists && byCourseKey.value is Map) {
-          final names = await _instructorNamesFromCourseMap(
-            Map<String, dynamic>.from(byCourseKey.value as Map),
-          );
-          final joined = _joinedInstructorNames(names);
-          if (joined.isNotEmpty) return joined;
+          if (joined.isNotEmpty) {
+            _cachedInstructorName = joined;
+            return joined;
+          }
         }
       }
     } catch (_) {}
 
-    try {
-      final localNames = await _instructorNamesFromCourseMap(widget.courseData);
-      final joined = _joinedInstructorNames(localNames);
-      if (joined.isNotEmpty) return joined;
-    } catch (_) {}
-
-    return 'Seddik. B';
+    _cachedInstructorName = 'Seddik. B';
+    return _cachedInstructorName;
   }
 
   int _sessionCompletionAt(_RecordedProgress p) {
     return math.max(p.videoCompletedAt, p.materialsCompletedAt);
   }
 
-  String _courseCompletionDate() {
-    int latest = 0;
-    for (final ref in _flatSessions) {
-      if (!_isSessionCompleted(ref.session)) continue;
-      final p = _progressOf(ref.session.id);
-      latest = math.max(latest, _sessionCompletionAt(p));
-    }
-    if (latest <= 0) return _fmtYmd(DateTime.now());
-    return _fmtYmd(DateTime.fromMillisecondsSinceEpoch(latest));
-  }
 
-  String _moduleCompletionDate(List<_RecordedUnit> moduleUnits) {
-    int latest = 0;
-    for (final unit in moduleUnits) {
-      for (final session in unit.sessions) {
-        if (!_isSessionCompleted(session)) continue;
-        final p = _progressOf(session.id);
-        latest = math.max(latest, _sessionCompletionAt(p));
-      }
-    }
-    if (latest <= 0) return _fmtYmd(DateTime.now());
-    return _fmtYmd(DateTime.fromMillisecondsSinceEpoch(latest));
-  }
-
-  Future<Certificate> _issueRecordedCertificate({
-    required String certId,
-    required String certificateTitle,
-    required String trainingDate,
-    required String kind,
-    String? moduleKey,
-    String cpdHours = '40',
-    String shortDescription = '',
-  }) async {
-    final identity = await _learnerIdentity();
-    final fullName = (identity['fullName'] ?? 'Learner').trim();
-    final nationalId = (identity['nationalIdNumber'] ?? '').trim();
-    final instructorName = await _resolveInstructorName();
-    if (nationalId.length < 4) {
-      throw Exception(
-        'National ID is missing. Ask admin to add your National ID in your learner profile before issuing certificates.',
+  Future<void> _onCertificateTap() => _certHandler._onCertificateTap(
+        context: context,
+        mounted: mounted,
+        setState: setState,
       );
-    }
-
-    return _certificateService.issueRecordedCertificate(
-      learnerUid: _uid,
-      certId: certId,
-      fullName: fullName,
-      nationalIdNumber: nationalId,
-      certificateTitle: certificateTitle,
-      trainingDate: trainingDate,
-      expirationDate: _oneYearAfter(trainingDate),
-      courseId: _courseId,
-      courseKey: widget.courseKey,
-      kind: kind,
-      instructorName: instructorName,
-      moduleKey: moduleKey,
-      cpdHours: cpdHours,
-      shortDescription: shortDescription,
-    );
-  }
-
-  // ignore: unused_element
-  Future<Uint8List> _buildCertificatePdfBytes({
-    required String learnerName,
-    required String courseTitle,
-    String? moduleTitle,
-    int? moduleNumber,
-    int? moduleCount,
-  }) async {
-    final doc = pw.Document();
-    final now = DateTime.now();
-    final date =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-
-    Uint8List? logo;
-    try {
-      logo = (await rootBundle.load(
-        'assets/images/ybs_logo.png',
-      )).buffer.asUint8List();
-    } catch (_) {}
-
-    Uint8List? certificateTemplate;
-    try {
-      certificateTemplate = (await rootBundle.load(
-        'assets/images/DigitalCertificate.png',
-      )).buffer.asUint8List();
-    } catch (_) {}
-
-    final bool isModuleCertificate =
-        moduleTitle != null && moduleTitle.trim().isNotEmpty;
-    final String moduleTitleText = moduleTitle?.trim() ?? '';
-    final String heading = isModuleCertificate
-        ? 'Module Milestone Certificate'
-        : 'Certificate of Completion';
-    final String completionLine = isModuleCertificate
-        ? 'has successfully completed'
-        : 'has successfully completed';
-    final String awardTitle = isModuleCertificate
-        ? moduleTitleText
-        : courseTitle;
-
-    final uidPart = _uid.substring(0, math.min(8, _uid.length)).toUpperCase();
-    final datePart =
-        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
-    final certificateId = isModuleCertificate
-        ? 'MOD${moduleNumber ?? 0}-$uidPart-$datePart'
-        : '$uidPart-$datePart';
-
-    if (certificateTemplate != null) {
-      final bg = pw.MemoryImage(certificateTemplate);
-      doc.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: pw.EdgeInsets.zero,
-          build: (_) {
-            return pw.Stack(
-              children: [
-                pw.Positioned.fill(child: pw.Image(bg, fit: pw.BoxFit.cover)),
-                pw.Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 500,
-                  child: pw.Center(
-                    child: pw.Text(
-                      learnerName,
-                      style: pw.TextStyle(
-                        fontSize: 34,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromInt(0xFF111827),
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ),
-                ),
-                pw.Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 440,
-                  child: pw.Center(
-                    child: pw.Text(
-                      awardTitle.toUpperCase(),
-                      textAlign: pw.TextAlign.center,
-                      style: pw.TextStyle(
-                        fontSize: 22,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromInt(0xFF111827),
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ),
-                ),
-                pw.Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 310,
-                  child: pw.Center(
-                    child: pw.Text(
-                      'Issued on: $date',
-                      style: pw.TextStyle(
-                        fontSize: 15,
-                        color: PdfColor.fromInt(0xFF1F2937),
-                        letterSpacing: 0.25,
-                        fontWeight: pw.FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                ),
-                pw.Positioned(
-                  left: 120,
-                  top: 250,
-                  child: pw.Text(
-                    'Course Instructor',
-                    style: pw.TextStyle(
-                      fontSize: 12,
-                      color: PdfColor.fromInt(0xFF1F2937),
-                    ),
-                  ),
-                ),
-                pw.Positioned(
-                  left: 475,
-                  top: 250,
-                  child: pw.Text(
-                    'Academic Director',
-                    style: pw.TextStyle(
-                      fontSize: 12,
-                      color: PdfColor.fromInt(0xFF1F2937),
-                    ),
-                  ),
-                ),
-                pw.Positioned(
-                  left: 120,
-                  top: 180,
-                  child: pw.Text(
-                    certificateId,
-                    style: pw.TextStyle(
-                      fontSize: 14,
-                      color: PdfColor.fromInt(0xFF111827),
-                      letterSpacing: 0.35,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-      return doc.save();
-    }
-
-    final logoImage = logo != null ? pw.MemoryImage(logo) : null;
-
-    doc.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(28),
-        build: (context) {
-          return pw.Stack(
-            children: [
-              pw.Positioned.fill(
-                child: pw.Container(
-                  decoration: pw.BoxDecoration(
-                    color: PdfColors.white,
-                    border: pw.Border.all(
-                      color: PdfColor.fromInt(_kYbsDeepBlueHex),
-                      width: 2,
-                    ),
-                    borderRadius: pw.BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              pw.Positioned(
-                top: 8,
-                left: 8,
-                right: 8,
-                bottom: 8,
-                child: pw.Container(
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(
-                      color: PdfColor.fromInt(_kYbsDeepOrangeHex),
-                      width: 1,
-                    ),
-                  ),
-                ),
-              ),
-              pw.Positioned(
-                top: 20,
-                left: 20,
-                child: pw.Container(
-                  width: 22,
-                  height: 22,
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromInt(_kYbsDeepOrangeHex),
-                    shape: pw.BoxShape.circle,
-                  ),
-                ),
-              ),
-              pw.Positioned(
-                top: 16,
-                right: 20,
-                child: pw.Container(
-                  width: 16,
-                  height: 16,
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromInt(_kYbsDeepBlueHex),
-                    shape: pw.BoxShape.circle,
-                  ),
-                ),
-              ),
-              pw.Positioned(
-                bottom: 20,
-                left: 18,
-                child: pw.Container(
-                  width: 18,
-                  height: 18,
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromInt(0xFF7DD3FC),
-                    shape: pw.BoxShape.circle,
-                  ),
-                ),
-              ),
-              pw.Positioned(
-                bottom: 20,
-                right: 20,
-                child: pw.Container(
-                  width: 26,
-                  height: 26,
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromInt(0xFFFFE7CC),
-                    border: pw.Border.all(
-                      color: PdfColor.fromInt(_kYbsDeepOrangeHex),
-                      width: 1,
-                    ),
-                    shape: pw.BoxShape.circle,
-                  ),
-                ),
-              ),
-              if (logoImage != null)
-                pw.Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: pw.Opacity(
-                    opacity: 0.02,
-                    child: pw.Center(
-                      child: pw.Image(logoImage, width: 260, height: 260),
-                    ),
-                  ),
-                ),
-              pw.Padding(
-                padding: const pw.EdgeInsets.fromLTRB(34, 28, 34, 26),
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                  children: [
-                    if (logoImage != null)
-                      pw.Center(
-                        child: pw.Image(logoImage, width: 58, height: 58),
-                      ),
-                    pw.SizedBox(height: 8),
-                    pw.Center(
-                      child: pw.Text(
-                        'YOUR BRIDGE SCHOOL',
-                        style: pw.TextStyle(
-                          fontSize: 18,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromInt(_kYbsDeepBlueHex),
-                        ),
-                      ),
-                    ),
-                    pw.SizedBox(height: 6),
-                    pw.Center(
-                      child: pw.Text(
-                        courseTitle,
-                        style: pw.TextStyle(
-                          fontSize: 14,
-                          color: PdfColor.fromInt(_kYbsDeepOrangeHex),
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    pw.Spacer(),
-                    pw.Center(
-                      child: pw.Text(
-                        'This certifies that',
-                        style: pw.TextStyle(
-                          fontSize: 16,
-                          color: PdfColor.fromInt(0xFF334155),
-                        ),
-                      ),
-                    ),
-                    pw.SizedBox(height: 10),
-                    pw.Center(
-                      child: pw.Text(
-                        learnerName,
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          fontSize: 34,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromInt(_kYbsDeepBlueHex),
-                        ),
-                      ),
-                    ),
-                    pw.SizedBox(height: 10),
-                    pw.Center(
-                      child: pw.Text(
-                        completionLine,
-                        style: pw.TextStyle(
-                          fontSize: 14,
-                          color: PdfColor.fromInt(0xFF334155),
-                        ),
-                      ),
-                    ),
-                    pw.SizedBox(height: 10),
-                    pw.Center(
-                      child: pw.Text(
-                        awardTitle,
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(
-                          fontSize: 24,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromInt(0xFF0F172A),
-                        ),
-                      ),
-                    ),
-                    pw.Spacer(),
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text(
-                          'Issued on $date',
-                          style: pw.TextStyle(
-                            fontSize: 10,
-                            color: PdfColor.fromInt(0xFF475569),
-                          ),
-                        ),
-                        pw.Text(
-                          isModuleCertificate
-                              ? 'Module ${moduleNumber ?? '-'} of ${moduleCount ?? '-'}'
-                              : heading,
-                          style: pw.TextStyle(
-                            fontSize: 8.5,
-                            color: PdfColor.fromInt(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    return doc.save();
-  }
-
-  Future<void> _onCertificateTap() async {
-    if (AppConnectivity.instance.isOffline) {
-      _snack('Certificate generation needs internet. Come back online to generate your certificate.');
-      return;
-    }
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _buildCertificateLoadingDialog(),
-    );
-    try {
-      final certId = 'course_${_sanitizeIdPart(_courseId)}';
-      late String cpdHours;
-      late String shortDescription;
-
-      try {
-        final courseSnap = await _coursesRef
-            .child(_courseId)
-            .get()
-            .timeout(const Duration(seconds: 10));
-        if (courseSnap.exists && courseSnap.value is Map) {
-          final courseMap = Map<String, dynamic>.from(
-            courseSnap.value as Map,
-          );
-          cpdHours = (courseMap['cpd_hours'] ?? '40').toString();
-          shortDescription = (courseMap['short_description'] ?? '').toString();
-        } else {
-          cpdHours = '40';
-          shortDescription = '';
-        }
-      } catch (_) {
-        cpdHours = '40';
-        shortDescription = '';
-      }
-
-      if (cpdHours == '40' && shortDescription.isEmpty && widget.courseKey.trim().isNotEmpty && widget.courseKey != _courseId) {
-        try {
-          final fallbackSnap = await _coursesRef
-              .child(widget.courseKey)
-              .get()
-              .timeout(const Duration(seconds: 10));
-          if (fallbackSnap.exists && fallbackSnap.value is Map) {
-            final courseMap = Map<String, dynamic>.from(
-              fallbackSnap.value as Map,
-            );
-            cpdHours = (courseMap['cpd_hours'] ?? cpdHours).toString();
-            shortDescription = (courseMap['short_description'] ?? shortDescription).toString();
-          }
-        } catch (_) {}
-      }
-      final cert = await _issueRecordedCertificate(
-        certId: certId,
-        certificateTitle: _title,
-        trainingDate: _courseCompletionDate(),
-        kind: 'course',
-        cpdHours: cpdHours,
-        shortDescription: shortDescription,
-      );
-      final bytes = await _certificatePdfService.generateCertificatePdfBytes(
-        cert,
-      );
-      if (mounted) Navigator.of(context).pop();
-      await _presentCertificate(
-        bytes: bytes,
-        defaultFileName:
-            'course_certificate_${_sanitizeIdPart(widget.courseKey)}.pdf',
-      );
-    } catch (e) {
-      if (mounted) Navigator.of(context).pop();
-      if (!mounted) return;
-      if (e.toString().contains('National ID')) {
-        _showNationalIdRequiredDialog();
-      } else {
-        AppToast.show(
-          context,
-          toHumanError(e, fallback: 'Could not generate certificate.'),
-          type: AppToastType.error,
-        );
-      }
-    }
-  }
-
-  Widget _buildCertificateLoadingDialog() {
-    return PopScope(
-      canPop: false,
-      child: Material(
-        color: Colors.black54,
-        child: Center(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 36),
-            padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(36),
-                  ),
-                  child: const Icon(
-                    Icons.workspace_premium_rounded,
-                    size: 36,
-                    color: Color(0xFF2563EB),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Generating your certificate…',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Please wait a moment',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const LinearProgressIndicator(
-                  backgroundColor: Color(0xFFE2E8F0),
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   void _celebrateIfComplete() {
     if (!_celebrated &&
@@ -2634,514 +2112,43 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
   }
 
-  String _moduleCertificateActionKey(String moduleLabel, int moduleIndex) {
-    final moduleKeyBase = _sanitizeIdPart(moduleLabel);
-    return moduleKeyBase.isNotEmpty
-        ? '${moduleKeyBase}_${moduleIndex + 1}'
-        : 'm${moduleIndex + 1}';
-  }
-
-  void _showNationalIdRequiredDialog() {
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => Dialog(
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 200),
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(32),
-                ),
-                child: const Icon(
-                  Icons.badge_outlined,
-                  size: 32,
-                  color: Color(0xFFD97706),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'National ID Required',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'To download certificates, we need your National ID on file.\n\n'
-                'Send us a photo of your ID (front & back) or passport via '
-                'WhatsApp or the app\'s messaging, and we will add it to your profile.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF475569),
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Got it'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGeneratingCertificateDialog() {
-    return PopScope(
-      canPop: false,
-      child: Material(
-        color: Colors.black54,
-        child: Center(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 36),
-            padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
-                    borderRadius: BorderRadius.circular(36),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      '🎓',
-                      style: TextStyle(fontSize: 36),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Generating Module Certificate',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '⏳ Please wait while we prepare your PDF…',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const LinearProgressIndicator(
-                  backgroundColor: Color(0xFFE2E8F0),
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _onModuleCertificateTap({
     required String moduleLabel,
     required List<_RecordedUnit> moduleUnits,
     required int moduleIndex,
-  }) async {
-    final moduleKey = _moduleCertificateActionKey(moduleLabel, moduleIndex);
-    if (_generatingModuleCertificateKeys.contains(moduleKey)) return;
-
-    if (AppConnectivity.instance.isOffline) {
-      _snack('Certificate generation needs internet. Come back online to generate your certificate.');
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        _generatingModuleCertificateKeys.add(moduleKey);
-      });
-    } else {
-      _generatingModuleCertificateKeys.add(moduleKey);
-    }
-
-    BuildContext? loadingDialogContext;
-
-    try {
-      if (mounted) {
-        unawaited(
-          showDialog<void>(
-            context: context,
-            barrierDismissible: false,
-            builder: (dialogContext) {
-              loadingDialogContext = dialogContext;
-              return _buildGeneratingCertificateDialog();
-            },
-          ),
-        );
-      }
-
-      final certId = 'module_${_sanitizeIdPart(_courseId)}_$moduleKey';
-      final cert = await _issueRecordedCertificate(
-        certId: certId,
-        certificateTitle: _title,
-        trainingDate: _moduleCompletionDate(moduleUnits),
-        kind: 'milestone',
-        moduleKey: moduleKey,
+  }) =>
+      _certHandler._onModuleCertificateTap(
+        context: context,
+        mounted: mounted,
+        setState: setState,
+        moduleLabel: moduleLabel,
+        moduleUnits: moduleUnits,
+        moduleIndex: moduleIndex,
       );
-      final rawTitle = moduleUnits.first.otherTitle.trim();
-      final displayModuleLabel = rawTitle.isEmpty
-          ? 'Module ${moduleIndex + 1}'
-          : 'Module ${moduleIndex + 1}: $rawTitle';
-      final bytes = await _certificatePdfService
-          .generateMilestoneCertificatePdfBytes(
-        cert: cert,
-        moduleLabel: displayModuleLabel,
-      );
-
-      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
-        Navigator.of(loadingDialogContext!).pop();
-        loadingDialogContext = null;
-      }
-
-      await _presentCertificate(
-        bytes: bytes,
-        defaultFileName:
-            'module_${moduleIndex + 1}_certificate_${_sanitizeIdPart(widget.courseKey)}.pdf',
-      );
-    } catch (e) {
-      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
-        Navigator.of(loadingDialogContext!).pop();
-        loadingDialogContext = null;
-      }
-      if (!mounted) return;
-      if (e.toString().contains('National ID')) {
-        _showNationalIdRequiredDialog();
-      } else {
-        AppToast.show(
-          context,
-          toHumanError(e, fallback: 'Could not generate milestone certificate.'),
-          type: AppToastType.error,
-        );
-      }
-    } finally {
-      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
-        Navigator.of(loadingDialogContext!).pop();
-      }
-      if (mounted) {
-        setState(() {
-          _generatingModuleCertificateKeys.remove(moduleKey);
-        });
-      } else {
-        _generatingModuleCertificateKeys.remove(moduleKey);
-      }
-    }
-  }
-
-  Future<void> _presentCertificate({
-    required Uint8List bytes,
-    required String defaultFileName,
-  }) async {
-    if (!mounted) return;
-
-    final proceed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => Dialog(
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 24),
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(36),
-                ),
-                child: const Center(
-                  child: Text(
-                    '🌍',
-                    style: TextStyle(fontSize: 36),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                '📜 Certificate Notice',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Column(
-                  children: [
-                    Text(
-                      'Depending on your country of origin, this certificate may require stamping by our office. Please contact us if you need this process.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF475569),
-                        height: 1.5,
-                      ),
-                    ),
-                    SizedBox(height: 14),
-                    Text(
-                      'قد تتطلب هذه الشهادة ختمًا من مكتبنا حسب بلدك. يرجى التواصل معنا إذا كنت تحتاج إلى هذه الإجراءات.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF475569),
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('✅ Continue'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (proceed != true) return;
-
-    final action = await showDialog<String>(
-      context: context,
-      builder: (_) => Dialog(
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 24),
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(36),
-                ),
-                child: const Center(
-                  child: Text(
-                    '✅',
-                    style: TextStyle(fontSize: 36),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Certificate Ready',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Your certificate is ready. Print it now or save/share it to your device.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF475569),
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.pop(context, 'print'),
-                  icon: const Icon(Icons.print_rounded, size: 18),
-                  label: const Text('🖨️ Print'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context, 'share'),
-                  icon: const Icon(Icons.share_rounded, size: 18),
-                  label: const Text('💾 Save / Share'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (action == 'print') {
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
-      if (!mounted) return;
-      AppToast.show(
-        context,
-        'Certificate opened in print preview.',
-        type: AppToastType.success,
-      );
-      return;
-    }
-
-    final dir = await getTemporaryDirectory();
-    final file = File(
-      '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_$defaultFileName',
-    );
-    await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles([
-      XFile(file.path, mimeType: 'application/pdf', name: defaultFileName),
-    ]);
-
-    if (!mounted) return;
-    AppToast.show(
-      context,
-      'Certificate is ready to save or share.',
-      type: AppToastType.success,
-    );
-  }
 
   Widget _buildModuleMilestoneCard({
     required String moduleLabel,
     required List<_RecordedUnit> moduleUnits,
     required int moduleIndex,
-  }) {
-    final completed = _isModuleCompleted(moduleUnits);
-    if (!completed) return const SizedBox.shrink();
-    final moduleActionKey = _moduleCertificateActionKey(
-      moduleLabel,
-      moduleIndex,
-    );
-    final generating = _generatingModuleCertificateKeys.contains(
-      moduleActionKey,
-    );
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(top: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _kYbsDeepOrange,
+  }) =>
+      _certHandler._buildModuleMilestoneCard(
+        moduleLabel: moduleLabel,
+        moduleUnits: moduleUnits,
+        moduleIndex: moduleIndex,
+        deepOrange: _kYbsDeepOrange,
+        orangeTextStrong: _kYbsOrangeTextStrong,
+        deepBlue: _kYbsDeepBlue,
+        onModuleCertificateTap: ({
+          required String moduleLabel,
+          required List<_RecordedUnit> moduleUnits,
+          required int moduleIndex,
+        }) =>
+            _onModuleCertificateTap(
+          moduleLabel: moduleLabel,
+          moduleUnits: moduleUnits,
+          moduleIndex: moduleIndex,
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Milestone • $moduleLabel',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: _kYbsOrangeTextStrong,
-                  fontSize: 13.5,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            FilledButton.icon(
-              onPressed: completed && !generating
-                  ? () => _onModuleCertificateTap(
-                      moduleLabel: moduleLabel,
-                      moduleUnits: moduleUnits,
-                      moduleIndex: moduleIndex,
-                    )
-                  : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: _kYbsDeepBlue,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: const Color(0xFFE5E7EB),
-                disabledForegroundColor: const Color(0xFF94A3B8),
-                minimumSize: const Size(0, 34),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-              ),
-              icon: generating
-                  ? const SizedBox(
-                      width: 15,
-                      height: 15,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.download_rounded, size: 15),
-              label: Text(generating ? 'Preparing...' : 'Module certificate'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+      );
 
   void _snack(String message) {
     if (!mounted) return;
@@ -3613,6 +2620,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required int flatIndex,
   }) {
     final isNarrow = MediaQuery.sizeOf(context).width < 420;
+    final isWide = MediaQuery.sizeOf(context).width > 768;
     final progress = _progressOf(session.id);
     final isUnlocked = _isSessionUnlocked(flatIndex);
     final isCompleted = _isSessionCompleted(session);
@@ -3636,8 +2644,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     Widget card = Container(
       margin: EdgeInsets.only(top: isNarrow ? 6 : 7),
       padding: EdgeInsets.symmetric(
-        horizontal: isNarrow ? 9 : 10,
-        vertical: isNarrow ? 8 : 9,
+        horizontal: isNarrow ? 9 : isWide ? 20 : 10,
+        vertical: isNarrow ? 8 : isWide ? 16 : 9,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -3653,8 +2661,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           Row(
             children: [
               Container(
-                width: isNarrow ? 20 : 22,
-                height: isNarrow ? 20 : 22,
+                width: isNarrow ? 20 : isWide ? 32 : 22,
+                height: isNarrow ? 20 : isWide ? 32 : 22,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -3666,11 +2674,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     color: dotColor,
-                    fontSize: isNarrow ? 9.5 : 10,
+                    fontSize: isNarrow ? 9.5 : isWide ? 14 : 10,
                   ),
                 ),
               ),
-              SizedBox(width: isNarrow ? 7 : 8),
+              SizedBox(width: isNarrow ? 7 : isWide ? 12 : 8),
               Expanded(
                 child: Text(
                   session.title.trim().isEmpty
@@ -3681,7 +2689,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: TextStyle(
                     color: Color(0xFF0F172A),
                     fontWeight: FontWeight.w800,
-                    fontSize: isNarrow ? 12.5 : 13,
+                    fontSize: isNarrow ? 12.5 : isWide ? 18 : 13,
                   ),
                 ),
               ),
@@ -3700,59 +2708,60 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       });
                     },
                     child: Container(
-                      width: isNarrow ? 22 : 24,
-                      height: isNarrow ? 22 : 24,
+                      width: isNarrow ? 22 : isWide ? 34 : 24,
+                      height: isNarrow ? 22 : isWide ? 34 : 24,
                       alignment: Alignment.center,
-                      child: const Text(
+                      child: Text(
                         '!',
                         style: TextStyle(
                           color: Color(0xFF334155),
                           fontWeight: FontWeight.w900,
-                          fontSize: 14,
+                          fontSize: isWide ? 20 : 14,
                         ),
                       ),
                     ),
                   ),
                 ),
               if (requiresVideo)
-                Tooltip(
-                  message: _openingVideoSessionId == session.id
-                      ? 'Opening…'
-                      : progress.videoCompleted
-                          ? 'Rewatch video'
-                          : 'Watch video',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: isUnlocked && _openingVideoSessionId == null
-                        ? () => _openVideoPlaceholder(session)
-                        : null,
-                    child: Container(
-                      width: isNarrow ? 28 : 30,
-                      height: isNarrow ? 28 : 30,
-                      decoration: BoxDecoration(
-                        color: isUnlocked
+                Padding(
+                  padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
+                  child: Tooltip(
+                    message: _openingVideoSessionId == session.id
+                        ? 'Opening…'
+                        : progress.videoCompleted
+                            ? 'Rewatch video'
+                            : 'Watch video',
+                    child: TextButton.icon(
+                      onPressed: isUnlocked && _openingVideoSessionId == null
+                          ? () => _openVideoPlaceholder(session)
+                          : null,
+                      icon: Icon(Icons.play_arrow_rounded, size: isNarrow ? 16 : isWide ? 22 : 18),
+                      label: Text(
+                        _openingVideoSessionId == session.id
+                            ? 'Opening…'
+                            : 'Watch',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: isNarrow ? 12 : isWide ? 16 : 13,
+                        ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrow ? 8 : isWide ? 18 : 10,
+                          vertical: isWide ? 10 : 4,
+                        ),
+                        foregroundColor: isUnlocked
+                            ? const Color(0xFF4F46E5)
+                            : const Color(0xFF94A3B8),
+                        backgroundColor: isUnlocked
                             ? const Color(0xFFEEF2FF)
                             : const Color(0xFFF1F5F9),
-                        shape: BoxShape.circle,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: _openingVideoSessionId == session.id
-                          ? SizedBox(
-                              width: 17,
-                              height: 17,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: isUnlocked
-                                    ? const Color(0xFF4F46E5)
-                                    : const Color(0xFF94A3B8),
-                              ),
-                            )
-                          : Icon(
-                              Icons.play_circle_fill_rounded,
-                              size: isNarrow ? 17 : 18,
-                              color: isUnlocked
-                                  ? const Color(0xFF4F46E5)
-                                  : const Color(0xFF94A3B8),
-                            ),
                     ),
                   ),
                 ),
@@ -3765,43 +2774,41 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         : progress.materialsCompleted
                             ? 'Open reading again'
                             : 'Open reading',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(999),
-                      onTap: isUnlocked && _openingMaterialsSessionId == null
+                    child: TextButton.icon(
+                      onPressed: isUnlocked && _openingMaterialsSessionId == null
                           ? () => _openMaterials(session)
                           : null,
-                      child: Container(
-                        width: isNarrow ? 28 : 30,
-                        height: isNarrow ? 28 : 30,
-                        decoration: BoxDecoration(
-                          color: isUnlocked
-                              ? const Color(0xFFFFF7ED)
-                              : const Color(0xFFF1F5F9),
-                          shape: BoxShape.circle,
+                      icon: Icon(Icons.menu_book_rounded, size: isNarrow ? 16 : isWide ? 22 : 18),
+                      label: Text(
+                        _openingMaterialsSessionId == session.id
+                            ? 'Opening…'
+                            : 'Read',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: isNarrow ? 12 : isWide ? 16 : 13,
                         ),
-                        child: _openingMaterialsSessionId == session.id
-                            ? SizedBox(
-                                width: 17,
-                                height: 17,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: isUnlocked
-                                      ? const Color(0xFFEA580C)
-                                      : const Color(0xFF94A3B8),
-                                ),
-                              )
-                            : Icon(
-                                Icons.menu_book_rounded,
-                                size: isNarrow ? 16 : 17,
-                                color: isUnlocked
-                                    ? const Color(0xFFEA580C)
-                                    : const Color(0xFF94A3B8),
-                              ),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isNarrow ? 8 : isWide ? 18 : 10,
+                          vertical: isWide ? 10 : 4,
+                        ),
+                        foregroundColor: isUnlocked
+                            ? const Color(0xFFEA580C)
+                            : const Color(0xFF94A3B8),
+                        backgroundColor: isUnlocked
+                            ? const Color(0xFFFFF7ED)
+                            : const Color(0xFFF1F5F9),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                     ),
                   ),
                 ),
-              if (requiresVideo || requiresMaterials)
+              if (!kIsWeb && (requiresVideo || requiresMaterials))
                 _buildSessionDownloadButton(
                   session: session,
                   isNarrow: isNarrow,
@@ -3809,8 +2816,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             ],
           ),
           if (!isUnlocked)
-            const Padding(
-              padding: EdgeInsets.only(top: 6),
+            Padding(
+              padding: EdgeInsets.only(top: isWide ? 10 : 6),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -3818,11 +2825,67 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: TextStyle(
                     color: Color(0xFF64748B),
                     fontWeight: FontWeight.w700,
-                    fontSize: 11.4,
+                    fontSize: isWide ? 15 : 11.4,
                   ),
                 ),
               ),
             ),
+          if (isUnlocked && !isCompleted) ...[
+            if (requiresVideo && !progress.videoCompleted)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    height: isWide ? 36 : 26,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _markVideoCompletedManually(session),
+                      icon: const Icon(Icons.check_circle_outline, size: 14),
+                      label: const Text(
+                        'Mark video done',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        foregroundColor: const Color(0xFF4F46E5),
+                        side: const BorderSide(color: Color(0xFFC7D2FE)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (requiresMaterials && !progress.materialsCompleted)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: requiresVideo && !progress.videoCompleted ? 4 : 6,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    height: isWide ? 36 : 26,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _markMaterialsCompleted(session),
+                      icon: const Icon(Icons.check_circle_outline, size: 14),
+                      label: const Text(
+                        'Mark reading done',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        foregroundColor: const Color(0xFFEA580C),
+                        side: const BorderSide(color: Color(0xFFFED7AA)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
           if (showDetails && canExpandDetails)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -3853,19 +2916,21 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Widget _buildUnitsList() {
     final isNarrow = MediaQuery.sizeOf(context).width < 420;
     if (_units.isEmpty) {
-      return Container(
+      return const SizedBox(
         width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
+        child: Card(
+          elevation: 0,
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: const Text(
-          'No recorded syllabus has been added for this course yet.',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF334155),
+          surfaceTintColor: Colors.white,
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'No recorded syllabus has been added for this course yet.',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF334155),
+              ),
+            ),
           ),
         ),
       );
@@ -3982,12 +3047,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 ],
                               ),
                             ),
-                            _buildScopeDownloadActions(
-                              requests: _downloadRequestsForModule(moduleUnits),
-                              label: 'Module',
-                              deleteTitle: 'Delete module downloads?',
-                              compact: true,
-                            ),
+                            if (!kIsWeb)
+                              _buildScopeDownloadActions(
+                                requests: _downloadRequestsForModule(moduleUnits),
+                                label: 'Module',
+                                deleteTitle: 'Delete module downloads?',
+                                compact: true,
+                              ),
                             const SizedBox(width: 6),
                             Container(
                               width: isNarrow ? 24 : 26,
@@ -4172,11 +3238,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   ),
                                 ),
                               ),
-                            _buildScopeDownloadActions(
-                              requests: _downloadRequestsForUnit(selectedUnit),
-                              label: 'Download unit',
-                              deleteTitle: 'Delete unit downloads?',
-                            ),
+                            if (!kIsWeb)
+                              _buildScopeDownloadActions(
+                                requests: _downloadRequestsForUnit(selectedUnit),
+                                label: 'Download unit',
+                                deleteTitle: 'Delete unit downloads?',
+                              ),
                             const SizedBox(height: 2),
                             for (
                               int i = 0;
@@ -4354,7 +3421,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           await _loadAll();
         } else if (value == 'info') {
           await _showCourseInfoSheet();
-        } else if (value == 'downloads') {
+        } else if (value == 'downloads' && !kIsWeb) {
           await _showDownloadsSheet();
         } else if (value == 'certificate') {
           if (_courseCertificateUnlocked) {
@@ -4375,16 +3442,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             ],
           ),
         ),
-        PopupMenuItem<String>(
-          value: 'downloads',
-          child: Row(
-            children: [
-              Icon(Icons.offline_pin_rounded, size: 18),
-              SizedBox(width: 10),
-              Text('Offline videos'),
-            ],
+        if (!kIsWeb)
+          PopupMenuItem<String>(
+            value: 'downloads',
+            child: Row(
+              children: [
+                Icon(Icons.offline_pin_rounded, size: 18),
+                SizedBox(width: 10),
+                Text('Offline videos'),
+              ],
+            ),
           ),
-        ),
         PopupMenuItem<String>(
           value: 'refresh',
           child: Row(
@@ -4544,7 +3612,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             children: [
                               _buildTopOverviewCard(),
                               const SizedBox(height: 10),
-                              _buildOfflineOverviewCard(),
+                              if (!kIsWeb) _buildOfflineOverviewCard(),
                             ],
                           ),
                         ),
@@ -4560,7 +3628,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             _buildSyncErrorBanner(),
                             _buildOfflineCacheBanner(),
                             _buildCompletionBanner(),
-                            _buildUnitsList(),
+                            RepaintBoundary(child: _buildUnitsList()),
                           ],
                         ),
                       ),
@@ -4577,13 +3645,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       if (widget.showOverviewCard) ...[
                         _buildTopOverviewCard(),
                         const SizedBox(height: 10),
-                        _buildOfflineOverviewCard(),
+                        if (!kIsWeb) _buildOfflineOverviewCard(),
                         const SizedBox(height: 10),
                       ],
                       _buildSyncErrorBanner(),
                       _buildOfflineCacheBanner(),
                       _buildCompletionBanner(),
-                      _buildUnitsList(),
+                      RepaintBoundary(child: _buildUnitsList()),
                     ],
                   ),
         ],
@@ -4667,6 +3735,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       body: learnerWebBodyFrame(
         context: context,
         maxWidth: 1460,
+        fullWidth: true,
         child: Stack(
           children: [
             Positioned(
@@ -4893,22 +3962,6 @@ class _ConfettiPiece {
   final Color color;
 }
 
-class _ExpiryStyle {
-  const _ExpiryStyle({
-    required this.bg,
-    required this.border,
-    required this.fg,
-    required this.label,
-    required this.icon,
-  });
-
-  final Color bg;
-  final Color border;
-  final Color fg;
-  final String label;
-  final IconData icon;
-}
-
 class _PulseWidget extends StatefulWidget {
   const _PulseWidget({required this.child});
 
@@ -4965,184 +4018,6 @@ class _PulseWidgetState extends State<_PulseWidget>
         ),
       ),
       child: widget.child,
-    );
-  }
-}
-
-class _SessionRef {
-  const _SessionRef({
-    required this.unitIndex,
-    required this.sessionIndex,
-    required this.unit,
-    required this.session,
-  });
-
-  final int unitIndex;
-  final int sessionIndex;
-  final _RecordedUnit unit;
-  final _RecordedSession session;
-}
-
-class _DownloadSummary {
-  const _DownloadSummary({
-    this.total = 0,
-    this.downloaded = 0,
-    this.failed = 0,
-    this.active = 0,
-    this.bytesDownloaded = 0,
-    this.bytesTotal = 0,
-  });
-
-  final int total;
-  final int downloaded;
-  final int failed;
-  final int active;
-  final int bytesDownloaded;
-  final int bytesTotal;
-
-  double get progress {
-    if (total <= 0) return 0;
-    if (bytesTotal > 0) {
-      return (bytesDownloaded / bytesTotal).clamp(0.0, 1.0).toDouble();
-    }
-    return (downloaded / total).clamp(0.0, 1.0).toDouble();
-  }
-
-  bool get allDownloaded => total > 0 && downloaded == total;
-}
-
-class _RecordedProgress {
-  const _RecordedProgress({
-    this.videoCompleted = false,
-    this.materialsCompleted = false,
-    this.completed = false,
-    this.videoCompletedAt = 0,
-    this.materialsCompletedAt = 0,
-  });
-
-  final bool videoCompleted;
-  final bool materialsCompleted;
-  final bool completed;
-  final int videoCompletedAt;
-  final int materialsCompletedAt;
-
-  _RecordedProgress copyWith({
-    bool? videoCompleted,
-    bool? materialsCompleted,
-    bool? completed,
-    int? videoCompletedAt,
-    int? materialsCompletedAt,
-  }) {
-    return _RecordedProgress(
-      videoCompleted: videoCompleted ?? this.videoCompleted,
-      materialsCompleted: materialsCompleted ?? this.materialsCompleted,
-      completed: completed ?? this.completed,
-      videoCompletedAt: videoCompletedAt ?? this.videoCompletedAt,
-      materialsCompletedAt: materialsCompletedAt ?? this.materialsCompletedAt,
-    );
-  }
-
-  Map<String, dynamic> toMap() => {
-    'videoCompleted': videoCompleted,
-    'materialsCompleted': materialsCompleted,
-    'completed': completed,
-    'videoCompletedAt': videoCompletedAt,
-    'materialsCompletedAt': materialsCompletedAt,
-  };
-
-  factory _RecordedProgress.fromMap(Map<String, dynamic> map) {
-    bool asBool(dynamic v) {
-      if (v is bool) return v;
-      final s = (v ?? '').toString().trim().toLowerCase();
-      return s == 'true' || s == '1';
-    }
-
-    return _RecordedProgress(
-      videoCompleted: asBool(map['videoCompleted']),
-      materialsCompleted: asBool(map['materialsCompleted']),
-      completed: asBool(map['completed']),
-      videoCompletedAt: _RecordedCourseStudyScreenState._asInt(
-        map['videoCompletedAt'],
-      ),
-      materialsCompletedAt: _RecordedCourseStudyScreenState._asInt(
-        map['materialsCompletedAt'],
-      ),
-    );
-  }
-}
-
-class _RecordedUnit {
-  _RecordedUnit({
-    required this.id,
-    required this.title,
-    required this.otherTitle,
-    required this.description,
-    required this.order,
-    required this.sessions,
-  });
-
-  final String id;
-  final String title;
-  final String otherTitle;
-  final String description;
-  final int order;
-  final List<_RecordedSession> sessions;
-
-  String get displayTitle {
-    final base = title.trim().isNotEmpty ? title.trim() : 'Untitled Unit';
-    if (otherTitle.trim().isEmpty) return base;
-    return '$base (${otherTitle.trim()})';
-  }
-
-  factory _RecordedUnit.fromMap(Map<String, dynamic> map) {
-    final rawSessions = _RecordedCourseStudyScreenState._asListOfMaps(
-      map['sessions'],
-    );
-    final sessions = rawSessions
-        .map((e) => _RecordedSession.fromMap(e))
-        .toList();
-
-    return _RecordedUnit(
-      id: (map['id'] ?? '').toString(),
-      title: (map['title'] ?? '').toString(),
-      otherTitle: (map['otherTitle'] ?? '').toString(),
-      description: (map['description'] ?? '').toString(),
-      order: _RecordedCourseStudyScreenState._asInt(map['order']),
-      sessions: sessions,
-    );
-  }
-}
-
-class _RecordedSession {
-  _RecordedSession({
-    required this.id,
-    required this.title,
-    required this.objective,
-    required this.order,
-    required this.sessionNumber,
-    required this.videoUrl,
-    required this.materialsUrl,
-  });
-
-  final String id;
-  final String title;
-  final String objective;
-  final int order;
-  final int sessionNumber;
-  final String videoUrl;
-  final String materialsUrl;
-
-  factory _RecordedSession.fromMap(Map<String, dynamic> map) {
-    return _RecordedSession(
-      id: (map['id'] ?? '').toString().trim(),
-      title: (map['title'] ?? '').toString(),
-      objective: (map['objective'] ?? '').toString(),
-      order: _RecordedCourseStudyScreenState._asInt(map['order']),
-      sessionNumber: _RecordedCourseStudyScreenState._asInt(
-        map['sessionNumber'],
-      ),
-      videoUrl: (map['videoUrl'] ?? '').toString(),
-      materialsUrl: (map['materialsUrl'] ?? '').toString(),
     );
   }
 }

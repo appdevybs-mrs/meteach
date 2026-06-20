@@ -3901,6 +3901,7 @@ class _OnlineTakeAttendanceScreenState
   final Map<String, String> _savedHomeworkThreadIdByUid = {};
 
   final Map<String, Map<String, String>> _localLearnerMiniCache = {};
+  final Set<String> _examUids = {};
 
   @override
   void initState() {
@@ -3912,7 +3913,24 @@ class _OnlineTakeAttendanceScreenState
       _commentController(uid);
       _homeworkController(uid);
     }
+    _loadExamModes();
     _loadExistingBookingAttendance();
+  }
+
+  Future<void> _loadExamModes() async {
+    for (final uid in widget.booking.learnerUids) {
+      try {
+        final snap = await _db.child('users/$uid/examMode').get();
+        final isExam =
+            snap.value == true || snap.value?.toString() == 'true';
+        if (isExam) {
+          _examUids.add(uid);
+          presentMap.remove(uid);
+          teacherRatingMap.remove(uid);
+        }
+      } catch (_) {}
+    }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -4304,6 +4322,7 @@ class _OnlineTakeAttendanceScreenState
         if (learners is Map) {
           final lm = learners.map((k, v) => MapEntry(k.toString(), v));
           for (final uid in widget.booking.learnerUids) {
+            if (_examUids.contains(uid)) continue;
             final raw = lm[uid];
             bool present = false;
             int teacherRating = 0;
@@ -4400,6 +4419,7 @@ class _OnlineTakeAttendanceScreenState
 
       final Map<String, dynamic> learners = {};
       for (final uid in widget.booking.learnerUids) {
+        if (_examUids.contains(uid)) continue;
         final rating = _normalizedRating(teacherRatingMap[uid]);
         final comment = _commentController(uid).text.trim();
         final hasTeacherNote = rating > 0 || comment.isNotEmpty;
@@ -4446,6 +4466,7 @@ class _OnlineTakeAttendanceScreenState
 
       final List<String> homeworkSendFailures = [];
       for (final uid in widget.booking.learnerUids) {
+        if (_examUids.contains(uid)) continue;
         final isPresent = presentMap[uid] == true;
         final rating = _normalizedRating(teacherRatingMap[uid]);
         final comment = _commentController(uid).text.trim();
@@ -4648,7 +4669,8 @@ class _OnlineTakeAttendanceScreenState
         '${dt.year}-${_TeacherClassesScreenState._two(dt.month)}-${_TeacherClassesScreenState._two(dt.day)}  '
         '${_TeacherClassesScreenState._two(dt.hour)}:${_TeacherClassesScreenState._two(dt.minute)}';
     final presentCount = presentMap.values.where((v) => v).length;
-    final totalCount = b.learnerUids.length;
+    final nonExamUids = b.learnerUids.where((u) => !_examUids.contains(u)).toList();
+    final totalCount = nonExamUids.length;
     final absentCount = (totalCount - presentCount).clamp(0, totalCount);
 
     return PopScope(
@@ -4900,17 +4922,33 @@ class _OnlineTakeAttendanceScreenState
                           color: p.text.withValues(alpha: 0.72),
                         ),
                       )
-                    else
+                    else ...[
                       ...List.generate(
-                        b.learnerUids.length,
+                        nonExamUids.length,
                         (index) => Padding(
                           padding: const EdgeInsets.only(bottom: 12),
                           child: _buildLearnerCard(
-                            b.learnerUids[index],
+                            nonExamUids[index],
                             index: index,
                           ),
                         ),
                       ),
+                      if (_examUids.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Exam Learners',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Colors.purple,
+                            fontSize: 12,
+                          ),
+                        ),
+                        ..._examUids.map((uid) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildExamLearnerCard(uid),
+                        )),
+                      ],
+                    ],
                   ],
                 ),
               ),
@@ -5055,6 +5093,57 @@ class _OnlineTakeAttendanceScreenState
           tooltip: '${i + 1} stars',
         );
       }),
+    );
+  }
+
+  Widget _buildExamLearnerCard(String uid) {
+    return _box(
+      child: FutureBuilder<Map<String, String>>(
+        future: _loadLearnerMini(uid),
+        builder: (context, snap) {
+          final info = snap.data ?? const <String, String>{};
+          final name = (info['full'] ?? 'Learner').trim();
+          final profilePhotoUrl = (info['profilePhoto'] ?? '').trim();
+
+          return Row(
+            children: [
+              _learnerAvatar(profilePhotoUrl: profilePhotoUrl, size: 42),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name.isEmpty ? 'Learner' : name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: Colors.purple,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Exam — no attendance',
+                        style: TextStyle(
+                          color: Colors.purple,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
