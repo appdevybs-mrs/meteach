@@ -540,7 +540,7 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
           minZoom: 2,
           maxZoom: 10,
           interactionOptions: const InteractionOptions(
-            flags: InteractiveFlag.all,
+            flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
           ),
           onMapEvent: _onMapEvent,
         ),
@@ -602,25 +602,48 @@ class _GraduatePhotoPin extends StatelessWidget {
       onTap: () => showDialog<void>(
         context: context,
         builder: (_) => AlertDialog(
-          title: Text(person.name),
+          title: Text(
+            person.name,
+            overflow: TextOverflow.ellipsis,
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircleAvatar(
-                radius: 42,
-                backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
-                backgroundImage: person.photoUrl.isEmpty
-                    ? null
-                    : NetworkImage(person.photoUrl),
-                child: person.photoUrl.isEmpty
-                    ? const Icon(Icons.person_rounded, size: 42)
-                    : null,
-              ),
+              () {
+                Widget photo = CircleAvatar(
+                  radius: 42,
+                  backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
+                  backgroundImage: person.photoUrl.isEmpty
+                      ? null
+                      : NetworkImage(person.photoUrl),
+                  child: person.photoUrl.isEmpty
+                      ? const Icon(Icons.person_rounded, size: 42)
+                      : null,
+                );
+                if (person.blurPhoto) {
+                  photo = ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                    child: photo,
+                  );
+                }
+                return photo;
+              }(),
               const SizedBox(height: 12),
               Text(
                 '${person.city}, ${person.country}',
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
+              if (person.blurPhoto) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Due to privacy, photo is blurred',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Brand.mainText.withValues(alpha: 0.55),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ],
           ),
           actions: [
@@ -746,7 +769,10 @@ class _ClusterDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('${graduates.length} graduates in ${graduates[0].city}'),
+      title: Text(
+        '${graduates.length} graduates in ${graduates[0].city}',
+        overflow: TextOverflow.ellipsis,
+      ),
       content: SizedBox(
         width: 320,
         child: ListView.separated(
@@ -755,22 +781,32 @@ class _ClusterDialog extends StatelessWidget {
           separatorBuilder: (_, _) => const Divider(height: 1),
           itemBuilder: (context, index) {
             final g = graduates[index];
+            Widget avatar = CircleAvatar(
+              radius: 20,
+              backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
+              backgroundImage: g.photoUrl.isEmpty
+                  ? null
+                  : NetworkImage(g.photoUrl),
+              child: g.photoUrl.isEmpty
+                  ? const Icon(Icons.person_rounded)
+                  : null,
+            );
+            if (g.blurPhoto) {
+              avatar = ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                child: avatar,
+              );
+            }
             return ListTile(
-              leading: CircleAvatar(
-                radius: 20,
-                backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
-                backgroundImage: g.photoUrl.isEmpty
-                    ? null
-                    : NetworkImage(g.photoUrl),
-                child: g.photoUrl.isEmpty
-                    ? const Icon(Icons.person_rounded)
-                    : null,
-              ),
+              leading: avatar,
               title: Text(
                 g.name,
                 style: const TextStyle(fontWeight: FontWeight.w900),
+                overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text('${g.city}, ${g.country}'),
+              subtitle: Text(
+                g.blurPhoto ? '${g.city}, ${g.country} (blurred)' : '${g.city}, ${g.country}',
+              ),
             );
           },
         ),

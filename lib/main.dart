@@ -2824,6 +2824,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                 children: [
                                   if (type == 'video')
                                     _PublicGalleryVideoTile(
+                                      url: url,
                                       thumbnailUrl: thumbnailUrl,
                                     )
                                   else
@@ -3102,6 +3103,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                                         children: [
                                           if (type == 'video')
                                             _PublicGalleryVideoTile(
+                                              url: url,
                                               thumbnailUrl: thumbnailUrl,
                                             )
                                           else
@@ -3128,19 +3130,73 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
   }
 }
 
-class _PublicGalleryVideoTile extends StatelessWidget {
-  const _PublicGalleryVideoTile({this.thumbnailUrl});
+class _PublicGalleryVideoTile extends StatefulWidget {
+  const _PublicGalleryVideoTile({required this.url, this.thumbnailUrl});
 
+  final String url;
   final String? thumbnailUrl;
 
   @override
+  State<_PublicGalleryVideoTile> createState() =>
+      _PublicGalleryVideoTileState();
+}
+
+class _PublicGalleryVideoTileState extends State<_PublicGalleryVideoTile> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.thumbnailUrl == null || widget.thumbnailUrl!.isEmpty) {
+      _init();
+    }
+  }
+
+  Future<void> _init() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+      );
+      await controller.initialize().timeout(const Duration(seconds: 10));
+      await controller.setLooping(false);
+      await controller.pause();
+      await controller.seekTo(Duration.zero);
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+        _ready = true;
+        _failed = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _ready = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    final c = _controller;
+    _controller = null;
+    c?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (thumbnailUrl != null && thumbnailUrl!.isNotEmpty) {
+    if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty) {
       return Stack(
         fit: StackFit.expand,
         children: [
           Image.network(
-            thumbnailUrl!,
+            widget.thumbnailUrl!,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           ),
@@ -3156,17 +3212,37 @@ class _PublicGalleryVideoTile extends StatelessWidget {
       );
     }
 
+    if (_failed) {
+      return Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.broken_image_outlined,
+          color: Colors.white,
+          size: 34,
+        ),
+      );
+    }
+
+    if (!_ready || _controller == null) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(
-          color: Colors.black,
-          child: const Center(
-            child: Icon(
-              Icons.videocam_rounded,
-              color: Colors.white70,
-              size: 42,
-            ),
+        FittedBox(
+          fit: BoxFit.cover,
+          clipBehavior: Clip.hardEdge,
+          child: SizedBox(
+            width: _controller!.value.size.width,
+            height: _controller!.value.size.height,
+            child: VideoPlayer(_controller!),
           ),
         ),
         Container(color: Colors.black.withValues(alpha: 0.18)),
