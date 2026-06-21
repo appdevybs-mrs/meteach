@@ -479,6 +479,7 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
   void _onMapEvent(MapEvent event) {
     if (event is MapEventMoveEnd) {
       final zoom = _mapController.camera.zoom;
+      if (!zoom.isFinite) return;
       final shouldCluster = zoom < 6;
       if (shouldCluster != _showClusters) {
         setState(() => _showClusters = shouldCluster);
@@ -490,14 +491,24 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
   Widget build(BuildContext context) {
     final groups = <String, List<_GraduateMapPerson>>{};
     for (final g in widget.graduates) {
-      groups.putIfAbsent('${g.lat},${g.lng}', () => []).add(g);
+      final key = _showClusters
+          ? '${g.city.toLowerCase().trim()}|${g.country.toLowerCase().trim()}'
+          : '${g.lat},${g.lng}';
+      groups.putIfAbsent(key, () => []).add(g);
     }
 
     final markers = <Marker>[];
     for (final group in groups.values) {
-      final point = LatLng(group[0].lat, group[0].lng);
       if (group.length == 1 || !_showClusters) {
-        for (final g in group) {
+        for (int i = 0; i < group.length; i++) {
+          final g = group[i];
+          final point = group.length == 1
+              ? LatLng(g.lat, g.lng)
+              : LatLng(
+                  g.lat + ((i ~/ 3) - 1) * 0.0002,
+                  g.lng + ((i % 3) - 1) * 0.0002,
+                );
+          if (!point.latitude.isFinite || !point.longitude.isFinite) continue;
           markers.add(
             Marker(
               point: point,
@@ -510,7 +521,7 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
       } else {
         markers.add(
           Marker(
-            point: point,
+            point: LatLng(group[0].lat, group[0].lng),
             width: 100,
             height: 125,
             child: _GraduateClusterPin(graduates: group),
