@@ -288,7 +288,6 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   List<Map<String, dynamic>> _citySearchResults = [];
   bool _searchingCity = false;
   Timer? _citySearchTimer;
-  late final FocusNode _cityFocusNode;
 
   Map<String, List<String>> _worldData = const {};
   String _selectedCountry = '';
@@ -327,15 +326,6 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     _active = item?.active ?? true;
     _blurPhoto = item?.blurPhoto ?? false;
     _selectedCountry = item?.country ?? '';
-    _cityFocusNode = FocusNode();
-    _cityFocusNode.addListener(() {
-      if (!_cityFocusNode.hasFocus) {
-        setState(() {
-          _citySearchResults.clear();
-          _citySearchTimer?.cancel();
-        });
-      }
-    });
     _loadWorldData();
   }
 
@@ -367,7 +357,6 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   @override
   void dispose() {
     _citySearchTimer?.cancel();
-    _cityFocusNode.dispose();
     _geocodeTimer?.cancel();
     _nameC.dispose();
     _countryC.dispose();
@@ -543,7 +532,6 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     if (lon != null) _lngC.text = lon.toString();
     _citySearchTimer?.cancel();
     _geocodeTimer?.cancel();
-    _cityFocusNode.unfocus();
     setState(() {
       _citySearchResults.clear();
     });
@@ -713,6 +701,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(
                           maxHeight: 240,
+                          maxWidth: 400,
                         ),
                         child: ListView.builder(
                           padding: EdgeInsets.zero,

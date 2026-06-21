@@ -678,7 +678,7 @@ class _GraduateClusterPin extends StatelessWidget {
         );
       }
       final g = graduates[index];
-      return Container(
+      Widget avatar = Container(
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 2),
@@ -693,6 +693,13 @@ class _GraduateClusterPin extends StatelessWidget {
               : null,
         ),
       );
+      if (g.blurPhoto) {
+        avatar = ImageFiltered(
+          imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: avatar,
+        );
+      }
+      return avatar;
     }
 
     return GestureDetector(
