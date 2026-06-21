@@ -511,8 +511,8 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
         markers.add(
           Marker(
             point: point,
-            width: 70,
-            height: 70,
+            width: 100,
+            height: 125,
             child: _GraduateClusterPin(graduates: group),
           ),
         );
@@ -635,8 +635,55 @@ class _GraduateClusterPin extends StatelessWidget {
 
   final List<_GraduateMapPerson> graduates;
 
+  static const int _cols = 3;
+  static const double _gap = 3;
+  static const double _radius = 14;
+
   @override
   Widget build(BuildContext context) {
+    final count = graduates.length;
+    final showOverflow = count > 9;
+    final displayCount = showOverflow ? 9 : count;
+    final rows = (displayCount + _cols - 1) ~/ _cols;
+
+    Widget cell(int index) {
+      if (showOverflow && index == 8) {
+        return Container(
+          width: _radius * 2,
+          height: _radius * 2,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Brand.actionOrange,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '+${count - 8}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 11,
+            ),
+          ),
+        );
+      }
+      final g = graduates[index];
+      return Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: CircleAvatar(
+          radius: _radius,
+          backgroundColor: Brand.actionOrange,
+          backgroundImage:
+              g.photoUrl.isEmpty ? null : NetworkImage(g.photoUrl),
+          child: g.photoUrl.isEmpty
+              ? const Icon(Icons.person_rounded, size: 14, color: Colors.white)
+              : null,
+        ),
+      );
+    }
+
     return GestureDetector(
       onTap: () => showDialog<void>(
         context: context,
@@ -645,38 +692,28 @@ class _GraduateClusterPin extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: 52,
-            child: Wrap(
-              spacing: -8,
-              runSpacing: -8,
-              alignment: WrapAlignment.center,
-              children: graduates.map((g) {
-                return Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                  child: CircleAvatar(
-                    radius: 10,
-                    backgroundColor: Brand.actionOrange,
-                    backgroundImage: g.photoUrl.isEmpty
-                        ? null
-                        : NetworkImage(g.photoUrl),
-                    child: g.photoUrl.isEmpty
-                        ? const Icon(
-                            Icons.person_rounded,
-                            size: 10,
-                            color: Colors.white,
-                          )
-                        : null,
-                  ),
-                );
-              }).toList(),
+          ...List.generate(rows, (r) {
+            final cellsInRow = (r < rows - 1)
+                ? _cols
+                : displayCount - r * _cols;
+            final children = <Widget>[];
+            for (int c = 0; c < cellsInRow; c++) {
+              if (c > 0) children.add(const SizedBox(width: _gap));
+              children.add(cell(r * _cols + c));
+            }
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: children,
+            );
+          }),
+          if (rows > 0) ...[
+            const SizedBox(height: 4),
+            const Icon(
+              Icons.arrow_drop_down_rounded,
+              color: Brand.actionOrange,
             ),
-          ),
-          const SizedBox(height: 2),
-          Icon(Icons.arrow_drop_down_rounded, color: Brand.actionOrange),
+          ],
         ],
       ),
     );
