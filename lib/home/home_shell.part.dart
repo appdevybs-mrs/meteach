@@ -457,35 +457,61 @@ class _EmptyWorldGraduates extends StatelessWidget {
   }
 }
 
-class _GraduatesWorldMap extends StatelessWidget {
+class _GraduatesWorldMap extends StatefulWidget {
   const _GraduatesWorldMap({required this.graduates});
 
   final List<_GraduateMapPerson> graduates;
 
   @override
+  State<_GraduatesWorldMap> createState() => _GraduatesWorldMapState();
+}
+
+class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
+  final _mapController = MapController();
+  var _showClusters = true;
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  void _onMapEvent(MapEvent event) {
+    if (event is MapEventMoveEnd) {
+      final zoom = _mapController.camera.zoom;
+      final shouldCluster = zoom < 6;
+      if (shouldCluster != _showClusters) {
+        setState(() => _showClusters = shouldCluster);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final groups = <String, List<_GraduateMapPerson>>{};
-    for (final g in graduates) {
+    for (final g in widget.graduates) {
       groups.putIfAbsent('${g.lat},${g.lng}', () => []).add(g);
     }
 
     final markers = <Marker>[];
     for (final group in groups.values) {
       final point = LatLng(group[0].lat, group[0].lng);
-      if (group.length == 1) {
-        markers.add(
-          Marker(
-            point: point,
-            width: 60,
-            height: 80,
-            child: _GraduatePhotoPin(person: group[0]),
-          ),
-        );
+      if (group.length == 1 || !_showClusters) {
+        for (final g in group) {
+          markers.add(
+            Marker(
+              point: point,
+              width: 60,
+              height: 80,
+              child: _GraduatePhotoPin(person: g),
+            ),
+          );
+        }
       } else {
         markers.add(
           Marker(
             point: point,
-            width: 100,
+            width: 70,
             height: 70,
             child: _GraduateClusterPin(graduates: group),
           ),
@@ -496,6 +522,7 @@ class _GraduatesWorldMap extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: FlutterMap(
+        mapController: _mapController,
         options: MapOptions(
           initialCenter: const LatLng(20, 20),
           initialZoom: 2.0,
@@ -504,6 +531,7 @@ class _GraduatesWorldMap extends StatelessWidget {
           interactionOptions: const InteractionOptions(
             flags: InteractiveFlag.all,
           ),
+          onMapEvent: _onMapEvent,
         ),
         children: [
           TileLayer(
@@ -618,35 +646,33 @@ class _GraduateClusterPin extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            height: 32,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(graduates.length, (i) {
-                final g = graduates[i];
-                return Transform.translate(
-                  offset: Offset(-(i * 12).toDouble(), 0),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: CircleAvatar(
-                      radius: 14,
-                      backgroundColor: Brand.actionOrange,
-                      backgroundImage: g.photoUrl.isEmpty
-                          ? null
-                          : NetworkImage(g.photoUrl),
-                      child: g.photoUrl.isEmpty
-                          ? const Icon(
-                              Icons.person_rounded,
-                              size: 14,
-                              color: Colors.white,
-                            )
-                          : null,
-                    ),
+            width: 52,
+            child: Wrap(
+              spacing: -8,
+              runSpacing: -8,
+              alignment: WrapAlignment.center,
+              children: graduates.map((g) {
+                return Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: CircleAvatar(
+                    radius: 10,
+                    backgroundColor: Brand.actionOrange,
+                    backgroundImage: g.photoUrl.isEmpty
+                        ? null
+                        : NetworkImage(g.photoUrl),
+                    child: g.photoUrl.isEmpty
+                        ? const Icon(
+                            Icons.person_rounded,
+                            size: 10,
+                            color: Colors.white,
+                          )
+                        : null,
                   ),
                 );
-              }),
+              }).toList(),
             ),
           ),
           const SizedBox(height: 2),
