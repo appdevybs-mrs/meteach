@@ -65,6 +65,7 @@ class AppWindowKeys {
   static const adminFileManager = 'file_manager';
   static const adminSharedFiles = 'shared_files';
   static const adminPublicGallery = 'public_gallery';
+  static const adminGraduatesMap = 'graduates_map';
   static const adminContract = 'contract';
   static const adminSettings = 'settings';
   static const adminJobApplications = 'job_applications';
@@ -525,6 +526,14 @@ class WindowAccessService {
       key: AppWindowKeys.adminPublicGallery,
       labelEn: 'Public Gallery',
       labelAr: 'المعرض العام',
+      tab: 'Public',
+      canClose: true,
+    ),
+    AppWindowDefinition(
+      role: AppWindowRole.admin,
+      key: AppWindowKeys.adminGraduatesMap,
+      labelEn: 'Graduates Map',
+      labelAr: 'خريطة الخريجين',
       tab: 'Public',
       canClose: true,
     ),

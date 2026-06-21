@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'shared/human_error.dart';
 import 'shared/app_feedback.dart';
 import 'shared/responsive_layout.dart';
+import 'widgets/enrollment_success_dialog.dart';
 
 /// ===== Brand Colors (from your palette) =====
 class Brand {
@@ -556,12 +557,14 @@ class _EnrollScreenState extends State<EnrollScreen> {
 
       if (!mounted) return;
 
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(
-          content: Text('Enrollment sent ✅ We will contact you soon.'),
-        ),
+      await showGeneralDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierLabel: '',
+        barrierColor: Colors.black54,
+        pageBuilder: (ctx, anim, sec) => const EnrollmentSuccessDialog(),
       );
+      if (!mounted) return;
 
       Navigator.pop(context, true);
     } catch (e) {

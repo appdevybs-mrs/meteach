@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -550,28 +551,22 @@ class _TeacherLearnerGalleryScreenState
     return out;
   }
 
-  Future<void> _openViewer(Map<String, dynamic> item) async {
-    final itemId = (item['id'] ?? '').toString();
-    final type = (item['type'] ?? '').toString().trim().toLowerCase();
-    final url = (item['url'] ?? '').toString().trim();
-    final teacherName = (item['teacherName'] ?? '').toString().trim();
-    final createdAt = _fmtDate(item['createdAt']);
-
+  Future<void> _openViewer(
+      List<Map<String, dynamic>> items, int index) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => _TeacherGalleryViewerScreen(
-          itemId: itemId,
-          type: type,
-          url: url,
-          teacherName: teacherName,
+          items: items,
+          initialIndex: index,
           classTitle: widget.classTitle,
           learnerName: widget.learnerName,
-          createdAt: createdAt,
-          onDelete: itemId.isEmpty
-              ? null
-              : () async {
-                  await _deleteItem(itemId);
-                },
+          onDelete: (i) async {
+            final itemId =
+                (items[i]['id'] ?? '').toString().trim();
+            if (itemId.isNotEmpty) {
+              await _deleteItem(itemId);
+            }
+          },
         ),
       ),
     );
@@ -971,7 +966,7 @@ class _TeacherLearnerGalleryScreenState
 
                         return InkWell(
                           borderRadius: BorderRadius.circular(18),
-                          onTap: () => _openViewer(item),
+                          onTap: () => _openViewer(items, index),
                           child: Container(
                             decoration: BoxDecoration(
                               color: p.cardBg,
@@ -1000,10 +995,22 @@ class _TeacherLearnerGalleryScreenState
                                         if (type == 'video')
                                           _TeacherVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                                         else
-                                          Image.network(
-                                            url,
+                                          CachedNetworkImage(
+                                            imageUrl: url,
                                             fit: BoxFit.cover,
-                                            errorBuilder: (_, _, _) =>
+                                            memCacheWidth: 440,
+                                            placeholder: (_, _) => Container(
+                                              color: p.soft,
+                                              alignment: Alignment.center,
+                                              child: const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              ),
+                                            ),
+                                            errorWidget: (_, _, _) =>
                                                 Container(
                                                   color: p.soft,
                                                   alignment: Alignment.center,
@@ -1194,10 +1201,11 @@ class _TeacherVideoTileState extends State<_TeacherVideoTile> {
       return Stack(
         fit: StackFit.expand,
         children: [
-          Image.network(
-            widget.thumbnailUrl!,
+          CachedNetworkImage(
+            imageUrl: widget.thumbnailUrl!,
             fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            memCacheWidth: 440,
+            errorWidget: (_, _, _) => const SizedBox.shrink(),
           ),
           Container(
             decoration: BoxDecoration(
@@ -1558,34 +1566,77 @@ class _TeacherVideoPreviewCardState extends State<_TeacherVideoPreviewCard> {
   }
 }
 
-class _TeacherGalleryViewerScreen extends StatelessWidget {
+class _TeacherGalleryViewerScreen extends StatefulWidget {
   const _TeacherGalleryViewerScreen({
-    required this.itemId,
-    required this.type,
-    required this.url,
-    required this.teacherName,
+    required this.items,
+    required this.initialIndex,
     required this.classTitle,
     required this.learnerName,
-    required this.createdAt,
-    required this.onDelete,
+    this.onDelete,
   });
 
-  final String itemId;
-  final String type;
-  final String url;
-  final String teacherName;
+  final List<Map<String, dynamic>> items;
+  final int initialIndex;
   final String classTitle;
   final String learnerName;
-  final String createdAt;
-  final Future<void> Function()? onDelete;
+  final Future<void> Function(int index)? onDelete;
+
+  @override
+  State<_TeacherGalleryViewerScreen> createState() =>
+      _TeacherGalleryViewerScreenState();
+}
+
+class _TeacherGalleryViewerScreenState
+    extends State<_TeacherGalleryViewerScreen> {
+  late final PageController _pageController;
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: _currentIndex);
+    _precacheAdjacent(_currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _precacheAdjacent(int index) {
+    for (final offset in [-2, -1, 0, 1, 2]) {
+      final i = index + offset;
+      if (i < 0 || i >= widget.items.length) continue;
+      final type =
+          (widget.items[i]['type'] ?? '').toString().trim().toLowerCase();
+      if (type == 'video') continue;
+      final url = (widget.items[i]['url'] ?? '').toString().trim();
+      if (url.isNotEmpty) {
+        precacheImage(NetworkImage(url), context);
+      }
+    }
+  }
+
+  String _fmtDate(dynamic ts) {
+    final ms = _toInt(ts);
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}  ${_two(d.hour)}:${_two(d.minute)}';
+  }
+
+  static int _toInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static String _two(int n) => n < 10 ? '0$n' : '$n';
 
   @override
   Widget build(BuildContext context) {
     final p = appThemeController.palette;
-    final isVideo = type.trim().toLowerCase() == 'video';
-    final displayTeacher = teacherName.trim().isEmpty
-        ? 'Teacher'
-        : teacherName.trim();
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1594,7 +1645,7 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
         title: Text(
-          isVideo ? 'Video' : 'Photo',
+          '${_currentIndex + 1} / ${widget.items.length}',
           style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w900,
@@ -1602,23 +1653,30 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
-          const SizedBox.shrink(),
           IconButton(
             tooltip: 'Download',
             icon: Icon(Icons.download_rounded, color: p.accent),
-            onPressed: () => MediaDownload.downloadUrl(
-              context,
-              url: url,
-              suggestedName: isVideo
-                  ? 'teacher_learner_video_${DateTime.now().millisecondsSinceEpoch}.mp4'
-                  : 'teacher_learner_photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
-            ),
+            onPressed: () {
+              final item = widget.items[_currentIndex];
+              final isVideo =
+                  (item['type'] ?? '').toString().trim().toLowerCase() ==
+                      'video';
+              final url = (item['url'] ?? '').toString().trim();
+              MediaDownload.downloadUrl(
+                context,
+                url: url,
+                suggestedName: isVideo
+                    ? 'teacher_learner_video_${DateTime.now().millisecondsSinceEpoch}.mp4'
+                    : 'teacher_learner_photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+                isVideo: isVideo,
+              );
+            },
           ),
-          if (onDelete != null && itemId.isNotEmpty)
+          if (widget.onDelete != null)
             IconButton(
               tooltip: 'Delete',
               onPressed: () async {
-                await onDelete!.call();
+                await widget.onDelete!(_currentIndex);
                 if (context.mounted) {
                   Navigator.of(context).pop(true);
                 }
@@ -1627,127 +1685,209 @@ class _TeacherGalleryViewerScreen extends StatelessWidget {
             ),
         ],
       ),
-      body: teacherWebBodyFrame(
-        context: context,
-        maxWidth: 1680,
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                        child: isVideo
-                            ? _TeacherVideoPreviewCard(url: url)
-                            : InteractiveViewer(
-                                minScale: 0.8,
-                                maxScale: 4,
-                                child: Image.network(
-                                  url,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, _, _) => const SizedBox(
-                                    height: 260,
-                                    child: Center(
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: Colors.white,
-                                        size: 44,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: widget.items.length,
+        onPageChanged: (i) {
+          setState(() => _currentIndex = i);
+          _precacheAdjacent(i);
+        },
+        itemBuilder: (context, index) {
+          final item = widget.items[index];
+          final type =
+              (item['type'] ?? '').toString().trim().toLowerCase();
+          final url = (item['url'] ?? '').toString().trim();
+          final thumbnailUrl =
+              (item['thumbnailUrl'] ?? '').toString().trim();
+          final isVideo = type == 'video';
+          final teacherName =
+              (item['teacherName'] ?? '').toString().trim();
+          final displayTeacher =
+              teacherName.isEmpty ? 'Teacher' : teacherName;
+          final createdAt = _fmtDate(item['createdAt']);
+
+          return Column(
+            children: [
+              Expanded(
+                child: Center(
+                  child: isVideo
+                      ? _TeacherVideoPreviewCard(url: url)
+                      : _buildImageViewer(url, thumbnailUrl),
+                ),
+              ),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  border: Border(
+                    top: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isVideo ? 'Video' : 'Photo',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
                       ),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          border: Border(
-                            top: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.12),
-                            ),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              isVideo ? 'Video' : 'Photo',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Uploaded by: $displayTeacher',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11,
-                                height: 1.2,
-                              ),
-                            ),
-                            if (learnerName.trim().isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                'Learner: $learnerName',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ],
-                            if (classTitle.trim().isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                'Class: $classTitle',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ],
-                            const SizedBox(height: 3),
-                            Text(
-                              'Added: $createdAt',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white60,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 10,
-                                height: 1.15,
-                              ),
-                            ),
-                          ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Uploaded by: $displayTeacher',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        height: 1.2,
+                      ),
+                    ),
+                    if (widget.learnerName.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Learner: ${widget.learnerName}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                          height: 1.2,
                         ),
                       ),
                     ],
+                    if (widget.classTitle.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Class: ${widget.classTitle}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 3),
+                    Text(
+                      'Added: $createdAt',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 10,
+                        height: 1.15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildImageViewer(String url, String thumbnailUrl) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+        final memCacheWidth =
+            (constraints.maxWidth * devicePixelRatio).round().clamp(320, 2400);
+        final memCacheHeight =
+            (constraints.maxHeight * devicePixelRatio).round().clamp(320, 2400);
+
+        return Stack(
+          children: [
+            if (thumbnailUrl.isNotEmpty)
+              Positioned.fill(
+                child: Center(
+                  child: CachedNetworkImage(
+                    imageUrl: thumbnailUrl,
+                    fit: BoxFit.contain,
+                    memCacheWidth: memCacheWidth,
+                    memCacheHeight: memCacheHeight,
+                    errorWidget: (_, _, _) => const SizedBox.shrink(),
                   ),
                 ),
-              );
-            },
-          ),
-        ),
-      ),
+              ),
+            Center(
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4,
+                child: CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.contain,
+                  memCacheWidth: memCacheWidth,
+                  memCacheHeight: memCacheHeight,
+                  placeholder: (_, _) => thumbnailUrl.isNotEmpty
+                      ? const SizedBox.shrink()
+                      : const SizedBox(
+                          height: 260,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                  progressIndicatorBuilder: (context, _, progress) {
+                    return SizedBox(
+                      height: 260,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(
+                              value: progress.progress,
+                              color: Colors.white54,
+                              strokeWidth: 2.5,
+                            ),
+                            if (progress.progress != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: Text(
+                                  '${(progress.progress! * 100).toInt()}%',
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                  errorWidget: (_, _, _) => const SizedBox(
+                    height: 260,
+                    child: Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white,
+                        size: 44,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

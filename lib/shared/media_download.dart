@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -15,6 +16,7 @@ class MediaDownload {
     required String url,
     required String suggestedName,
     bool askFolder = true,
+    bool isVideo = false,
   }) async {
     final cleanedUrl = url.trim();
     if (cleanedUrl.isEmpty) {
@@ -26,27 +28,66 @@ class MediaDownload {
     }
 
     try {
-      final out = await _prepareOutputFile(
-        cleanedUrl,
+      final tempDir = await getTemporaryDirectory();
+      final fileName = _safeName(
         suggestedName,
-        askFolder: askFolder,
+        fallbackExt: _extFromUrl(cleanedUrl),
       );
+      final tempFile = File('${tempDir.path}/$fileName');
 
       final res = await http.get(Uri.parse(cleanedUrl));
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw Exception('Download failed (${res.statusCode})');
       }
 
-      await out.writeAsBytes(res.bodyBytes, flush: true);
+      await tempFile.writeAsBytes(res.bodyBytes, flush: true);
 
       if (!context.mounted) return;
-      await _showDownloadActions(context, out);
+      await _showDownloadActions(
+        context,
+        file: tempFile,
+        isVideo: isVideo,
+        url: cleanedUrl,
+        suggestedName: fileName,
+      );
     } catch (e) {
       if (!context.mounted) return;
       AppToast.fromSnackBar(
         context,
         SnackBar(content: Text('Download failed: $e')),
       );
+    }
+  }
+
+  static Future<void> saveToGallery({
+    required String url,
+    required bool isVideo,
+  }) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final fileName =
+          'gallery_${DateTime.now().millisecondsSinceEpoch}.${_extFromUrl(url)}';
+      final tempFile = File('${tempDir.path}/$fileName');
+
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw Exception('Download failed (${res.statusCode})');
+      }
+
+      await tempFile.writeAsBytes(res.bodyBytes, flush: true);
+
+      final result = await ImageGallerySaver.saveFile(
+        tempFile.path,
+        isReturnPathOfIOS: false,
+      );
+
+      await tempFile.delete();
+
+      if (result == null || result['isSuccess'] != true) {
+        throw Exception('Save to gallery failed');
+      }
+    } catch (e) {
+      rethrow;
     }
   }
 
@@ -102,31 +143,6 @@ class MediaDownload {
     }
   }
 
-  static Future<(File file, bool isPublic)> _prepareAndroidOutput(
-    String fileName,
-  ) async {
-    final publicDir = Directory('/storage/emulated/0/Download');
-    if (await publicDir.exists()) {
-      try {
-        final testFile = File(
-          '${publicDir.path}/.ybs_test_${DateTime.now().millisecondsSinceEpoch}',
-        );
-        await testFile.writeAsBytes([0]);
-        await testFile.delete();
-        return (File('${publicDir.path}/$fileName'), true);
-      } catch (_) {
-        // Scoped storage or permission issue, fall back
-      }
-    }
-
-    final appDir = await getApplicationDocumentsDirectory();
-    final downloadsDir = Directory('${appDir.path}/downloads');
-    if (!await downloadsDir.exists()) {
-      await downloadsDir.create(recursive: true);
-    }
-    return (File('${downloadsDir.path}/$fileName'), false);
-  }
-
   static Future<File> _prepareOutputFile(
     String cleanedUrl,
     String suggestedName, {
@@ -138,8 +154,23 @@ class MediaDownload {
     );
 
     if (Platform.isAndroid) {
-      final (file, isPublic) = await _prepareAndroidOutput(fileName);
-      return file;
+      final publicDir = Directory('/storage/emulated/0/Download');
+      if (await publicDir.exists()) {
+        try {
+          final testFile = File(
+            '${publicDir.path}/.ybs_test_${DateTime.now().millisecondsSinceEpoch}',
+          );
+          await testFile.writeAsBytes([0]);
+          await testFile.delete();
+          return File('${publicDir.path}/$fileName');
+        } catch (_) {}
+      }
+      final appDir = await getApplicationDocumentsDirectory();
+      final downloadsDir = Directory('${appDir.path}/downloads');
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
+      }
+      return File('${downloadsDir.path}/$fileName');
     }
 
     String? folder;
@@ -187,18 +218,20 @@ class MediaDownload {
   }
 
   static Future<void> _showDownloadActions(
-    BuildContext context,
-    File file,
-  ) async {
+    BuildContext context, {
+    required File file,
+    required bool isVideo,
+    required String url,
+    required String suggestedName,
+  }) async {
     final showOpen = !Platform.isAndroid;
-    final isPublicDownloads = file.path.startsWith(
-      '/storage/emulated/0/Download',
-    );
+    final isPublicDownloads =
+        file.path.startsWith('/storage/emulated/0/Download');
     final locationText = isPublicDownloads
         ? 'Saved to Downloads folder.'
         : (Platform.isAndroid
-              ? 'Saved to app storage.'
-              : 'Saved to ${file.path}');
+            ? 'Saved to app storage.'
+            : 'Saved to ${file.path}');
 
     await showModalBottomSheet<void>(
       context: context,
@@ -222,25 +255,60 @@ class MediaDownload {
                 ),
                 const SizedBox(height: 8),
                 Text(locationText),
-                const SizedBox(height: 16),
-                if (Platform.isAndroid)
-                  Text(
-                    isPublicDownloads
-                        ? 'You can find this file in your Downloads.'
-                        : 'Use Share to send to another app.',
-                    style: TextStyle(color: Colors.grey.shade700),
+                const SizedBox(height: 8),
+                Text(
+                  'What would you like to do?',
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 13,
                   ),
-                if (Platform.isAndroid) const SizedBox(height: 12),
+                ),
+                const SizedBox(height: 16),
+                // Save to Gallery
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      try {
+                        await saveToGallery(
+                          url: url,
+                          isVideo: isVideo,
+                        );
+                        if (context.mounted) {
+                          AppToast.fromSnackBar(
+                            context,
+                            const SnackBar(
+                              content: Text('Saved to device gallery.'),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          AppToast.fromSnackBar(
+                            context,
+                            SnackBar(
+                              content: Text('Could not save to gallery: $e'),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.photo_library_rounded),
+                    label: const Text('Save to Gallery'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Save to Downloads (only on Android if not already there)
                 if (Platform.isAndroid && !isPublicDownloads)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: FilledButton.icon(
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
                       onPressed: () async {
                         Navigator.of(sheetContext).pop();
                         try {
-                          final publicDir = Directory(
-                            '/storage/emulated/0/Download',
-                          );
+                          final publicDir =
+                              Directory('/storage/emulated/0/Download');
                           if (await publicDir.exists()) {
                             final targetFile = File(
                               '${publicDir.path}/${file.uri.pathSegments.last}',
@@ -250,7 +318,8 @@ class MediaDownload {
                               AppToast.fromSnackBar(
                                 context,
                                 const SnackBar(
-                                  content: Text('Saved to Downloads folder.'),
+                                  content:
+                                      Text('Saved to Downloads folder.'),
                                 ),
                               );
                             }
@@ -259,7 +328,9 @@ class MediaDownload {
                           if (context.mounted) {
                             AppToast.fromSnackBar(
                               context,
-                              SnackBar(content: Text('Could not save: $e')),
+                              SnackBar(
+                                content: Text('Could not save: $e'),
+                              ),
                             );
                           }
                         }
@@ -268,32 +339,34 @@ class MediaDownload {
                       label: const Text('Save to Downloads'),
                     ),
                   ),
-                Row(
-                  children: [
-                    if (showOpen)
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.of(sheetContext).pop();
-                            _openDownloadedFile(context, file);
-                          },
-                          icon: const Icon(Icons.open_in_new_rounded),
-                          label: const Text('Open'),
-                        ),
-                      ),
-                    if (showOpen) const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          Navigator.of(sheetContext).pop();
-                          Share.shareXFiles([XFile(file.path)]);
-                        },
-                        icon: const Icon(Icons.share_rounded),
-                        label: Text(showOpen ? 'Share' : 'Share'),
-                      ),
-                    ),
-                  ],
+                if (Platform.isAndroid && !isPublicDownloads)
+                  const SizedBox(height: 8),
+                // Share
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(sheetContext).pop();
+                      Share.shareXFiles([XFile(file.path)]);
+                    },
+                    icon: const Icon(Icons.share_rounded),
+                    label: const Text('Share'),
+                  ),
                 ),
+                if (showOpen) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        _openDownloadedFile(context, file);
+                      },
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Open'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

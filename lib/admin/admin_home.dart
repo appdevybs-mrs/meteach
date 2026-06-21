@@ -51,6 +51,7 @@ import '../services/window_access_service.dart';
 import 'admin_payment_summary_sync_service.dart';
 import 'admin_diary_screen.dart';
 import 'admin_international_teachers_screen.dart';
+import 'admin_graduates_map_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -715,6 +716,27 @@ class _AdminHomeState extends State<AdminHome> {
             () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const AdminPublicGalleryScreen(),
+              ),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Graduates Map',
+        'World photo pins',
+        windowKey: AppWindowKeys.adminGraduatesMap,
+        child: _DashCard(
+          title: 'Graduates Map',
+          subtitle: 'World photo pins',
+          tags: const ['Public', 'World'],
+          icon: Icons.public_rounded,
+          color: AdminHome.accentSky,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminGraduatesMap,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminGraduatesMapScreen(),
               ),
             ),
           ),
@@ -2038,10 +2060,10 @@ class _CertificatesDashCard extends StatefulWidget {
 class _CertificatesDashCardState extends State<_CertificatesDashCard> {
   int _adminCount = 0;
   int _recordedCount = 0;
-  final DatabaseReference _adminRef =
-      FirebaseDatabase.instance.ref('admin_certificates');
-  final DatabaseReference _usersRef =
-      FirebaseDatabase.instance.ref('users');
+  final DatabaseReference _adminRef = FirebaseDatabase.instance.ref(
+    'admin_certificates',
+  );
+  final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
   late final List<StreamSubscription<DatabaseEvent>> _subscriptions;
 
   @override
@@ -2050,10 +2072,9 @@ class _CertificatesDashCardState extends State<_CertificatesDashCard> {
     _subscriptions = [
       _adminRef.onValue.listen((event) {
         if (!mounted) return;
-        final count =
-            (event.snapshot.value is Map)
-                ? (event.snapshot.value as Map).length
-                : 0;
+        final count = (event.snapshot.value is Map)
+            ? (event.snapshot.value as Map).length
+            : 0;
         setState(() => _adminCount = count);
       }),
       _usersRef.onValue.listen((event) {
@@ -2100,9 +2121,7 @@ class _CertificatesDashCardState extends State<_CertificatesDashCard> {
       badgeCount: totalCount,
       isReceptionistStyle: widget.isReceptionistStyle,
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const AdminCertificatesScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const AdminCertificatesScreen()),
       ),
     );
   }
@@ -2524,7 +2543,8 @@ class _PaymentAttentionSummary {
 
         totalLearners++;
 
-        final isExam = userMap['examMode'] == true ||
+        final isExam =
+            userMap['examMode'] == true ||
             userMap['examMode']?.toString() == 'true';
         if (isExam) {
           exam++;
@@ -2644,7 +2664,8 @@ class _PaymentAttentionDetails {
             ? ('$fn $ln').trim()
             : (email.isNotEmpty ? email : uid.toString());
 
-        final isExam = userMap['examMode'] == true ||
+        final isExam =
+            userMap['examMode'] == true ||
             userMap['examMode']?.toString() == 'true';
         if (isExam) {
           exam.add(displayName);
@@ -3512,7 +3533,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
             ? ('$fn $ln').trim()
             : (email.isNotEmpty ? email : uid);
 
-        final isExam = userMap['examMode'] == true ||
+        final isExam =
+            userMap['examMode'] == true ||
             userMap['examMode']?.toString() == 'true';
         if (isExam) {
           exam.add(displayName);

@@ -63,6 +63,10 @@ dependencies:
   webview_flutter_wkwebview: ^3.23.8
   flutter_markdown: ^0.7.6
   confetti: ^0.8.0
+  cached_network_image: ^3.4.1
+  image_gallery_saver: ^2.0.3
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

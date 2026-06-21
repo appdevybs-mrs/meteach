@@ -348,6 +348,11 @@
       ".write": "auth != null"
     },
 
+    "graduate_world_map": {
+      ".read": true,
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+    },
+
     "learner_gallery": {
       ".read": true,
       ".write": "auth != null"

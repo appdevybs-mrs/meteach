@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -27,6 +28,7 @@ import 'firebase_options.dart';
 import 'learner/learner_games_screen.dart';
 import 'learner/learner_stories_screen.dart';
 import 'widgets/teacher_media_sheet.dart';
+import 'widgets/enrollment_success_dialog.dart';
 import 'shared/app_theme.dart';
 import 'shared/app_globals.dart';
 import 'shared/app_feedback.dart';
@@ -39,6 +41,8 @@ import 'shared/icon_theme.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
 import 'package:video_player/video_player.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 part 'home/home_shell.part.dart';
 part 'home/login.part.dart';
@@ -3211,10 +3215,13 @@ class _PublicGalleryViewerScreenState
     super.dispose();
   }
 
-  Future<void> _precacheAdjacent(int index) async {
-    for (final offset in [-1, 0, 1]) {
+  void _precacheAdjacent(int index) {
+    for (final offset in [-2, -1, 0, 1, 2]) {
       final i = index + offset;
       if (i < 0 || i >= widget.items.length) continue;
+      final type =
+          (widget.items[i]['type'] ?? '').toString().trim().toLowerCase();
+      if (type == 'video') continue;
       final url = (widget.items[i]['url'] ?? '').toString().trim();
       if (url.isNotEmpty) {
         precacheImage(NetworkImage(url), context);
@@ -3261,10 +3268,11 @@ class _PublicGalleryViewerScreenState
               if (thumbnailUrl.isNotEmpty)
                 Positioned.fill(
                   child: Center(
-                    child: Image.network(
-                      thumbnailUrl,
+                    child: CachedNetworkImage(
+                      imageUrl: thumbnailUrl,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      memCacheWidth: 440,
+                      errorWidget: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -3272,34 +3280,30 @@ class _PublicGalleryViewerScreenState
                 child: InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 4,
-                  child: Image.network(
-                    url,
+                  child: CachedNetworkImage(
+                    imageUrl: url,
                     fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      final total = loadingProgress.expectedTotalBytes;
-                      final fraction = total != null
-                          ? loadingProgress.cumulativeBytesLoaded / total
-                          : null;
+                    placeholder: (_, _) => thumbnailUrl.isNotEmpty
+                        ? const SizedBox.shrink()
+                        : const SizedBox(
+                            height: 260,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                    progressIndicatorBuilder: (context, _, progress) {
                       return Center(
                         child: CircularProgressIndicator(
-                          value: fraction,
+                          value: progress.progress,
                           color: Colors.white54,
                           strokeWidth: 2.5,
                         ),
                       );
                     },
-                    frameBuilder:
-                        (context, child, frame, wasSynchronouslyLoaded) {
-                          if (wasSynchronouslyLoaded) return child;
-                          if (frame == null) return const SizedBox.shrink();
-                          return AnimatedOpacity(
-                            opacity: 1,
-                            duration: const Duration(milliseconds: 300),
-                            child: child,
-                          );
-                        },
-                    errorBuilder: (_, _, _) => const Icon(
+                    errorWidget: (_, _, _) => const Icon(
                       Icons.broken_image_outlined,
                       color: Colors.white,
                       size: 44,
@@ -4809,12 +4813,14 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
       await EnrollLimiter.markEnrolledNow(course.id);
       if (!mounted) return;
 
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(
-          content: Text('Enrollment sent ✅ We will contact you soon.'),
-        ),
+      await showGeneralDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierLabel: '',
+        barrierColor: Colors.black54,
+        pageBuilder: (ctx, anim, sec) => const EnrollmentSuccessDialog(),
       );
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -5107,14 +5113,18 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.white, Brand.appBg.withValues(alpha: 0.72)],
+        ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Brand.uiBorder),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.92)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
+            color: Brand.primaryBlue.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -5122,8 +5132,70 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     );
   }
 
+  Color _deliveryTone(EnrollDeliveryOption option) {
+    switch (option.key) {
+      case 'flexible':
+        return const Color(0xFF10B981);
+      case 'inclass':
+        return const Color(0xFF2563EB);
+      case 'private':
+        return const Color(0xFF9333EA);
+      case 'recorded':
+        return const Color(0xFFF59E0B);
+      default:
+        return Brand.primaryBlue;
+    }
+  }
+
+  Color _deliveryTone2(EnrollDeliveryOption option) {
+    switch (option.key) {
+      case 'flexible':
+        return const Color(0xFF06B6D4);
+      case 'inclass':
+        return const Color(0xFF38BDF8);
+      case 'private':
+        return const Color(0xFFEC4899);
+      case 'recorded':
+        return const Color(0xFFF97316);
+      default:
+        return Brand.actionOrange;
+    }
+  }
+
+  String _deliveryArabicLabel(EnrollDeliveryOption option) {
+    switch (option.key) {
+      case 'flexible':
+        return 'مرن';
+      case 'inclass':
+        return 'حضوري';
+      case 'private':
+        return 'خاص';
+      case 'recorded':
+        return 'مسجل';
+      default:
+        return option.shortLabelAr;
+    }
+  }
+
+  String _deliveryPitchAr(EnrollDeliveryOption option) {
+    switch (option.key) {
+      case 'flexible':
+        return 'تعلم أونلاين بمرونة كاملة. اختر الحصة التي تريدها، اليوم والوقت المناسب لك، وحتى الأستاذ إذا كان متاحاً. يمكنك الدراسة حسب سرعتك: حصة واحدة أو عدة حصص في اليوم أو الأسبوع أو الشهر. تستطيع إعادة الجدولة أو الإلغاء حسب القواعد المتاحة، والانتقال إلى المستوى التالي عندما تشعر أنك جاهز.';
+      case 'inclass':
+        return 'انضم إلى جو القسم الحقيقي، تفاعل مع الأستاذ والزملاء، واتبع برنامجاً واضحاً يساعدك على بناء عادة تعلم قوية ومنظمة.';
+      case 'private':
+        return 'تعلم بطريقة خاصة ومركزة، أونلاين أو حضورياً داخل القسم. اختر الجدول الذي يناسبك، وسيتم تعيين أستاذ لمرافقتك ودعمك خطوة بخطوة. هذا الخيار مناسب لمن يريد تركيزاً أكبر، تصحيحاً مباشراً، وخطة تعلم تساعده على التقدم بسرعة وثقة أكثر من الدراسة الجماعية.';
+      case 'recorded':
+        return 'دروس جاهزة تشاهدها في أي وقت وبالسرعة التي تناسبك. أعد الدرس، توقف، وارجع للمحتوى كلما احتجت للمراجعة.';
+      default:
+        return option.explanationAr();
+    }
+  }
+
   Widget _deliveryCard(EnrollDeliveryOption option, bool selected) {
     final compact = MediaQuery.sizeOf(context).width < 390;
+    final tone = _deliveryTone(option);
+    final tone2 = _deliveryTone2(option);
     return GestureDetector(
       onTap: saving || !option.isSelectable
           ? null
@@ -5148,19 +5220,17 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: selected
-                ? [Brand.primaryBlue, Brand.primaryBlue.withValues(alpha: 0.92)]
-                : [Colors.white, Brand.appBg.withValues(alpha: 0.55)],
+                ? [tone, tone2]
+                : [tone.withValues(alpha: 0.18), tone2.withValues(alpha: 0.10)],
           ),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? Brand.accentCyan : Brand.uiBorder,
-            width: selected ? 2 : 1,
+            color: selected ? Colors.white : tone.withValues(alpha: 0.35),
+            width: selected ? 2.2 : 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: selected
-                  ? Brand.primaryBlue.withValues(alpha: 0.16)
-                  : Colors.black.withValues(alpha: 0.04),
+              color: tone.withValues(alpha: selected ? 0.28 : 0.10),
               blurRadius: selected ? 18 : 10,
               offset: const Offset(0, 8),
             ),
@@ -5171,7 +5241,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
           children: [
             Icon(
               option.icon(),
-              color: selected ? Colors.white : Brand.primaryBlue,
+              color: selected ? Colors.white : tone,
               size: compact ? 22 : 24,
             ),
             const SizedBox(height: 8),
@@ -5184,17 +5254,45 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              option.feeLabel(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+            const SizedBox(height: 2),
+            Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text(
+                _deliveryArabicLabel(option),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.92)
+                      : Brand.mainText.withValues(alpha: 0.72),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
                 color: selected
-                    ? Colors.white.withValues(alpha: 0.92)
-                    : Brand.actionOrange,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
+                    ? Colors.white.withValues(alpha: 0.20)
+                    : Colors.white.withValues(alpha: 0.86),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.35)
+                      : tone.withValues(alpha: 0.24),
+                ),
+              ),
+              child: Text(
+                option.feeLabel(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.white : tone,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
           ],
@@ -5204,6 +5302,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
   }
 
   List<Widget> _deliveryFeatureTags(EnrollDeliveryOption option) {
+    final tone = _deliveryTone(option);
     List<({IconData icon, String label})> items;
     switch (option.key) {
       case 'inclass':
@@ -5215,15 +5314,20 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
         break;
       case 'flexible':
         items = [
-          (icon: Icons.schedule_rounded, label: 'اختر الوقت المناسب'),
-          (icon: Icons.groups_rounded, label: 'حصص جماعية'),
-          (icon: Icons.swap_horiz_rounded, label: 'أونلاين'),
+          (icon: Icons.menu_book_rounded, label: 'اختر الحصة'),
+          (icon: Icons.calendar_month_rounded, label: 'اليوم والوقت'),
+          (icon: Icons.person_search_rounded, label: 'اختر الأستاذ'),
+          (icon: Icons.video_call_rounded, label: 'أونلاين'),
+          (icon: Icons.trending_up_rounded, label: 'انتقل للمستوى التالي'),
+          (icon: Icons.event_repeat_rounded, label: 'إعادة جدولة أو إلغاء'),
         ];
         break;
       case 'private':
         items = [
           (icon: Icons.person_rounded, label: 'حصص فردية'),
-          (icon: Icons.track_changes_rounded, label: 'حسب هدفك'),
+          (icon: Icons.place_rounded, label: 'أونلاين أو حضوري'),
+          (icon: Icons.calendar_month_rounded, label: 'جدولك الخاص'),
+          (icon: Icons.support_agent_rounded, label: 'دعم مستمر'),
           (icon: Icons.flash_on_rounded, label: 'تقدم أسرع'),
         ];
         break;
@@ -5242,20 +5346,21 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: Brand.appBg,
+          color: tone.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Brand.uiBorder),
+          border: Border.all(color: tone.withValues(alpha: 0.28)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(item.icon, size: 15, color: Brand.primaryBlue),
+            Icon(item.icon, size: 15, color: tone),
             const SizedBox(width: 6),
             Directionality(
               textDirection: TextDirection.rtl,
               child: Text(
                 item.label,
-                style: const TextStyle(
+                style: TextStyle(
+                  color: Brand.mainText.withValues(alpha: 0.86),
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
                 ),
@@ -5268,6 +5373,8 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
   }
 
   Widget _selectedDeliverySummary(EnrollDeliveryOption option) {
+    final tone = _deliveryTone(option);
+    final tone2 = _deliveryTone2(option);
     final modeText = option.requiresStudyMode
         ? studyModeLabel(_privateStudyMode)
         : '';
@@ -5277,32 +5384,75 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Brand.actionOrange.withValues(alpha: 0.10),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [tone.withValues(alpha: 0.15), tone2.withValues(alpha: 0.08)],
+        ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Brand.actionOrange.withValues(alpha: 0.35)),
+        border: Border.all(color: tone.withValues(alpha: 0.30)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(option.icon(), color: Brand.actionOrange),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [tone, tone2]),
+                  borderRadius: BorderRadius.circular(15),
+                  boxShadow: [
+                    BoxShadow(
+                      color: tone.withValues(alpha: 0.22),
+                      blurRadius: 12,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: Icon(option.icon(), color: Colors.white),
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  option.label,
-                  style: const TextStyle(
-                    color: Brand.primaryBlue,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      option.label,
+                      style: const TextStyle(
+                        color: Brand.primaryBlue,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Text(
+                        _deliveryArabicLabel(option),
+                        style: TextStyle(
+                          color: Brand.mainText.withValues(alpha: 0.70),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                option.feeLabel(),
-                style: const TextStyle(
-                  color: Brand.actionOrange,
-                  fontWeight: FontWeight.w900,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.86),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: tone.withValues(alpha: 0.24)),
+                ),
+                child: Text(
+                  option.feeLabel(),
+                  style: TextStyle(color: tone, fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -5317,23 +5467,15 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
               ),
             ),
           ],
-          const SizedBox(height: 8),
-          Text(
-            _accessSummary(option),
-            style: TextStyle(
-              color: Brand.mainText.withValues(alpha: 0.78),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
           const SizedBox(height: 10),
           Directionality(
             textDirection: TextDirection.rtl,
             child: Text(
-              option.explanationAr(),
+              _deliveryPitchAr(option),
               style: TextStyle(
                 color: Brand.mainText.withValues(alpha: 0.86),
-                fontWeight: FontWeight.w700,
-                height: 1.45,
+                fontWeight: FontWeight.w800,
+                height: 1.55,
               ),
             ),
           ),
@@ -5393,36 +5535,6 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     );
   }
 
-  Widget _reviewsSummary(BuildContext context) {
-    final courseId = course.id.trim();
-    if (courseId.isEmpty) return const SizedBox.shrink();
-    return FutureBuilder<List<CourseReviewItem>>(
-      future: CourseFeedbackService.listCourseReviews(
-        courseId,
-        visibleOnly: true,
-      ),
-      builder: (context, snap) {
-        if (!snap.hasData) {
-          return const _PrettyChip(
-            icon: Icons.star_rounded,
-            label: 'Reviews loading',
-          );
-        }
-        final items = snap.data!;
-        final total = items.length;
-        final avg = total == 0
-            ? 0.0
-            : items.fold<int>(0, (s, x) => s + x.rating) / total;
-        return _PrettyChip(
-          icon: Icons.star_rounded,
-          label: total == 0
-              ? 'No reviews yet'
-              : '${avg.toStringAsFixed(1)} / 5 • $total reviews',
-        );
-      },
-    );
-  }
-
   Widget _expandableSection({
     required IconData icon,
     required String title,
@@ -5469,6 +5581,37 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
           height: MediaQuery.sizeOf(context).height * 0.92,
           child: Stack(
             children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xFFE0F7FA).withValues(alpha: 0.80),
+                        Colors.white,
+                        const Color(0xFFFFF3E0).withValues(alpha: 0.80),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: -42,
+                right: -30,
+                child: _LearningBlob(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.20),
+                  size: 118,
+                ),
+              ),
+              Positioned(
+                top: 190,
+                left: -42,
+                child: _LearningBlob(
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.18),
+                  size: 104,
+                ),
+              ),
               SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(18, 8, 18, 104),
                 child: Column(
@@ -5480,30 +5623,6 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                         fontWeight: FontWeight.w900,
                         color: Brand.primaryBlue,
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (course.category.trim().isNotEmpty)
-                          _PrettyChip(
-                            icon: Icons.category_rounded,
-                            label: course.category,
-                          ),
-                        if (course.feeRangeLabel().trim().isNotEmpty)
-                          _PrettyChip(
-                            icon: Icons.payments_rounded,
-                            label: 'Fees: ${course.feeRangeLabel()}',
-                          ),
-                        if (course.instructors.isNotEmpty)
-                          _PrettyChip(
-                            icon: Icons.person_rounded,
-                            label:
-                                '${course.instructors.length} instructor${course.instructors.length == 1 ? '' : 's'}',
-                          ),
-                        _reviewsSummary(context),
-                      ],
                     ),
                     const SizedBox(height: 12),
                     _hero(),
@@ -5591,7 +5710,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                           children: [
                             _sectionTitle(
                               Icons.place_rounded,
-                              'Private lesson mode',
+                              'Private lesson mode | طريقة الحصة الخاصة',
                             ),
                             const SizedBox(height: 12),
                             DropdownButtonFormField<String>(
@@ -5600,17 +5719,17 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                   ? 'online'
                                   : normalizeStudyMode(_privateStudyMode),
                               decoration: _inputDeco(
-                                label: 'Choose mode',
+                                label: 'Choose mode | اختر الطريقة',
                                 icon: Icons.place_rounded,
                               ),
                               items: const [
                                 DropdownMenuItem(
                                   value: 'online',
-                                  child: Text('Online'),
+                                  child: Text('Online | أونلاين'),
                                 ),
                                 DropdownMenuItem(
                                   value: 'inclass',
-                                  child: Text('In-Class'),
+                                  child: Text('In-Class | حضوري'),
                                 ),
                               ],
                               onChanged: saving
@@ -5632,7 +5751,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                           children: [
                             _sectionTitle(
                               Icons.assignment_rounded,
-                              '2. Enrollment details',
+                              '2. Enrollment details | بيانات التسجيل',
                             ),
                             const SizedBox(height: 12),
                             TextFormField(
@@ -5801,7 +5920,8 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                   SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
-                                      'No payment now. We will contact you soon to confirm your subscription.',
+                                      'لا يوجد دفع الآن. سنقوم بالتواصل معك قريباً لتأكيد التسجيل والتفاصيل.',
+                                      textDirection: TextDirection.rtl,
                                       style: TextStyle(
                                         fontWeight: FontWeight.w800,
                                       ),
@@ -5921,10 +6041,11 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                         child: FilledButton.icon(
                           onPressed: saving ? null : _submit,
                           style: FilledButton.styleFrom(
-                            backgroundColor: Brand.primaryBlue,
+                            backgroundColor: const Color(0xFF10B981),
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor: Brand.primaryBlue
-                                .withValues(alpha: 0.55),
+                            disabledBackgroundColor: const Color(
+                              0xFF10B981,
+                            ).withValues(alpha: 0.55),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
@@ -5951,6 +6072,34 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LearningBlob extends StatelessWidget {
+  const _LearningBlob({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.55),
+              blurRadius: 48,
+              spreadRadius: 10,
+            ),
+          ],
         ),
       ),
     );
@@ -6227,34 +6376,168 @@ class _TeacherChip extends StatelessWidget {
     return true;
   }
 
+  static String _normalizeUrl(String input) {
+    final v = input.trim();
+    if (v.isEmpty) return '';
+    if (v.startsWith('//')) return 'https:$v';
+    if (v.startsWith('www.')) return 'https://$v';
+    return v;
+  }
+
+  static bool _isHttpUrl(String input) {
+    final uri = Uri.tryParse(input.trim());
+    if (uri == null) return false;
+    return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  static String _urlFromUnknown(dynamic raw) {
+    if (raw == null) return '';
+    if (raw is String) return _normalizeUrl(raw);
+    if (raw is Map) {
+      final m = raw.map((k, v) => MapEntry(k.toString(), v));
+      for (final key in const [
+        'url',
+        'photo_url',
+        'downloadUrl',
+        'download_url',
+        'value',
+        'src',
+        'link',
+      ]) {
+        final found = m[key];
+        if (found == null) continue;
+        final candidate = _normalizeUrl(found.toString());
+        if (candidate.isNotEmpty) return candidate;
+      }
+    }
+    return _normalizeUrl(raw.toString());
+  }
+
+  static Future<String> _loadTeacherPhoto(String uid) async {
+    if (!_isSafeUid(uid)) return '';
+    final snap = await FirebaseDatabase.instance
+        .ref('website/teachers/${uid.trim()}/profile')
+        .get();
+    final value = snap.value;
+    if (value is! Map) return '';
+    final profile = value.map((k, v) => MapEntry(k.toString(), v));
+
+    final single = _urlFromUnknown(profile['profile_photo']);
+    if (single.isNotEmpty && _isHttpUrl(single)) return single;
+
+    final rawPhotos = profile['profile_photos'];
+    if (rawPhotos is List) {
+      for (final item in rawPhotos) {
+        final photo = _urlFromUnknown(item);
+        if (photo.isNotEmpty && _isHttpUrl(photo)) return photo;
+      }
+    } else if (rawPhotos is Map) {
+      final entries = rawPhotos.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final entry in entries) {
+        final photo = _urlFromUnknown(entry.value);
+        if (photo.isNotEmpty && _isHttpUrl(photo)) return photo;
+      }
+    } else {
+      final photo = _urlFromUnknown(rawPhotos);
+      if (photo.isNotEmpty && _isHttpUrl(photo)) return photo;
+    }
+
+    return '';
+  }
+
+  static String _initials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'T';
+    final first = parts.first.characters.first.toUpperCase();
+    final second = parts.length > 1
+        ? parts.last.characters.first.toUpperCase()
+        : '';
+    return '$first$second';
+  }
+
+  void _openTeacherMedia(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) =>
+          TeacherMediaSheet(teacherUid: teacher.uid, teacherName: teacher.name),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canOpen = _isSafeUid(teacher.uid);
+    final initials = _initials(teacher.name.isEmpty ? 'Teacher' : teacher.name);
 
     return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: !canOpen
-          ? null
-          : () {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                showDragHandle: true,
-                backgroundColor: Colors.white,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                builder: (_) => TeacherMediaSheet(
-                  teacherUid: teacher.uid,
-                  teacherName: teacher.name,
-                ),
-              );
-            },
+      borderRadius: BorderRadius.circular(20),
+      onTap: canOpen ? () => _openTeacherMedia(context) : null,
       child: Opacity(
         opacity: canOpen ? 1 : 0.75,
-        child: _PrettyChip(
-          icon: Icons.person_rounded,
-          label: teacher.name.isEmpty ? 'Teacher' : teacher.name,
+        child: SizedBox(
+          width: 78,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FutureBuilder<String>(
+                future: _loadTeacherPhoto(teacher.uid),
+                builder: (context, snap) {
+                  return Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF38BDF8), Color(0xFF10B981)],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF10B981,
+                          ).withValues(alpha: 0.18),
+                          blurRadius: 12,
+                          offset: const Offset(0, 7),
+                        ),
+                      ],
+                    ),
+                    child: ProfileAvatar(
+                      name: initials,
+                      photoUrl: snap.data ?? '',
+                      radius: 28,
+                      fallbackBg: Brand.primaryBlue,
+                      fallbackFg: Colors.white,
+                      borderColor: Colors.white,
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 6),
+              Text(
+                initials,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Brand.primaryBlue,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

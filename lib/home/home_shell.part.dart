@@ -1,6 +1,6 @@
 part of '../main.dart';
 
-enum AppMode { courses, gallery, games, stories }
+enum AppMode { courses, gallery, world, games, stories }
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -30,6 +30,8 @@ class _HomeShellState extends State<HomeShell> {
         return 'Courses';
       case AppMode.gallery:
         return 'Gallery';
+      case AppMode.world:
+        return 'World';
       case AppMode.games:
         return 'Games';
       case AppMode.stories:
@@ -41,6 +43,7 @@ class _HomeShellState extends State<HomeShell> {
     final pages = const <Widget>[
       AssistantHome(),
       GalleryHome(),
+      WorldGraduatesHome(),
       GamesHome(),
       StoriesHome(),
     ];
@@ -80,6 +83,10 @@ class _HomeShellState extends State<HomeShell> {
                   NavigationRailDestination(
                     icon: Icon(Icons.photo_library_rounded),
                     label: Text('Gallery'),
+                  ),
+                  NavigationRailDestination(
+                    icon: Icon(Icons.public_rounded),
+                    label: Text('World'),
                   ),
                   NavigationRailDestination(
                     icon: Icon(Icons.sports_esports_rounded),
@@ -174,10 +181,7 @@ class _HomeShellState extends State<HomeShell> {
                       ),
                       const Divider(height: 1),
                       Expanded(
-                        child: IndexedStack(
-                          index: mode.index,
-                          children: pages,
-                        ),
+                        child: IndexedStack(index: mode.index, children: pages),
                       ),
                     ],
                   ),
@@ -201,12 +205,15 @@ class _HomeShellState extends State<HomeShell> {
           children: const [
             AssistantHome(),
             GalleryHome(),
+            WorldGraduatesHome(),
             GamesHome(),
             StoriesHome(),
           ],
         ),
       ),
-      floatingActionButton: _PulsingLoginFab(onPressed: () => _openLogin(context)),
+      floatingActionButton: _PulsingLoginFab(
+        onPressed: () => _openLogin(context),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: mode.index,
         onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
@@ -218,6 +225,10 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(
             icon: Icon(Icons.photo_library_rounded),
             label: 'Gallery',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.public_rounded),
+            label: 'World',
           ),
           NavigationDestination(
             icon: Icon(Icons.sports_esports_rounded),
@@ -281,6 +292,337 @@ class _PulsingLoginFabState extends State<_PulsingLoginFab>
   }
 }
 
+class WorldGraduatesHome extends StatelessWidget {
+  const WorldGraduatesHome({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SoftBackground(
+      child: Column(
+        children: [
+          const SimpleTopBar(title: 'Your Bridge School'),
+          Expanded(
+            child: StreamBuilder<DatabaseEvent>(
+              stream: FirebaseDatabase.instance
+                  .ref('graduate_world_map')
+                  .onValue,
+              builder: (context, snapshot) {
+                final graduates = _GraduateMapPerson.fromSnapshot(
+                  snapshot.data?.snapshot.value,
+                );
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                  children: [
+                    CardShell(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Our Graduates Around The World',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  color: Brand.primaryBlue,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'See our learners and graduates from different cities and countries.',
+                            style: TextStyle(
+                              color: Brand.mainText.withValues(alpha: 0.75),
+                              fontWeight: FontWeight.w600,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    CardShell(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child:
+                            snapshot.connectionState == ConnectionState.waiting
+                            ? const SizedBox(
+                                height: 320,
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              )
+                            : graduates.isEmpty
+                            ? const _EmptyWorldGraduates()
+                            : _GraduatesWorldMap(graduates: graduates),
+                      ),
+                    ),
+                    if (graduates.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      CardShell(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Graduate List',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    color: Brand.primaryBlue,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                            ),
+                            const SizedBox(height: 10),
+                            ...graduates.map(
+                              (g) => ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  backgroundColor: Brand.primaryBlue.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  backgroundImage: g.photoUrl.isEmpty
+                                      ? null
+                                      : NetworkImage(g.photoUrl),
+                                  child: g.photoUrl.isEmpty
+                                      ? const Icon(Icons.person_rounded)
+                                      : null,
+                                ),
+                                title: Text(
+                                  g.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                subtitle: Text('${g.city}, ${g.country}'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GraduateMapPerson {
+  const _GraduateMapPerson({
+    required this.id,
+    required this.name,
+    required this.photoUrl,
+    required this.country,
+    required this.city,
+    required this.lat,
+    required this.lng,
+  });
+
+  final String id;
+  final String name;
+  final String photoUrl;
+  final String country;
+  final String city;
+  final double lat;
+  final double lng;
+
+  static List<_GraduateMapPerson> fromSnapshot(dynamic value) {
+    if (value is! Map) return const <_GraduateMapPerson>[];
+    final out = <_GraduateMapPerson>[];
+    value.forEach((key, raw) {
+      if (raw is! Map) return;
+      final m = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (m['active'] == false) return;
+      final name = (m['name'] ?? '').toString().trim();
+      final country = (m['country'] ?? '').toString().trim();
+      final city = (m['city'] ?? '').toString().trim();
+      final lat = _toDouble(m['lat']);
+      final lng = _toDouble(m['lng']);
+      if (name.isEmpty || country.isEmpty || city.isEmpty) return;
+      if (lat == null || lng == null) return;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
+      out.add(
+        _GraduateMapPerson(
+          id: key.toString(),
+          name: name,
+          photoUrl: (m['photoUrl'] ?? '').toString().trim(),
+          country: country,
+          city: city,
+          lat: lat,
+          lng: lng,
+        ),
+      );
+    });
+    out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return out;
+  }
+
+  static double? _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse((value ?? '').toString().trim());
+  }
+}
+
+class _EmptyWorldGraduates extends StatelessWidget {
+  const _EmptyWorldGraduates();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 320,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.public_rounded,
+              size: 46,
+              color: Brand.primaryBlue.withValues(alpha: 0.45),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'No graduates on the map yet.',
+              style: TextStyle(
+                color: Brand.primaryBlue,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Admin can add them from Graduates Map.',
+              style: TextStyle(
+                color: Brand.mainText.withValues(alpha: 0.68),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GraduatesWorldMap extends StatelessWidget {
+  const _GraduatesWorldMap({required this.graduates});
+
+  final List<_GraduateMapPerson> graduates;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 420,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: FlutterMap(
+          options: MapOptions(
+            initialCenter: const LatLng(20, 20),
+            initialZoom: 2.0,
+            minZoom: 2,
+            maxZoom: 18,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.all,
+            ),
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.appdevybs.mycertenglish',
+              maxZoom: 19,
+            ),
+            MarkerLayer(
+              markers: graduates.map((g) {
+                return Marker(
+                  point: LatLng(g.lat, g.lng),
+                  width: 60,
+                  height: 80,
+                  child: _GraduatePhotoPin(person: g),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GraduatePhotoPin extends StatelessWidget {
+  const _GraduatePhotoPin({required this.person});
+
+  final _GraduateMapPerson person;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '${person.name}\n${person.city}, ${person.country}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () => showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(person.name),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 42,
+                  backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
+                  backgroundImage: person.photoUrl.isEmpty
+                      ? null
+                      : NetworkImage(person.photoUrl),
+                  child: person.photoUrl.isEmpty
+                      ? const Icon(Icons.person_rounded, size: 42)
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '${person.city}, ${person.country}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.22),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: CircleAvatar(
+                radius: 20,
+                backgroundColor: Brand.actionOrange,
+                backgroundImage: person.photoUrl.isEmpty
+                    ? null
+                    : NetworkImage(person.photoUrl),
+                child: person.photoUrl.isEmpty
+                    ? const Icon(Icons.person_rounded, color: Colors.white)
+                    : null,
+              ),
+            ),
+            Icon(Icons.arrow_drop_down_rounded, color: Brand.actionOrange),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class JobsHome extends StatefulWidget {
   const JobsHome({super.key});
 
@@ -332,10 +674,11 @@ class _JobsHomeState extends State<JobsHome> {
                         children: [
                           Text(
                             'Work With Us',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Brand.primaryBlue,
-                              fontWeight: FontWeight.w900,
-                            ),
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  color: Brand.primaryBlue,
+                                  fontWeight: FontWeight.w900,
+                                ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -860,9 +1203,7 @@ class StoriesHome extends StatelessWidget {
       child: Column(
         children: [
           const SimpleTopBar(title: 'Your Bridge School'),
-          Expanded(
-            child: LearnerStoriesScreen(showAppBar: false),
-          ),
+          Expanded(child: LearnerStoriesScreen(showAppBar: false)),
         ],
       ),
     );
@@ -878,9 +1219,7 @@ class GamesHome extends StatelessWidget {
       child: Column(
         children: [
           const SimpleTopBar(title: 'Your Bridge School'),
-          Expanded(
-            child: const LearnerGamesScreen(showScaffold: false),
-          ),
+          Expanded(child: const LearnerGamesScreen(showScaffold: false)),
         ],
       ),
     );
