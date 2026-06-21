@@ -365,20 +365,16 @@ class _GraduateMapPerson {
   final double lng;
   final bool blurPhoto;
 
-  _GraduateMapPerson copyWith({
-    double? lat,
-    double? lng,
-  }) =>
-      _GraduateMapPerson(
-        id: id,
-        name: name,
-        photoUrl: photoUrl,
-        country: country,
-        city: city,
-        lat: lat ?? this.lat,
-        lng: lng ?? this.lng,
-        blurPhoto: blurPhoto,
-      );
+  _GraduateMapPerson copyWith({double? lat, double? lng}) => _GraduateMapPerson(
+    id: id,
+    name: name,
+    photoUrl: photoUrl,
+    country: country,
+    city: city,
+    lat: lat ?? this.lat,
+    lng: lng ?? this.lng,
+    blurPhoto: blurPhoto,
+  );
 
   static List<_GraduateMapPerson> fromSnapshot(dynamic value) {
     if (value is! Map) return const <_GraduateMapPerson>[];
@@ -601,58 +597,7 @@ class _GraduatePhotoPin extends StatelessWidget {
     return GestureDetector(
       onTap: () => showDialog<void>(
         context: context,
-        builder: (_) => AlertDialog(
-          title: Text(
-            person.name,
-            overflow: TextOverflow.ellipsis,
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              () {
-                Widget photo = CircleAvatar(
-                  radius: 42,
-                  backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
-                  backgroundImage: person.photoUrl.isEmpty
-                      ? null
-                      : NetworkImage(person.photoUrl),
-                  child: person.photoUrl.isEmpty
-                      ? const Icon(Icons.person_rounded, size: 42)
-                      : null,
-                );
-                if (person.blurPhoto) {
-                  photo = ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                    child: photo,
-                  );
-                }
-                return photo;
-              }(),
-              const SizedBox(height: 12),
-              Text(
-                '${person.city}, ${person.country}',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              if (person.blurPhoto) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Due to privacy, photo is blurred',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Brand.mainText.withValues(alpha: 0.55),
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
+        builder: (_) => _GraduateProfileDialog(person: person),
       ),
       child: person.blurPhoto
           ? ImageFiltered(
@@ -663,6 +608,283 @@ class _GraduatePhotoPin extends StatelessWidget {
     );
   }
 }
+
+class _GraduateProfileDialog extends StatelessWidget {
+  const _GraduateProfileDialog({required this.person});
+
+  final _GraduateMapPerson person;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 54),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Brand.primaryBlue, Brand.actionOrange],
+                ),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    _countryFlag(person.country),
+                    style: const TextStyle(fontSize: 28),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      person.country,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Transform.translate(
+              offset: const Offset(0, -42),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(22, 0, 22, 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _PrivacyPhoto(
+                      photoUrl: person.photoUrl,
+                      blur: person.blurPhoto,
+                      radius: 48,
+                      borderWidth: 4,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      person.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Brand.primaryBlue,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 22,
+                        height: 1.08,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Brand.primaryBlue.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.location_on_rounded,
+                            size: 16,
+                            color: Brand.actionOrange,
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              '${person.city}, ${person.country}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Brand.mainText.withValues(alpha: 0.78),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (person.blurPhoto) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          'Photo blurred for privacy',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Brand.mainText.withValues(alpha: 0.65),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Text(
+                      'YBS Graduate Around The World',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Brand.actionOrange,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivacyPhoto extends StatelessWidget {
+  const _PrivacyPhoto({
+    required this.photoUrl,
+    required this.blur,
+    required this.radius,
+    this.borderWidth = 3,
+  });
+
+  final String photoUrl;
+  final bool blur;
+  final double radius;
+  final double borderWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget photo = CircleAvatar(
+      radius: radius,
+      backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
+      backgroundImage: photoUrl.isEmpty ? null : NetworkImage(photoUrl),
+      child: photoUrl.isEmpty
+          ? Icon(Icons.person_rounded, size: radius, color: Brand.primaryBlue)
+          : null,
+    );
+    if (blur) {
+      photo = ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: photo,
+      );
+    }
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: borderWidth),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: photo,
+    );
+  }
+}
+
+String _countryFlag(String country) {
+  final code = _countryCodeByName[country.trim().toLowerCase()];
+  if (code == null || code.length != 2) return '🌍';
+  final upper = code.toUpperCase();
+  return String.fromCharCodes(
+    upper.codeUnits.map((unit) => 0x1F1E6 + unit - 0x41),
+  );
+}
+
+const _countryCodeByName = <String, String>{
+  'afghanistan': 'AF',
+  'albania': 'AL',
+  'algeria': 'DZ',
+  'angola': 'AO',
+  'argentina': 'AR',
+  'australia': 'AU',
+  'bahrain': 'BH',
+  'bangladesh': 'BD',
+  'belgium': 'BE',
+  'benin': 'BJ',
+  'botswana': 'BW',
+  'brazil': 'BR',
+  'burkina faso': 'BF',
+  'burundi': 'BI',
+  'cameroon': 'CM',
+  'canada': 'CA',
+  'cape verde': 'CV',
+  'central african republic': 'CF',
+  'chad': 'TD',
+  'china': 'CN',
+  'comoros': 'KM',
+  'congo': 'CG',
+  'dr congo': 'CD',
+  'djibouti': 'DJ',
+  'egypt': 'EG',
+  'ethiopia': 'ET',
+  'france': 'FR',
+  'gabon': 'GA',
+  'gambia': 'GM',
+  'ghana': 'GH',
+  'guinea': 'GN',
+  'india': 'IN',
+  'indonesia': 'ID',
+  'ivory coast': 'CI',
+  'japan': 'JP',
+  'kenya': 'KE',
+  'kuwait': 'KW',
+  'libya': 'LY',
+  'malaysia': 'MY',
+  'mali': 'ML',
+  'mauritania': 'MR',
+  'morocco': 'MA',
+  'mozambique': 'MZ',
+  'nigeria': 'NG',
+  'oman': 'OM',
+  'pakistan': 'PK',
+  'qatar': 'QA',
+  'rwanda': 'RW',
+  'saudi arabia': 'SA',
+  'senegal': 'SN',
+  'somalia': 'SO',
+  'south africa': 'ZA',
+  'sudan': 'SD',
+  'tanzania': 'TZ',
+  'thailand': 'TH',
+  'tunisia': 'TN',
+  'uganda': 'UG',
+  'united arab emirates': 'AE',
+  'united kingdom': 'GB',
+  'united states': 'US',
+  'vietnam': 'VN',
+  'zambia': 'ZM',
+  'zimbabwe': 'ZW',
+};
 
 class _GraduateClusterPin extends StatelessWidget {
   const _GraduateClusterPin({required this.graduates});
@@ -709,8 +931,7 @@ class _GraduateClusterPin extends StatelessWidget {
         child: CircleAvatar(
           radius: _radius,
           backgroundColor: Brand.actionOrange,
-          backgroundImage:
-              g.photoUrl.isEmpty ? null : NetworkImage(g.photoUrl),
+          backgroundImage: g.photoUrl.isEmpty ? null : NetworkImage(g.photoUrl),
           child: g.photoUrl.isEmpty
               ? const Icon(Icons.person_rounded, size: 14, color: Colors.white)
               : null,
@@ -768,55 +989,162 @@ class _ClusterDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        '${graduates.length} graduates in ${graduates[0].city}',
-        overflow: TextOverflow.ellipsis,
-      ),
-      content: SizedBox(
-        width: 320,
-        child: ListView.separated(
-          shrinkWrap: true,
-          itemCount: graduates.length,
-          separatorBuilder: (_, _) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final g = graduates[index];
-            Widget avatar = CircleAvatar(
-              radius: 20,
-              backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
-              backgroundImage: g.photoUrl.isEmpty
-                  ? null
-                  : NetworkImage(g.photoUrl),
-              child: g.photoUrl.isEmpty
-                  ? const Icon(Icons.person_rounded)
-                  : null,
-            );
-            if (g.blurPhoto) {
-              avatar = ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                child: avatar,
-              );
-            }
-            return ListTile(
-              leading: avatar,
-              title: Text(
-                g.name,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-                overflow: TextOverflow.ellipsis,
+    final first = graduates[0];
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 390, maxHeight: 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(18, 16, 10, 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Brand.primaryBlue, Brand.actionOrange],
+                ),
               ),
-              subtitle: Text(
-                g.blurPhoto ? '${g.city}, ${g.country} (blurred)' : '${g.city}, ${g.country}',
+              child: Row(
+                children: [
+                  Text(
+                    _countryFlag(first.country),
+                    style: const TextStyle(fontSize: 26),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          first.city,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          first.country,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.82),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${graduates.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  ),
+                ],
               ),
-            );
-          },
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                itemCount: graduates.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final g = graduates[index];
+                  return Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Brand.primaryBlue.withValues(alpha: 0.035),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Brand.primaryBlue.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        _PrivacyPhoto(
+                          photoUrl: g.photoUrl,
+                          blur: g.blurPhoto,
+                          radius: 23,
+                          borderWidth: 2,
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                g.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Brand.primaryBlue,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${g.city}, ${g.country}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Brand.mainText.withValues(alpha: 0.64),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (g.blurPhoto) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Photo blurred for privacy',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Brand.actionOrange,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
-      ],
     );
   }
 }
