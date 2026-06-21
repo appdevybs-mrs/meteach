@@ -274,29 +274,64 @@ class _EnrollmentSuccessDialogState extends State<EnrollmentSuccessDialog> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _socialIcon(Icons.facebook_rounded, 'Facebook'),
+        _socialIcon(
+          Icons.facebook_rounded,
+          'Facebook',
+          const Color(0xFF1877F2),
+          'https://www.facebook.com/',
+        ),
         const SizedBox(width: 16),
-        _socialIcon(Icons.photo_camera_rounded, 'Instagram'),
+        _socialIcon(
+          Icons.photo_camera_rounded,
+          'Instagram',
+          const Color(0xFFE4405F),
+          'https://www.instagram.com/',
+        ),
         const SizedBox(width: 16),
-        _socialIcon(Icons.music_note_rounded, 'TikTok'),
+        _socialIcon(
+          Icons.music_note_rounded,
+          'TikTok',
+          const Color(0xFF000000),
+          'https://www.tiktok.com/',
+        ),
       ],
     );
   }
 
-  Widget _socialIcon(IconData icon, String label) {
+  Widget _socialIcon(IconData icon, String label, Color color, String url) {
     return Tooltip(
       message: label,
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A2B48).withValues(alpha: 0.06),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          icon,
-          color: const Color(0xFF1A2B48).withValues(alpha: 0.7),
-          size: 22,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: () async {
+            final uri = Uri.parse(url);
+            final ok = await launchUrl(
+              uri,
+              mode: LaunchMode.externalApplication,
+            );
+            if (!ok && mounted) {
+              final fallback = await launchUrl(
+                uri,
+                mode: LaunchMode.platformDefault,
+              );
+              if (!fallback && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Could not open $label.')),
+                );
+              }
+            }
+          },
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
         ),
       ),
     );

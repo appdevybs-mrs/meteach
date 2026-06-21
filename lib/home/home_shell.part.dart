@@ -457,31 +457,6 @@ class _EmptyWorldGraduates extends StatelessWidget {
   }
 }
 
-List<_GraduateMapPerson> _scatterPins(List<_GraduateMapPerson> graduates) {
-  final groups = <String, List<_GraduateMapPerson>>{};
-  for (final g in graduates) {
-    groups.putIfAbsent('${g.lat},${g.lng}', () => []).add(g);
-  }
-  final result = <_GraduateMapPerson>[];
-  for (final group in groups.values) {
-    if (group.length == 1) {
-      result.add(group[0]);
-    } else {
-      for (var i = 0; i < group.length; i++) {
-        final angle = (2 * math.pi * i) / group.length;
-        const offset = 0.02;
-        result.add(
-          group[i].copyWith(
-            lat: group[i].lat + offset * math.sin(angle),
-            lng: group[i].lng + offset * math.cos(angle),
-          ),
-        );
-      }
-    }
-  }
-  return result;
-}
-
 class _GraduatesWorldMap extends StatelessWidget {
   const _GraduatesWorldMap({required this.graduates});
 
@@ -489,7 +464,35 @@ class _GraduatesWorldMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scattered = _scatterPins(graduates);
+    final groups = <String, List<_GraduateMapPerson>>{};
+    for (final g in graduates) {
+      groups.putIfAbsent('${g.lat},${g.lng}', () => []).add(g);
+    }
+
+    final markers = <Marker>[];
+    for (final group in groups.values) {
+      final point = LatLng(group[0].lat, group[0].lng);
+      if (group.length == 1) {
+        markers.add(
+          Marker(
+            point: point,
+            width: 60,
+            height: 80,
+            child: _GraduatePhotoPin(person: group[0]),
+          ),
+        );
+      } else {
+        markers.add(
+          Marker(
+            point: point,
+            width: 100,
+            height: 70,
+            child: _GraduateClusterPin(graduates: group),
+          ),
+        );
+      }
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: FlutterMap(
@@ -510,16 +513,7 @@ class _GraduatesWorldMap extends StatelessWidget {
             userAgentPackageName: 'com.appdevybs.mycertenglish',
             maxZoom: 19,
           ),
-          MarkerLayer(
-            markers: scattered.map((g) {
-              return Marker(
-                point: LatLng(g.lat, g.lng),
-                width: 60,
-                height: 80,
-                child: _GraduatePhotoPin(person: g),
-              );
-            }).toList(),
-          ),
+          MarkerLayer(markers: markers),
         ],
       ),
     );
@@ -604,6 +598,108 @@ class _GraduatePhotoPin extends StatelessWidget {
               child: _photoPin(),
             )
           : _photoPin(),
+    );
+  }
+}
+
+class _GraduateClusterPin extends StatelessWidget {
+  const _GraduateClusterPin({required this.graduates});
+
+  final List<_GraduateMapPerson> graduates;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => _ClusterDialog(graduates: graduates),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 32,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(graduates.length, (i) {
+                final g = graduates[i];
+                return Transform.translate(
+                  offset: Offset(-(i * 12).toDouble(), 0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Brand.actionOrange,
+                      backgroundImage: g.photoUrl.isEmpty
+                          ? null
+                          : NetworkImage(g.photoUrl),
+                      child: g.photoUrl.isEmpty
+                          ? const Icon(
+                              Icons.person_rounded,
+                              size: 14,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Icon(Icons.arrow_drop_down_rounded, color: Brand.actionOrange),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClusterDialog extends StatelessWidget {
+  const _ClusterDialog({required this.graduates});
+
+  final List<_GraduateMapPerson> graduates;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${graduates.length} graduates in ${graduates[0].city}'),
+      content: SizedBox(
+        width: 320,
+        child: ListView.separated(
+          shrinkWrap: true,
+          itemCount: graduates.length,
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            final g = graduates[index];
+            return ListTile(
+              leading: CircleAvatar(
+                radius: 20,
+                backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
+                backgroundImage: g.photoUrl.isEmpty
+                    ? null
+                    : NetworkImage(g.photoUrl),
+                child: g.photoUrl.isEmpty
+                    ? const Icon(Icons.person_rounded)
+                    : null,
+              ),
+              title: Text(
+                g.name,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              subtitle: Text('${g.city}, ${g.country}'),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }
