@@ -135,37 +135,12 @@ class CourseFeedbackService {
 
   static String _safe(dynamic v) => (v ?? '').toString().trim();
 
-  static String _normalizeRole(dynamic raw) {
-    final s = (raw ?? '').toString().trim().toLowerCase();
-    if (s == 'learner' || s == 'student' || s == 'pupil' || s == 'lerner') {
-      return 'learner';
-    }
-    if (s == 'teacher' || s == 'instructor' || s == 'prof') {
-      return 'teacher';
-    }
-    if (s == 'admin' || s == 'administrator' || s == 'administration') {
-      return 'admin';
-    }
-    return '';
-  }
-
   static String _sanitizeEventPart(String raw) {
     return raw
         .trim()
         .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')
         .replaceAll(RegExp(r'_+'), '_')
         .replaceAll(RegExp(r'^_+|_+$'), '');
-  }
-
-  static Future<bool> _isLearnerActor(String uid) async {
-    final safeUid = uid.trim();
-    if (safeUid.isEmpty) return false;
-    try {
-      final roleSnap = await _db.child('users/$safeUid/role').get();
-      return _normalizeRole(roleSnap.value) == 'learner';
-    } catch (_) {
-      return false;
-    }
   }
 
   static Future<Set<String>> _assignedTeacherUidsForCourse(
@@ -503,9 +478,6 @@ class CourseFeedbackService {
     final commentId = (ref.key ?? '').trim();
     if (commentId.isEmpty) return;
 
-    final isLearner = await _isLearnerActor(uid);
-    if (!isLearner) return;
-
     try {
       await _notifyRecordedCommentImmediately(
         courseId: courseId,
@@ -544,6 +516,17 @@ class CourseFeedbackService {
       'createdAt': now,
       'updatedAt': now,
     });
+
+    try {
+      await _notifyRecordedCommentImmediately(
+        courseId: courseId,
+        lessonId: lessonId,
+        commentId: commentId,
+        actorUid: uid,
+        actorName: identity['displayName'] ?? 'Learner',
+        text: text,
+      );
+    } catch (_) {}
   }
 
   static Future<void> updateOwnLessonCommentText({

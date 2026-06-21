@@ -66,6 +66,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _commentsBusy = false;
   bool _notesExpanded = true;
   bool _commentsExpanded = true;
+  bool _posting = false;
+
+  final TextEditingController _commentC = TextEditingController();
+  final FocusNode _commentFocus = FocusNode();
 
   String? _error;
 
@@ -134,6 +138,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _exitFullscreen(restoreStateOnly: true);
     _restorePreferredOrientations();
     _restoreSystemUi();
+    _commentC.dispose();
+    _commentFocus.dispose();
     super.dispose();
   }
 
@@ -857,7 +863,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       builder: (ctx) => AlertDialog(
         title: const Text('Delete note?'),
         content: const Text(
-          'This note will be removed from your lesson notes.',
+          'This note will be removed from your private notes.',
         ),
         actions: [
           TextButton(
@@ -993,7 +999,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   Widget _buildCompactActionPanel({required bool isLandscape}) {
     final accent = const Color(0xFF0EA5E9);
-    final title = 'Lesson Notes';
+    final title = 'My Private Notes';
 
     return Container(
       padding: const EdgeInsets.all(10),
@@ -1579,7 +1585,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     if (AppConnectivity.instance.isOffline) {
       AppToast.show(
         context,
-        'Comments need internet. Your lesson notes still work offline.',
+        'Comments need internet. Your private notes still work offline.',
         type: AppToastType.info,
       );
       return;
@@ -1724,7 +1730,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 _commentsBusy
                     ? 'Loading discussion...'
                     : commentsOffline
-                    ? 'Comments need internet. Use Lesson Notes above while offline.'
+                    ? 'Comments need internet. Use My Private Notes above while offline.'
                     : _comments.isEmpty
                     ? 'No comments yet. Open discussion to start the conversation.'
                     : 'Tap Expand to preview ${_comments.length} comments.',
@@ -1788,6 +1794,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                         _buildPreviewCommentCard(item),
                         const SizedBox(height: 8),
                       ],
+                      if (!commentsOffline) ...[
+                        _buildInlineCommentComposer(accent),
+                        const SizedBox(height: 8),
+                      ],
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
@@ -1807,6 +1817,65 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       ),
                     ],
                   ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInlineCommentComposer(Color accent) {
+    final offline = AppConnectivity.instance.isOffline;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: _commentC,
+            focusNode: _commentFocus,
+            enabled: !offline,
+            maxLength: 400,
+            minLines: 1,
+            maxLines: 3,
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: offline
+                  ? 'Comments need internet.'
+                  : 'Write a comment...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _posting || offline ? null : _postCommentInline,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(40),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  icon: const Icon(Icons.send_rounded),
+                  label: Text(
+                    offline
+                        ? 'Offline'
+                        : _posting
+                        ? 'Posting...'
+                        : 'Post comment',
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2030,6 +2099,61 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final secondary = widget.courseKey.trim();
     if (secondary.isNotEmpty && seen.add(secondary)) ordered.add(secondary);
     return ordered;
+  }
+
+  Future<void> _postCommentInline() async {
+    if (AppConnectivity.instance.isOffline) {
+      AppToast.show(
+        context,
+        'Comments need internet. Use My Private Notes above while offline.',
+        type: AppToastType.info,
+      );
+      return;
+    }
+    final text = _commentC.text.trim();
+    if (text.isEmpty) {
+      AppToast.show(
+        context,
+        'Write a comment first.',
+        type: AppToastType.error,
+      );
+      return;
+    }
+    if (text.length > 400) {
+      AppToast.show(
+        context,
+        'Comment is too long (max 400 chars).',
+        type: AppToastType.error,
+      );
+      return;
+    }
+
+    setState(() => _posting = true);
+    try {
+      await CourseFeedbackService.addLessonComment(
+        courseId: _primaryFeedbackCourseId,
+        lessonId: widget.sessionId,
+        uid: widget.uid,
+        text: text,
+        type: 'comment',
+      );
+      _commentC.clear();
+      await _loadComments();
+      if (!mounted) return;
+      AppToast.show(context, 'Comment posted.');
+      _commentFocus.requestFocus();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage(e.toString()),
+        type: AppToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _posting = false);
+      }
+    }
   }
 
   Future<void> _loadComments() async {
