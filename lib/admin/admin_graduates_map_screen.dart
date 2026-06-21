@@ -153,51 +153,98 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
                 final item = items[index];
                 return Card(
                   color: Colors.white,
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      radius: 26,
-                      backgroundColor: _primaryBlue.withValues(alpha: 0.08),
-                      backgroundImage: item.photoUrl.isEmpty
-                          ? null
-                          : NetworkImage(item.photoUrl),
-                      child: item.photoUrl.isEmpty
-                          ? const Icon(Icons.person_rounded)
-                          : null,
-                    ),
-                    title: Text(
-                      item.name,
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    subtitle: Text(
-                      '${item.city}, ${item.country}\nLat: ${item.lat}, Lng: ${item.lng}',
-                    ),
-                    isThreeLine: true,
-                    trailing: Wrap(
-                      spacing: 4,
+                  elevation: 0.5,
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Chip(
-                          label: Text(item.active ? 'Active' : 'Hidden'),
-                          backgroundColor: item.active
-                              ? Colors.green.withValues(alpha: 0.12)
-                              : Colors.orange.withValues(alpha: 0.12),
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor:
+                              _primaryBlue.withValues(alpha: 0.08),
+                          backgroundImage: item.photoUrl.isEmpty
+                              ? null
+                              : NetworkImage(item.photoUrl),
+                          child: item.photoUrl.isEmpty
+                              ? const Icon(Icons.person_rounded, size: 22)
+                              : null,
                         ),
-                        if (item.blurPhoto)
-                          Chip(
-                            label: const Text('Blurred'),
-                            backgroundColor: Colors.grey.withValues(alpha: 0.12),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                item.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                '${item.city}, ${item.country}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _primaryBlue.withValues(alpha: 0.7),
+                                ),
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                'Lat: ${item.lat}, Lng: ${item.lng}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _primaryBlue.withValues(alpha: 0.45),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  _CompactChip(
+                                    label: item.active ? 'Active' : 'Hidden',
+                                    color: item.active
+                                        ? Colors.green
+                                        : Colors.orange,
+                                  ),
+                                  if (item.blurPhoto)
+                                    const Padding(
+                                      padding: EdgeInsets.only(left: 4),
+                                      child: _CompactChip(
+                                        label: 'Blurred',
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
                           ),
-                        IconButton(
-                          tooltip: 'Edit',
-                          onPressed: () => _openEditor(item),
-                          icon: const Icon(Icons.edit_rounded),
                         ),
-                        IconButton(
-                          tooltip: 'Delete',
-                          onPressed: () => _delete(item),
-                          icon: const Icon(
-                            Icons.delete_rounded,
-                            color: Colors.red,
-                          ),
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Edit',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _openEditor(item),
+                              icon: const Icon(
+                                Icons.edit_rounded,
+                                size: 18,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Delete',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => _delete(item),
+                              icon: const Icon(
+                                Icons.delete_rounded,
+                                size: 18,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -686,6 +733,32 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
 }
 
 
+
+class _CompactChip extends StatelessWidget {
+  const _CompactChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: color.withValues(alpha: 0.9),
+        ),
+      ),
+    );
+  }
+}
 
 class _GraduateMapAdminItem {
   const _GraduateMapAdminItem({
