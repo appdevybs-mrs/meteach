@@ -285,6 +285,11 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
 
   Timer? _geocodeTimer;
 
+  List<Map<String, dynamic>> _citySearchResults = [];
+  bool _searchingCity = false;
+  Timer? _citySearchTimer;
+  late final FocusNode _cityFocusNode;
+
   Map<String, List<String>> _worldData = const {};
   String _selectedCountry = '';
 
@@ -322,6 +327,15 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     _active = item?.active ?? true;
     _blurPhoto = item?.blurPhoto ?? false;
     _selectedCountry = item?.country ?? '';
+    _cityFocusNode = FocusNode();
+    _cityFocusNode.addListener(() {
+      if (!_cityFocusNode.hasFocus) {
+        setState(() {
+          _citySearchResults.clear();
+          _citySearchTimer?.cancel();
+        });
+      }
+    });
     _loadWorldData();
   }
 
@@ -350,16 +364,10 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
       ..sort();
   }
 
-  List<String> get _citySuggestions {
-    final cities = _worldData[_selectedCountry];
-    if (cities == null || cities.isEmpty) return const <String>[];
-    if (_cityC.text.trim().isEmpty) return cities;
-    final q = _cityC.text.trim().toLowerCase();
-    return cities.where((c) => c.toLowerCase().contains(q)).take(10).toList();
-  }
-
   @override
   void dispose() {
+    _citySearchTimer?.cancel();
+    _cityFocusNode.dispose();
     _geocodeTimer?.cancel();
     _nameC.dispose();
     _countryC.dispose();
@@ -472,6 +480,73 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   void _scheduleGeocode() {
     _geocodeTimer?.cancel();
     _geocodeTimer = Timer(const Duration(milliseconds: 1200), _geocode);
+  }
+
+  void _onCityChanged(String value) {
+    _cityC.text = value;
+    _cityC.selection = TextSelection.fromPosition(
+      TextPosition(offset: value.length),
+    );
+    _citySearchTimer?.cancel();
+    _geocodeTimer?.cancel();
+    if (value.trim().length < 2) {
+      setState(() {
+        _citySearchResults.clear();
+      });
+      return;
+    }
+    _scheduleGeocode();
+    _citySearchTimer = Timer(const Duration(milliseconds: 400), () {
+      _searchCity(value.trim());
+    });
+  }
+
+  Future<void> _searchCity(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() => _searchingCity = true);
+    try {
+      final country = _countryC.text.trim();
+      var uriStr = 'https://nominatim.openstreetmap.org/search'
+          '?q=${Uri.encodeComponent(query)}'
+          '&format=json&limit=10';
+      if (country.isNotEmpty) {
+        uriStr += '&country=${Uri.encodeComponent(country)}';
+      }
+      final uri = Uri.parse(uriStr);
+      final res = await http.get(uri, headers: {
+        'User-Agent': 'com.appdevybs.mycertenglish',
+      });
+      if (!mounted) return;
+      final data = jsonDecode(res.body) as List;
+      setState(() {
+        _citySearchResults = data.cast<Map<String, dynamic>>();
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _citySearchResults.clear();
+      });
+    } finally {
+      if (mounted) setState(() => _searchingCity = false);
+    }
+  }
+
+  void _onCitySelected(Map<String, dynamic> result) {
+    final name = result['name']?.toString() ?? '';
+    _cityC.text = name;
+    _cityC.selection = TextSelection.fromPosition(
+      TextPosition(offset: name.length),
+    );
+    final lat = double.tryParse((result['lat'] ?? '').toString());
+    final lon = double.tryParse((result['lon'] ?? '').toString());
+    if (lat != null) _latC.text = lat.toString();
+    if (lon != null) _lngC.text = lon.toString();
+    _citySearchTimer?.cancel();
+    _geocodeTimer?.cancel();
+    _cityFocusNode.unfocus();
+    setState(() {
+      _citySearchResults.clear();
+    });
   }
 
   Future<void> _save() async {
@@ -626,30 +701,92 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                 ),
                 const SizedBox(height: 10),
                 Autocomplete<String>(
-                  optionsBuilder: (_) => _citySuggestions,
+                  optionsBuilder: (_) {
+                    return _citySearchResults
+                        .map((r) => r['name']?.toString() ?? '')
+                        .toList();
+                  },
+                  optionsViewBuilder: (ctx, onSelected, options) {
+                    return Material(
+                      elevation: 8,
+                      borderRadius: BorderRadius.circular(6),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxHeight: 240,
+                        ),
+                        child: ListView.builder(
+                          padding: EdgeInsets.zero,
+                          itemCount: options.length,
+                          itemBuilder: (ctx, i) {
+                            final name = options.elementAt(i);
+                            final r = _citySearchResults.firstWhere(
+                              (r) => r['name']?.toString() == name,
+                              orElse: () => <String, dynamic>{},
+                            );
+                            final display =
+                                (r['display_name'] ?? '').toString();
+                            return ListTile(
+                              dense: true,
+                              title: Text(
+                                name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              subtitle: display.isNotEmpty && display != name
+                                  ? Text(
+                                      display,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: const Color(0xFF1A2B48).withValues(
+                                          alpha: 0.55,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
+                              onTap: () => onSelected(name),
+                            );
+                          },
+                        ),
+                      ),
+                    );
+                  },
                   initialValue: TextEditingValue(text: _cityC.text),
                   fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
-                    _cityC.addListener(() {});
                     return TextFormField(
                       controller: controller,
                       focusNode: focusNode,
-                      decoration: const InputDecoration(labelText: 'City'),
+                      decoration: InputDecoration(
+                        labelText: 'City',
+                        hintText: 'Type to search cities',
+                        suffixIcon: _searchingCity
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
                       validator: _required,
-                      onChanged: (v) {
-                        _cityC.text = v;
-                        _cityC.selection = TextSelection.fromPosition(
-                          TextPosition(offset: v.length),
-                        );
-                        _scheduleGeocode();
-                      },
+                      onChanged: _onCityChanged,
                     );
                   },
                   onSelected: (v) {
-                    _cityC.text = v;
-                    _cityC.selection = TextSelection.fromPosition(
-                      TextPosition(offset: v.length),
+                    final result = _citySearchResults.cast<Map<String, dynamic>?>().firstWhere(
+                      (r) => r?['name']?.toString() == v,
+                      orElse: () => null,
                     );
-                    _scheduleGeocode();
+                    if (result != null) {
+                      _onCitySelected(result);
+                    }
                   },
                 ),
                 const SizedBox(height: 10),
