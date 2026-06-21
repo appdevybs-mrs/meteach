@@ -6938,14 +6938,32 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                             border: Border.all(color: Colors.lightBlue.shade200),
                           ),
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               Expanded(
-                                child: Text(
-                                  '${s.time} • ${s.teacherName} • Session $session',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    color: primaryBlue,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      s.teacherName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: primaryBlue,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      isAr
+                                          ? '${s.time} • جلسة $session'
+                                          : '${s.time} • Session $session',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               Container(
@@ -6966,8 +6984,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                 ),
                                 child: Text(
                                   status == _SlotStatus.joinWithSessionChange
-                                      ? 'Join + switch'
-                                      : 'Join',
+                                      ? (isAr ? 'انضمام + تبديل' : 'Join + switch')
+                                      : (isAr ? 'انضمام' : 'Join'),
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w800,
                                     color: primaryBlue,

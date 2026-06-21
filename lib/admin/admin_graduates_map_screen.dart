@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 
 import '../services/backend_api.dart';
@@ -205,10 +207,10 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
   }
 }
 
-class _GraduateMapEditorDialog extends StatefulWidget {
-  const _GraduateMapEditorDialog({this.item});
 
+class _GraduateMapEditorDialog extends StatefulWidget {
   final _GraduateMapAdminItem? item;
+  const _GraduateMapEditorDialog({this.item});
 
   @override
   State<_GraduateMapEditorDialog> createState() =>
@@ -227,6 +229,24 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   bool _saving = false;
   bool _uploading = false;
 
+  Map<String, List<String>> _worldData = const {};
+  String _selectedCountry = '';
+
+  static double? _parseCoord(String raw) {
+    var clean = raw
+        .replaceAll('°', '')
+        .replaceAll(RegExp(r'[NSEW]', caseSensitive: false), '')
+        .trim();
+    final dirUp = raw.toUpperCase().trim();
+    final isSouth = dirUp.contains('S') || dirUp.contains('جنوب');
+    final isWest = dirUp.contains('W') || dirUp.contains('غرب');
+    final n = double.tryParse(clean);
+    if (n == null) return null;
+    var result = n;
+    if (isSouth || isWest) result = -result;
+    return result;
+  }
+
   bool get _isEditing => widget.item != null;
 
   @override
@@ -236,10 +256,49 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     _nameC = TextEditingController(text: item?.name ?? '');
     _countryC = TextEditingController(text: item?.country ?? '');
     _cityC = TextEditingController(text: item?.city ?? '');
-    _latC = TextEditingController(text: item?.lat.toString() ?? '');
-    _lngC = TextEditingController(text: item?.lng.toString() ?? '');
+    _latC = TextEditingController(
+      text: item != null ? item.lat.toString() : '',
+    );
+    _lngC = TextEditingController(
+      text: item != null ? item.lng.toString() : '',
+    );
     _photoUrl = item?.photoUrl ?? '';
     _active = item?.active ?? true;
+    _selectedCountry = item?.country ?? '';
+    _loadWorldData();
+  }
+
+  Future<void> _loadWorldData() async {
+    try {
+      final data = await rootBundle.loadString('assets/world_data.json');
+      final parsed = jsonDecode(data) as Map;
+      final raw = parsed['countries'] as Map;
+      final map = <String, List<String>>{};
+      raw.forEach((k, v) {
+        map[k.toString()] = (v as List).map((e) => e.toString()).toList();
+      });
+      if (!mounted) return;
+      setState(() => _worldData = map);
+    } catch (_) {
+    }
+  }
+
+  List<String> get _countrySuggestions {
+    if (_countryC.text.trim().isEmpty) return _worldData.keys.toList()..sort();
+    final q = _countryC.text.trim().toLowerCase();
+    return _worldData.keys
+        .where((c) => c.toLowerCase().contains(q))
+        .take(10)
+        .toList()
+      ..sort();
+  }
+
+  List<String> get _citySuggestions {
+    final cities = _worldData[_selectedCountry];
+    if (cities == null || cities.isEmpty) return const <String>[];
+    if (_cityC.text.trim().isEmpty) return cities;
+    final q = _cityC.text.trim().toLowerCase();
+    return cities.where((c) => c.toLowerCase().contains(q)).take(10).toList();
   }
 
   @override
@@ -330,8 +389,12 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     if (_saving || _uploading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    final lat = double.parse(_latC.text.trim());
-    final lng = double.parse(_lngC.text.trim());
+    final latRaw = _latC.text.trim();
+    final lngRaw = _lngC.text.trim();
+    final lat = _parseCoord(latRaw);
+    final lng = _parseCoord(lngRaw);
+    if (lat == null || lng == null) return;
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -372,20 +435,19 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     }
   }
 
-  String? _required(String? value) {
-    return (value ?? '').trim().isEmpty ? 'Required' : null;
-  }
+  String? _required(String? value) =>
+      (value ?? '').trim().isEmpty ? 'Required' : null;
 
   String? _latValidator(String? value) {
-    final n = double.tryParse((value ?? '').trim());
-    if (n == null) return 'Enter a number';
+    final n = _parseCoord((value ?? '').trim());
+    if (n == null) return 'Enter a number (e.g. 21.0285 or 21.0285° N)';
     if (n < -90 || n > 90) return 'Latitude must be -90 to 90';
     return null;
   }
 
   String? _lngValidator(String? value) {
-    final n = double.tryParse((value ?? '').trim());
-    if (n == null) return 'Enter a number';
+    final n = _parseCoord((value ?? '').trim());
+    if (n == null) return 'Enter a number (e.g. 105.8 or 105.8° E)';
     if (n < -180 || n > 180) return 'Longitude must be -180 to 180';
     return null;
   }
@@ -436,18 +498,67 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                   validator: _required,
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
-                  controller: _countryC,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: 'Country'),
-                  validator: _required,
+                Autocomplete<String>(
+                  optionsBuilder: (_) => _countrySuggestions,
+                  initialValue: TextEditingValue(text: _countryC.text),
+                  fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
+                    _countryC.addListener(() {});
+                    return TextFormField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(labelText: 'Country'),
+                      validator: _required,
+                      onChanged: (v) {
+                        _countryC.text = v;
+                        _countryC.selection = TextSelection.fromPosition(
+                          TextPosition(offset: v.length),
+                        );
+                        if (v != _selectedCountry &&
+                            _worldData.containsKey(v)) {
+                          setState(() {
+                            _selectedCountry = v;
+                            _cityC.clear();
+                          });
+                        }
+                      },
+                    );
+                  },
+                  onSelected: (v) {
+                    _countryC.text = v;
+                    _countryC.selection = TextSelection.fromPosition(
+                      TextPosition(offset: v.length),
+                    );
+                    setState(() {
+                      _selectedCountry = v;
+                      _cityC.clear();
+                    });
+                  },
                 ),
                 const SizedBox(height: 10),
-                TextFormField(
-                  controller: _cityC,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: 'City'),
-                  validator: _required,
+                Autocomplete<String>(
+                  optionsBuilder: (_) => _citySuggestions,
+                  initialValue: TextEditingValue(text: _cityC.text),
+                  fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
+                    _cityC.addListener(() {});
+                    return TextFormField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(labelText: 'City'),
+                      validator: _required,
+                      onChanged: (v) {
+                        _cityC.text = v;
+                        _cityC.selection = TextSelection.fromPosition(
+                          TextPosition(offset: v.length),
+                        );
+                      },
+                    );
+                  },
+                  onSelected: (v) {
+                    _cityC.text = v;
+                    _cityC.selection = TextSelection.fromPosition(
+                      TextPosition(offset: v.length),
+                    );
+                  },
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -461,6 +572,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                         ),
                         decoration: const InputDecoration(
                           labelText: 'Latitude',
+                          hintText: '21.0285 or 21.0285° N',
                         ),
                         validator: _latValidator,
                       ),
@@ -475,6 +587,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                         ),
                         decoration: const InputDecoration(
                           labelText: 'Longitude',
+                          hintText: '105.8 or 105.8° E',
                         ),
                         validator: _lngValidator,
                       ),
@@ -512,6 +625,8 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     );
   }
 }
+
+
 
 class _GraduateMapAdminItem {
   const _GraduateMapAdminItem({

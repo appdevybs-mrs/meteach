@@ -292,8 +292,15 @@ class _PulsingLoginFabState extends State<_PulsingLoginFab>
   }
 }
 
-class WorldGraduatesHome extends StatelessWidget {
+class WorldGraduatesHome extends StatefulWidget {
   const WorldGraduatesHome({super.key});
+
+  @override
+  State<WorldGraduatesHome> createState() => _WorldGraduatesHomeState();
+}
+
+class _WorldGraduatesHomeState extends State<WorldGraduatesHome> {
+  bool _blurPins = false;
 
   @override
   Widget build(BuildContext context) {
@@ -301,6 +308,35 @@ class WorldGraduatesHome extends StatelessWidget {
       child: Column(
         children: [
           const SimpleTopBar(title: 'Your Bridge School'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+            child: Row(
+              children: [
+                Icon(Icons.public_rounded, size: 20, color: Brand.primaryBlue),
+                const SizedBox(width: 8),
+                Text(
+                  'YBS Graduates Around The World',
+                  style: const TextStyle(
+                    color: Brand.primaryBlue,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(
+                    _blurPins
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                  ),
+                  onPressed: () => setState(() => _blurPins = !_blurPins),
+                  tooltip: _blurPins
+                      ? 'Show faces'
+                      : 'Blur faces for privacy',
+                ),
+              ],
+            ),
+          ),
           Expanded(
             child: StreamBuilder<DatabaseEvent>(
               stream: FirebaseDatabase.instance
@@ -311,93 +347,15 @@ class WorldGraduatesHome extends StatelessWidget {
                   snapshot.data?.snapshot.value,
                 );
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                  children: [
-                    CardShell(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Our Graduates Around The World',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(
-                                  color: Brand.primaryBlue,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'See our learners and graduates from different cities and countries.',
-                            style: TextStyle(
-                              color: Brand.mainText.withValues(alpha: 0.75),
-                              fontWeight: FontWeight.w600,
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    CardShell(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child:
-                            snapshot.connectionState == ConnectionState.waiting
-                            ? const SizedBox(
-                                height: 320,
-                                child: Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              )
-                            : graduates.isEmpty
-                            ? const _EmptyWorldGraduates()
-                            : _GraduatesWorldMap(graduates: graduates),
-                      ),
-                    ),
-                    if (graduates.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      CardShell(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Graduate List',
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    color: Brand.primaryBlue,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                            ),
-                            const SizedBox(height: 10),
-                            ...graduates.map(
-                              (g) => ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: CircleAvatar(
-                                  backgroundColor: Brand.primaryBlue.withValues(
-                                    alpha: 0.08,
-                                  ),
-                                  backgroundImage: g.photoUrl.isEmpty
-                                      ? null
-                                      : NetworkImage(g.photoUrl),
-                                  child: g.photoUrl.isEmpty
-                                      ? const Icon(Icons.person_rounded)
-                                      : null,
-                                ),
-                                title: Text(
-                                  g.name,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                                subtitle: Text('${g.city}, ${g.country}'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (graduates.isEmpty) {
+                  return const _EmptyWorldGraduates();
+                }
+                return _GlobeWrapper(
+                  graduates: graduates,
+                  blurPins: _blurPins,
                 );
               },
             ),
@@ -503,122 +461,155 @@ class _EmptyWorldGraduates extends StatelessWidget {
   }
 }
 
-class _GraduatesWorldMap extends StatelessWidget {
-  const _GraduatesWorldMap({required this.graduates});
+class _GlobeWrapper extends StatefulWidget {
+  const _GlobeWrapper({
+    required this.graduates,
+    required this.blurPins,
+  });
 
   final List<_GraduateMapPerson> graduates;
+  final bool blurPins;
+
+  @override
+  State<_GlobeWrapper> createState() => _GlobeWrapperState();
+}
+
+class _GlobeWrapperState extends State<_GlobeWrapper> {
+  EarthController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _createGlobe();
+  }
+
+  @override
+  void didUpdateWidget(_GlobeWrapper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.graduates != oldWidget.graduates ||
+        widget.blurPins != oldWidget.blurPins) {
+      _controller?.dispose();
+      _createGlobe();
+    }
+  }
+
+  void _createGlobe() {
+    _controller = EarthController()..enableAutoRotate = true;
+    for (final g in widget.graduates) {
+      _controller!.addNode(
+        EarthNode(
+          id: g.id,
+          latitude: g.lat,
+          longitude: g.lng,
+          child: _GraduatePhotoPin(
+            person: g,
+            blurred: widget.blurPins,
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 420,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: FlutterMap(
-          options: MapOptions(
-            initialCenter: const LatLng(20, 20),
-            initialZoom: 2.0,
-            minZoom: 2,
-            maxZoom: 18,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: _controller == null
+          ? const SizedBox()
+          : Earth3D(
+              controller: _controller!,
+              texture: const AssetImage('assets/2k_earth_day.jpg'),
             ),
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.appdevybs.mycertenglish',
-              maxZoom: 19,
-            ),
-            MarkerLayer(
-              markers: graduates.map((g) {
-                return Marker(
-                  point: LatLng(g.lat, g.lng),
-                  width: 60,
-                  height: 80,
-                  child: _GraduatePhotoPin(person: g),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
 
 class _GraduatePhotoPin extends StatelessWidget {
-  const _GraduatePhotoPin({required this.person});
+  const _GraduatePhotoPin({
+    required this.person,
+    this.blurred = false,
+  });
 
   final _GraduateMapPerson person;
+  final bool blurred;
 
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: '${person.name}\n${person.city}, ${person.country}',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: () => showDialog<void>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text(person.name),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 42,
-                  backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
-                  backgroundImage: person.photoUrl.isEmpty
-                      ? null
-                      : NetworkImage(person.photoUrl),
-                  child: person.photoUrl.isEmpty
-                      ? const Icon(Icons.person_rounded, size: 42)
-                      : null,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '${person.city}, ${person.country}',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
+  Widget _photoPin() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
+          child: CircleAvatar(
+            radius: 20,
+            backgroundColor: Brand.actionOrange,
+            backgroundImage: person.photoUrl.isEmpty
+                ? null
+                : NetworkImage(person.photoUrl),
+            child: person.photoUrl.isEmpty
+                ? const Icon(Icons.person_rounded, color: Colors.white)
+                : null,
+          ),
         ),
-        child: Column(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.22),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: CircleAvatar(
-                radius: 20,
-                backgroundColor: Brand.actionOrange,
+        Icon(Icons.arrow_drop_down_rounded, color: Brand.actionOrange),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(person.name),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 42,
+                backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
                 backgroundImage: person.photoUrl.isEmpty
                     ? null
                     : NetworkImage(person.photoUrl),
                 child: person.photoUrl.isEmpty
-                    ? const Icon(Icons.person_rounded, color: Colors.white)
+                    ? const Icon(Icons.person_rounded, size: 42)
                     : null,
               ),
+              const SizedBox(height: 12),
+              Text(
+                '${person.city}, ${person.country}',
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
             ),
-            Icon(Icons.arrow_drop_down_rounded, color: Brand.actionOrange),
           ],
         ),
       ),
+      child: blurred ? ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: _photoPin(),
+      ) : _photoPin(),
     );
   }
 }

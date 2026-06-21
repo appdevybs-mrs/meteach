@@ -3,7 +3,7 @@ description: "Your Bridge School  – Not for The Certificate for The Skill"
 
 publish_to: 'none'
 
-version: 2.0.0+2133
+version: 2.0.0+2134
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -65,8 +65,7 @@ dependencies:
   confetti: ^0.8.0
   cached_network_image: ^3.4.1
   image_gallery_saver: ^2.0.3
-  flutter_map: ^7.0.2
-  latlong2: ^0.9.1
+  flutter_globe_3d: ^2.2.5
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -92,3 +91,5 @@ flutter:
     - assets/fonts/HughIsLife.ttf
     - assets/images/cpd.pdf
     - assets/images/milestone.pdf
+    - assets/world_data.json
+    - assets/2k_earth_day.jpg
