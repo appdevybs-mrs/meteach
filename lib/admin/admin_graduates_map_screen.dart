@@ -234,6 +234,9 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   bool _blurPhoto = false;
   bool _saving = false;
   bool _uploading = false;
+  bool _geocoding = false;
+
+  Timer? _geocodeTimer;
 
   Map<String, List<String>> _worldData = const {};
   String _selectedCountry = '';
@@ -310,6 +313,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
 
   @override
   void dispose() {
+    _geocodeTimer?.cancel();
     _nameC.dispose();
     _countryC.dispose();
     _cityC.dispose();
@@ -391,8 +395,39 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     return url;
   }
 
+  Future<void> _geocode() async {
+    final city = _cityC.text.trim();
+    final country = _countryC.text.trim();
+    if (city.isEmpty || country.isEmpty) return;
+
+    setState(() => _geocoding = true);
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?q=$city,$country&format=json&limit=1',
+      );
+      final res = await http.get(uri, headers: {
+        'User-Agent': 'com.appdevybs.mycertenglish',
+      });
+      if (!mounted) return;
+      final data = jsonDecode(res.body) as List;
+      if (data.isEmpty) return;
+      final first = data[0] as Map;
+      final lat = first['lat'];
+      final lon = first['lon'];
+      if (lat != null) _latC.text = lat.toString();
+      if (lon != null) _lngC.text = lon.toString();
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _geocoding = false);
+    }
+  }
+
+  void _scheduleGeocode() {
+    _geocodeTimer?.cancel();
+    _geocodeTimer = Timer(const Duration(milliseconds: 1200), _geocode);
+  }
+
   Future<void> _save() async {
-    FocusScope.of(context).unfocus();
     if (_saving || _uploading) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -558,6 +593,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                         _cityC.selection = TextSelection.fromPosition(
                           TextPosition(offset: v.length),
                         );
+                        _scheduleGeocode();
                       },
                     );
                   },
@@ -566,11 +602,21 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                     _cityC.selection = TextSelection.fromPosition(
                       TextPosition(offset: v.length),
                     );
+                    _scheduleGeocode();
                   },
                 ),
                 const SizedBox(height: 10),
                 Row(
                   children: [
+                    if (_geocoding)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 8),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
                     Expanded(
                       child: TextFormField(
                         controller: _latC,
@@ -611,8 +657,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                 SwitchListTile(
                   value: _blurPhoto,
                   onChanged: (v) => setState(() => _blurPhoto = v),
-                  title: const Text('Blur photo on World map'),
-                  subtitle: const Text('Protect privacy of shy graduates'),
+                  title: const Text('Blur photo for privacy'),
                 ),
               ],
             ),

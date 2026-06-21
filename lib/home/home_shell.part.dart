@@ -292,14 +292,9 @@ class _PulsingLoginFabState extends State<_PulsingLoginFab>
   }
 }
 
-class WorldGraduatesHome extends StatefulWidget {
+class WorldGraduatesHome extends StatelessWidget {
   const WorldGraduatesHome({super.key});
 
-  @override
-  State<WorldGraduatesHome> createState() => _WorldGraduatesHomeState();
-}
-
-class _WorldGraduatesHomeState extends State<WorldGraduatesHome> {
   @override
   Widget build(BuildContext context) {
     return SoftBackground(
@@ -339,7 +334,7 @@ class _WorldGraduatesHomeState extends State<WorldGraduatesHome> {
                 if (graduates.isEmpty) {
                   return const _EmptyWorldGraduates();
                 }
-                return _GlobeWrapper(graduates: graduates);
+                return _GraduatesWorldMap(graduates: graduates);
               },
             ),
           ),
@@ -369,6 +364,21 @@ class _GraduateMapPerson {
   final double lat;
   final double lng;
   final bool blurPhoto;
+
+  _GraduateMapPerson copyWith({
+    double? lat,
+    double? lng,
+  }) =>
+      _GraduateMapPerson(
+        id: id,
+        name: name,
+        photoUrl: photoUrl,
+        country: country,
+        city: city,
+        lat: lat ?? this.lat,
+        lng: lng ?? this.lng,
+        blurPhoto: blurPhoto,
+      );
 
   static List<_GraduateMapPerson> fromSnapshot(dynamic value) {
     if (value is! Map) return const <_GraduateMapPerson>[];
@@ -447,81 +457,79 @@ class _EmptyWorldGraduates extends StatelessWidget {
   }
 }
 
-class _GlobeWrapper extends StatefulWidget {
-  const _GlobeWrapper({required this.graduates});
+List<_GraduateMapPerson> _scatterPins(List<_GraduateMapPerson> graduates) {
+  final groups = <String, List<_GraduateMapPerson>>{};
+  for (final g in graduates) {
+    groups.putIfAbsent('${g.lat},${g.lng}', () => []).add(g);
+  }
+  final result = <_GraduateMapPerson>[];
+  for (final group in groups.values) {
+    if (group.length == 1) {
+      result.add(group[0]);
+    } else {
+      for (var i = 0; i < group.length; i++) {
+        final angle = (2 * math.pi * i) / group.length;
+        const offset = 0.02;
+        result.add(
+          group[i].copyWith(
+            lat: group[i].lat + offset * math.sin(angle),
+            lng: group[i].lng + offset * math.cos(angle),
+          ),
+        );
+      }
+    }
+  }
+  return result;
+}
+
+class _GraduatesWorldMap extends StatelessWidget {
+  const _GraduatesWorldMap({required this.graduates});
 
   final List<_GraduateMapPerson> graduates;
 
   @override
-  State<_GlobeWrapper> createState() => _GlobeWrapperState();
-}
-
-class _GlobeWrapperState extends State<_GlobeWrapper> {
-  EarthController? _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _createGlobe();
-  }
-
-  @override
-  void didUpdateWidget(_GlobeWrapper oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.graduates != oldWidget.graduates) {
-      _controller?.dispose();
-      _createGlobe();
-    }
-  }
-
-  void _createGlobe() {
-    _controller = EarthController()
-      ..enableAutoRotate = true;
-    for (final g in widget.graduates) {
-      _controller!.addNode(
-        EarthNode(
-          id: g.id,
-          latitude: g.lat,
-          longitude: g.lng,
-          child: _GraduatePhotoPin(
-            person: g,
-            blurred: g.blurPhoto,
-          ),
-        ),
-      );
-    }
-    _controller!.setZoom(3.0);
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final scattered = _scatterPins(graduates);
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
-      child: _controller == null
-          ? const SizedBox()
-          : Earth3D(
-              controller: _controller!,
-              initialScale: 1.0,
-              texture: const AssetImage('assets/2k_earth_day.jpg'),
-            ),
+      child: FlutterMap(
+        options: MapOptions(
+          initialCenter: const LatLng(20, 20),
+          initialZoom: 2.0,
+          minZoom: 2,
+          maxZoom: 10,
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.all,
+          ),
+        ),
+        children: [
+          TileLayer(
+            urlTemplate:
+                'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{scale}.png',
+            subdomains: const ['a', 'b', 'c', 'd'],
+            userAgentPackageName: 'com.appdevybs.mycertenglish',
+            maxZoom: 19,
+          ),
+          MarkerLayer(
+            markers: scattered.map((g) {
+              return Marker(
+                point: LatLng(g.lat, g.lng),
+                width: 60,
+                height: 80,
+                child: _GraduatePhotoPin(person: g),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _GraduatePhotoPin extends StatelessWidget {
-  const _GraduatePhotoPin({
-    required this.person,
-    this.blurred = false,
-  });
+  const _GraduatePhotoPin({required this.person});
 
   final _GraduateMapPerson person;
-  final bool blurred;
 
   Widget _photoPin() {
     return Column(
@@ -590,10 +598,12 @@ class _GraduatePhotoPin extends StatelessWidget {
           ],
         ),
       ),
-      child: blurred ? ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: _photoPin(),
-      ) : _photoPin(),
+      child: person.blurPhoto
+          ? ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+              child: _photoPin(),
+            )
+          : _photoPin(),
     );
   }
 }

@@ -41,7 +41,8 @@ import 'shared/icon_theme.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
 import 'package:video_player/video_player.dart';
-import 'package:flutter_globe_3d/flutter_globe_3d.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 part 'home/home_shell.part.dart';
 part 'home/login.part.dart';

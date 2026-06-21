@@ -65,7 +65,8 @@ dependencies:
   confetti: ^0.8.0
   cached_network_image: ^3.4.1
   image_gallery_saver: ^2.0.3
-  flutter_globe_3d: ^2.2.5
+  flutter_map: ^8.3.0
+  latlong2: ^0.9.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -92,4 +93,3 @@ flutter:
     - assets/images/cpd.pdf
     - assets/images/milestone.pdf
     - assets/world_data.json
-    - assets/2k_earth_day.jpg
