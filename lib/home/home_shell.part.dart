@@ -547,7 +547,7 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
         children: [
           TileLayer(
             urlTemplate:
-                'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+                'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
             subdomains: const ['a', 'b', 'c', 'd'],
             userAgentPackageName: 'com.appdevybs.mycertenglish',
             maxZoom: 19,
