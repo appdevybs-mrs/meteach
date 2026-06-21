@@ -1,0 +1,307 @@
+{
+  "Algeria": {
+    "code": "DZ",
+    "count": 351,
+    "file": "assets/cities/DZ.json"
+  },
+  "Angola": {
+    "code": "AO",
+    "count": 565,
+    "file": "assets/cities/AO.json"
+  },
+  "Bahrain": {
+    "code": "BH",
+    "count": 11,
+    "file": "assets/cities/BH.json"
+  },
+  "Benin": {
+    "code": "BJ",
+    "count": 87,
+    "file": "assets/cities/BJ.json"
+  },
+  "Botswana": {
+    "code": "BW",
+    "count": 139,
+    "file": "assets/cities/BW.json"
+  },
+  "Burkina Faso": {
+    "code": "BF",
+    "count": 118,
+    "file": "assets/cities/BF.json"
+  },
+  "Burundi": {
+    "code": "BI",
+    "count": 33,
+    "file": "assets/cities/BI.json"
+  },
+  "Cameroon": {
+    "code": "CM",
+    "count": 145,
+    "file": "assets/cities/CM.json"
+  },
+  "Cape Verde": {
+    "code": "CV",
+    "count": 220,
+    "file": "assets/cities/CV.json"
+  },
+  "Central African Republic": {
+    "code": "CF",
+    "count": 50,
+    "file": "assets/cities/CF.json"
+  },
+  "Chad": {
+    "code": "TD",
+    "count": 74,
+    "file": "assets/cities/TD.json"
+  },
+  "Comoros": {
+    "code": "KM",
+    "count": 119,
+    "file": "assets/cities/KM.json"
+  },
+  "Congo": {
+    "code": "CG",
+    "count": 60,
+    "file": "assets/cities/CG.json"
+  },
+  "DR Congo": {
+    "code": "CD",
+    "count": 118,
+    "file": "assets/cities/CD.json"
+  },
+  "Djibouti": {
+    "code": "DJ",
+    "count": 31,
+    "file": "assets/cities/DJ.json"
+  },
+  "Egypt": {
+    "code": "EG",
+    "count": 255,
+    "file": "assets/cities/EG.json"
+  },
+  "Equatorial Guinea": {
+    "code": "GQ",
+    "count": 27,
+    "file": "assets/cities/GQ.json"
+  },
+  "Eritrea": {
+    "code": "ER",
+    "count": 18,
+    "file": "assets/cities/ER.json"
+  },
+  "Eswatini": {
+    "code": "SZ",
+    "count": 25,
+    "file": "assets/cities/SZ.json"
+  },
+  "Ethiopia": {
+    "code": "ET",
+    "count": 255,
+    "file": "assets/cities/ET.json"
+  },
+  "Gabon": {
+    "code": "GA",
+    "count": 50,
+    "file": "assets/cities/GA.json"
+  },
+  "Gambia": {
+    "code": "GM",
+    "count": 180,
+    "file": "assets/cities/GM.json"
+  },
+  "Ghana": {
+    "code": "GH",
+    "count": 119,
+    "file": "assets/cities/GH.json"
+  },
+  "Guinea": {
+    "code": "GN",
+    "count": 83,
+    "file": "assets/cities/GN.json"
+  },
+  "Guinea-Bissau": {
+    "code": "GW",
+    "count": 52,
+    "file": "assets/cities/GW.json"
+  },
+  "Ivory Coast": {
+    "code": "CI",
+    "count": 5136,
+    "file": "assets/cities/CI.json"
+  },
+  "Kenya": {
+    "code": "KE",
+    "count": 336,
+    "file": "assets/cities/KE.json"
+  },
+  "Kuwait": {
+    "code": "KW",
+    "count": 28,
+    "file": "assets/cities/KW.json"
+  },
+  "Lesotho": {
+    "code": "LS",
+    "count": 47,
+    "file": "assets/cities/LS.json"
+  },
+  "Liberia": {
+    "code": "LR",
+    "count": 27,
+    "file": "assets/cities/LR.json"
+  },
+  "Libya": {
+    "code": "LY",
+    "count": 119,
+    "file": "assets/cities/LY.json"
+  },
+  "Madagascar": {
+    "code": "MG",
+    "count": 152,
+    "file": "assets/cities/MG.json"
+  },
+  "Malawi": {
+    "code": "MW",
+    "count": 39,
+    "file": "assets/cities/MW.json"
+  },
+  "Mali": {
+    "code": "ML",
+    "count": 93,
+    "file": "assets/cities/ML.json"
+  },
+  "Mauritania": {
+    "code": "MR",
+    "count": 88,
+    "file": "assets/cities/MR.json"
+  },
+  "Mauritius": {
+    "code": "MU",
+    "count": 116,
+    "file": "assets/cities/MU.json"
+  },
+  "Morocco": {
+    "code": "MA",
+    "count": 480,
+    "file": "assets/cities/MA.json"
+  },
+  "Mozambique": {
+    "code": "MZ",
+    "count": 94,
+    "file": "assets/cities/MZ.json"
+  },
+  "Namibia": {
+    "code": "NA",
+    "count": 93,
+    "file": "assets/cities/NA.json"
+  },
+  "Niger": {
+    "code": "NE",
+    "count": 74,
+    "file": "assets/cities/NE.json"
+  },
+  "Nigeria": {
+    "code": "NG",
+    "count": 928,
+    "file": "assets/cities/NG.json"
+  },
+  "Oman": {
+    "code": "OM",
+    "count": 37,
+    "file": "assets/cities/OM.json"
+  },
+  "Qatar": {
+    "code": "QA",
+    "count": 43,
+    "file": "assets/cities/QA.json"
+  },
+  "Rwanda": {
+    "code": "RW",
+    "count": 51,
+    "file": "assets/cities/RW.json"
+  },
+  "Sao Tome and Principe": {
+    "code": "ST",
+    "count": 50,
+    "file": "assets/cities/ST.json"
+  },
+  "Saudi Arabia": {
+    "code": "SA",
+    "count": 157,
+    "file": "assets/cities/SA.json"
+  },
+  "Senegal": {
+    "code": "SN",
+    "count": 153,
+    "file": "assets/cities/SN.json"
+  },
+  "Seychelles": {
+    "code": "SC",
+    "count": 26,
+    "file": "assets/cities/SC.json"
+  },
+  "Sierra Leone": {
+    "code": "SL",
+    "count": 88,
+    "file": "assets/cities/SL.json"
+  },
+  "Somalia": {
+    "code": "SO",
+    "count": 76,
+    "file": "assets/cities/SO.json"
+  },
+  "South Africa": {
+    "code": "ZA",
+    "count": 987,
+    "file": "assets/cities/ZA.json"
+  },
+  "South Sudan": {
+    "code": "SS",
+    "count": 23,
+    "file": "assets/cities/SS.json"
+  },
+  "Sudan": {
+    "code": "SD",
+    "count": 112,
+    "file": "assets/cities/SD.json"
+  },
+  "Tanzania": {
+    "code": "TZ",
+    "count": 320,
+    "file": "assets/cities/TZ.json"
+  },
+  "Togo": {
+    "code": "TG",
+    "count": 35,
+    "file": "assets/cities/TG.json"
+  },
+  "Tunisia": {
+    "code": "TN",
+    "count": 286,
+    "file": "assets/cities/TN.json"
+  },
+  "Uganda": {
+    "code": "UG",
+    "count": 212,
+    "file": "assets/cities/UG.json"
+  },
+  "United Arab Emirates": {
+    "code": "AE",
+    "count": 107,
+    "file": "assets/cities/AE.json"
+  },
+  "Vietnam": {
+    "code": "VN",
+    "count": 892,
+    "file": "assets/cities/VN.json"
+  },
+  "Zambia": {
+    "code": "ZM",
+    "count": 98,
+    "file": "assets/cities/ZM.json"
+  },
+  "Zimbabwe": {
+    "code": "ZW",
+    "count": 69,
+    "file": "assets/cities/ZW.json"
+  }
+}

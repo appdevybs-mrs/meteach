@@ -93,3 +93,5 @@ flutter:
     - assets/images/cpd.pdf
     - assets/images/milestone.pdf
     - assets/world_data.json
+    - assets/cities_index.json
+    - assets/cities/

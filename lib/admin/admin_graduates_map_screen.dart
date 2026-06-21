@@ -162,8 +162,7 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
                       children: [
                         CircleAvatar(
                           radius: 20,
-                          backgroundColor:
-                              _primaryBlue.withValues(alpha: 0.08),
+                          backgroundColor: _primaryBlue.withValues(alpha: 0.08),
                           backgroundImage: item.photoUrl.isEmpty
                               ? null
                               : NetworkImage(item.photoUrl),
@@ -229,10 +228,7 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
                               tooltip: 'Edit',
                               visualDensity: VisualDensity.compact,
                               onPressed: () => _openEditor(item),
-                              icon: const Icon(
-                                Icons.edit_rounded,
-                                size: 18,
-                              ),
+                              icon: const Icon(Icons.edit_rounded, size: 18),
                             ),
                             IconButton(
                               tooltip: 'Delete',
@@ -259,7 +255,6 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
   }
 }
 
-
 class _GraduateMapEditorDialog extends StatefulWidget {
   final _GraduateMapAdminItem? item;
   const _GraduateMapEditorDialog({this.item});
@@ -285,9 +280,10 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
 
   Timer? _geocodeTimer;
 
-  List<Map<String, dynamic>> _citySearchResults = [];
-  bool _searchingCity = false;
-  Timer? _citySearchTimer;
+  Map<String, _CityAssetMeta> _cityIndex = const {};
+  List<_CityOption> _countryCities = const [];
+  Map<String, _CityOption> _cityByNameLookup = const {};
+  bool _loadingCities = false;
 
   Map<String, List<String>> _worldData = const {};
   String _selectedCountry = '';
@@ -332,15 +328,75 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   Future<void> _loadWorldData() async {
     try {
       final data = await rootBundle.loadString('assets/world_data.json');
+      final cityIndexData = await rootBundle.loadString(
+        'assets/cities_index.json',
+      );
       final parsed = jsonDecode(data) as Map;
       final raw = parsed['countries'] as Map;
       final map = <String, List<String>>{};
       raw.forEach((k, v) {
         map[k.toString()] = (v as List).map((e) => e.toString()).toList();
       });
+      final indexRaw = jsonDecode(cityIndexData) as Map;
+      final index = <String, _CityAssetMeta>{};
+      indexRaw.forEach((k, v) {
+        if (v is Map) {
+          index[k.toString()] = _CityAssetMeta.fromJson(v);
+        }
+      });
       if (!mounted) return;
-      setState(() => _worldData = map);
+      setState(() {
+        _worldData = map;
+        _cityIndex = index;
+      });
+      if (_selectedCountry.trim().isNotEmpty) {
+        await _loadCitiesForCountry(_selectedCountry);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadCitiesForCountry(String country) async {
+    final normalizedCountry = country.trim();
+    final meta = _cityIndex[normalizedCountry];
+    _geocodeTimer?.cancel();
+    if (meta == null) {
+      if (!mounted) return;
+      setState(() {
+        _countryCities = const [];
+        _cityByNameLookup = const {};
+        _loadingCities = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingCities = true;
+      _countryCities = const [];
+      _cityByNameLookup = const {};
+    });
+    try {
+      final raw = await rootBundle.loadString(meta.file);
+      final decoded = jsonDecode(raw) as List;
+      final cities = decoded
+          .whereType<Map>()
+          .map(_CityOption.fromJson)
+          .where((c) => c.name.isNotEmpty)
+          .toList();
+      if (!mounted || _selectedCountry.trim() != normalizedCountry) return;
+      setState(() {
+        _countryCities = cities;
+        _cityByNameLookup = {for (final city in cities) city.name: city};
+      });
     } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _countryCities = const [];
+        _cityByNameLookup = const {};
+      });
+    } finally {
+      if (mounted && _selectedCountry.trim() == normalizedCountry) {
+        setState(() => _loadingCities = false);
+      }
     }
   }
 
@@ -356,7 +412,6 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
 
   @override
   void dispose() {
-    _citySearchTimer?.cancel();
     _geocodeTimer?.cancel();
     _nameC.dispose();
     _countryC.dispose();
@@ -449,9 +504,10 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/search?q=$city,$country&format=json&limit=1',
       );
-      final res = await http.get(uri, headers: {
-        'User-Agent': 'com.appdevybs.mycertenglish',
-      });
+      final res = await http.get(
+        uri,
+        headers: {'User-Agent': 'com.appdevybs.mycertenglish'},
+      );
       if (!mounted) return;
       final data = jsonDecode(res.body) as List;
       if (data.isEmpty) return;
@@ -471,71 +527,56 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     _geocodeTimer = Timer(const Duration(milliseconds: 1200), _geocode);
   }
 
+  void _onCountrySelected(String country) {
+    _countryC.text = country;
+    _countryC.selection = TextSelection.fromPosition(
+      TextPosition(offset: country.length),
+    );
+    if (country == _selectedCountry) return;
+    setState(() {
+      _selectedCountry = country;
+      _cityC.clear();
+      _latC.clear();
+      _lngC.clear();
+    });
+    unawaited(_loadCitiesForCountry(country));
+  }
+
   void _onCityChanged(String value) {
     _cityC.text = value;
     _cityC.selection = TextSelection.fromPosition(
       TextPosition(offset: value.length),
     );
-    _citySearchTimer?.cancel();
     _geocodeTimer?.cancel();
     if (value.trim().length < 2) {
-      setState(() {
-        _citySearchResults.clear();
-      });
       return;
     }
     _scheduleGeocode();
-    _citySearchTimer = Timer(const Duration(milliseconds: 400), () {
-      _searchCity(value.trim());
-    });
   }
 
-  Future<void> _searchCity(String query) async {
-    if (query.trim().isEmpty) return;
-    setState(() => _searchingCity = true);
-    try {
-      final country = _countryC.text.trim();
-      var uriStr = 'https://nominatim.openstreetmap.org/search'
-          '?q=${Uri.encodeComponent(query)}'
-          '&format=json&limit=10';
-      if (country.isNotEmpty) {
-        uriStr += '&country=${Uri.encodeComponent(country)}';
-      }
-      final uri = Uri.parse(uriStr);
-      final res = await http.get(uri, headers: {
-        'User-Agent': 'com.appdevybs.mycertenglish',
-      });
-      if (!mounted) return;
-      final data = jsonDecode(res.body) as List;
-      setState(() {
-        _citySearchResults = data.cast<Map<String, dynamic>>();
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _citySearchResults.clear();
-      });
-    } finally {
-      if (mounted) setState(() => _searchingCity = false);
-    }
-  }
-
-  void _onCitySelected(Map<String, dynamic> result) {
-    final name = result['name']?.toString() ?? '';
-    _cityC.text = name;
+  void _onCitySelected(_CityOption city) {
+    _cityC.text = city.name;
     _cityC.selection = TextSelection.fromPosition(
-      TextPosition(offset: name.length),
+      TextPosition(offset: city.name.length),
     );
-    final lat = double.tryParse((result['lat'] ?? '').toString());
-    final lon = double.tryParse((result['lon'] ?? '').toString());
-    if (lat != null) _latC.text = lat.toString();
-    if (lon != null) _lngC.text = lon.toString();
-    _citySearchTimer?.cancel();
+    _latC.text = city.lat.toString();
+    _lngC.text = city.lng.toString();
     _geocodeTimer?.cancel();
-    setState(() {
-      _citySearchResults.clear();
-    });
   }
+
+  Iterable<String> _cityOptionsFor(String rawQuery) {
+    if (_countryCities.isEmpty) return const <String>[];
+    final q = _CityOption.normalize(rawQuery);
+    if (q.isEmpty) {
+      return _countryCities.map((c) => c.name).toList(growable: false);
+    }
+    return _countryCities
+        .where((c) => c.matches(q))
+        .map((c) => c.name)
+        .toList(growable: false);
+  }
+
+  _CityOption? _cityByName(String name) => _cityByNameLookup[name];
 
   Future<void> _save() async {
     if (_saving || _uploading) return;
@@ -662,38 +703,26 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                       decoration: const InputDecoration(labelText: 'Country'),
                       validator: _required,
                       onChanged: (v) {
-                        _countryC.text = v;
-                        _countryC.selection = TextSelection.fromPosition(
-                          TextPosition(offset: v.length),
-                        );
                         if (v != _selectedCountry &&
                             _worldData.containsKey(v)) {
-                          setState(() {
-                            _selectedCountry = v;
-                            _cityC.clear();
-                          });
+                          _onCountrySelected(v);
+                        } else {
+                          _countryC.text = v;
+                          _countryC.selection = TextSelection.fromPosition(
+                            TextPosition(offset: v.length),
+                          );
                         }
                       },
                     );
                   },
                   onSelected: (v) {
-                    _countryC.text = v;
-                    _countryC.selection = TextSelection.fromPosition(
-                      TextPosition(offset: v.length),
-                    );
-                    setState(() {
-                      _selectedCountry = v;
-                      _cityC.clear();
-                    });
+                    _onCountrySelected(v);
                   },
                 ),
                 const SizedBox(height: 10),
                 Autocomplete<String>(
-                  optionsBuilder: (_) {
-                    return _citySearchResults
-                        .map((r) => r['name']?.toString() ?? '')
-                        .toList();
-                  },
+                  key: ValueKey(_selectedCountry),
+                  optionsBuilder: (value) => _cityOptionsFor(value.text),
                   optionsViewBuilder: (ctx, onSelected, options) {
                     return Material(
                       elevation: 8,
@@ -708,12 +737,12 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                           itemCount: options.length,
                           itemBuilder: (ctx, i) {
                             final name = options.elementAt(i);
-                            final r = _citySearchResults.firstWhere(
-                              (r) => r['name']?.toString() == name,
-                              orElse: () => <String, dynamic>{},
-                            );
-                            final display =
-                                (r['display_name'] ?? '').toString();
+                            final city = _cityByName(name);
+                            final subtitle = city == null
+                                ? ''
+                                : city.ascii != city.name
+                                ? '${city.ascii} • ${city.lat}, ${city.lng}'
+                                : '${city.lat}, ${city.lng}';
                             return ListTile(
                               dense: true,
                               title: Text(
@@ -723,16 +752,16 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                                   fontSize: 13,
                                 ),
                               ),
-                              subtitle: display.isNotEmpty && display != name
+                              subtitle: subtitle.isNotEmpty
                                   ? Text(
-                                      display,
+                                      subtitle,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: const Color(0xFF1A2B48).withValues(
-                                          alpha: 0.55,
-                                        ),
+                                        color: const Color(
+                                          0xFF1A2B48,
+                                        ).withValues(alpha: 0.55),
                                       ),
                                     )
                                   : null,
@@ -750,8 +779,10 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                       focusNode: focusNode,
                       decoration: InputDecoration(
                         labelText: 'City',
-                        hintText: 'Type to search cities',
-                        suffixIcon: _searchingCity
+                        hintText: _cityIndex.containsKey(_selectedCountry)
+                            ? 'Select or type city'
+                            : 'Type city (fallback geocode)',
+                        suffixIcon: _loadingCities
                             ? const Padding(
                                 padding: EdgeInsets.all(12),
                                 child: SizedBox(
@@ -769,13 +800,8 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                     );
                   },
                   onSelected: (v) {
-                    final result = _citySearchResults.cast<Map<String, dynamic>?>().firstWhere(
-                      (r) => r?['name']?.toString() == v,
-                      orElse: () => null,
-                    );
-                    if (result != null) {
-                      _onCitySelected(result);
-                    }
+                    final city = _cityByName(v);
+                    if (city != null) _onCitySelected(city);
                   },
                 ),
                 const SizedBox(height: 10),
@@ -858,7 +884,115 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   }
 }
 
+class _CityAssetMeta {
+  const _CityAssetMeta({required this.file});
 
+  final String file;
+
+  factory _CityAssetMeta.fromJson(Map<dynamic, dynamic> json) {
+    return _CityAssetMeta(file: (json['file'] ?? '').toString());
+  }
+}
+
+class _CityOption {
+  _CityOption({
+    required this.name,
+    required this.ascii,
+    required this.alternates,
+    required this.lat,
+    required this.lng,
+  }) : _searchText = normalize([name, ascii, ...alternates].join(' '));
+
+  final String name;
+  final String ascii;
+  final List<String> alternates;
+  final double lat;
+  final double lng;
+  final String _searchText;
+
+  factory _CityOption.fromJson(Map<dynamic, dynamic> json) {
+    final alternatesRaw = json['alternates'];
+    return _CityOption(
+      name: (json['name'] ?? '').toString(),
+      ascii: (json['ascii'] ?? json['name'] ?? '').toString(),
+      alternates: alternatesRaw is List
+          ? alternatesRaw.map((e) => e.toString()).toList()
+          : const [],
+      lat: (json['lat'] as num).toDouble(),
+      lng: (json['lng'] as num).toDouble(),
+    );
+  }
+
+  bool matches(String normalizedQuery) => _searchText.contains(normalizedQuery);
+
+  static String normalize(String value) {
+    const accents = {
+      'á': 'a',
+      'à': 'a',
+      'â': 'a',
+      'ä': 'a',
+      'ã': 'a',
+      'å': 'a',
+      'ā': 'a',
+      'ă': 'a',
+      'ą': 'a',
+      'ç': 'c',
+      'ć': 'c',
+      'č': 'c',
+      'ď': 'd',
+      'đ': 'd',
+      'é': 'e',
+      'è': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'ē': 'e',
+      'ė': 'e',
+      'ę': 'e',
+      'ě': 'e',
+      'ğ': 'g',
+      'í': 'i',
+      'ì': 'i',
+      'î': 'i',
+      'ï': 'i',
+      'ī': 'i',
+      'ı': 'i',
+      'ł': 'l',
+      'ñ': 'n',
+      'ń': 'n',
+      'ň': 'n',
+      'ó': 'o',
+      'ò': 'o',
+      'ô': 'o',
+      'ö': 'o',
+      'õ': 'o',
+      'ø': 'o',
+      'ō': 'o',
+      'ř': 'r',
+      'ś': 's',
+      'š': 's',
+      'ş': 's',
+      'ť': 't',
+      'ú': 'u',
+      'ù': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ū': 'u',
+      'ů': 'u',
+      'ý': 'y',
+      'ÿ': 'y',
+      'ž': 'z',
+      'ź': 'z',
+      'ż': 'z',
+    };
+    final lower = value.toLowerCase().trim();
+    final out = StringBuffer();
+    for (final rune in lower.runes) {
+      final ch = String.fromCharCode(rune);
+      out.write(accents[ch] ?? ch);
+    }
+    return out.toString().replaceAll(RegExp(r'\s+'), ' ');
+  }
+}
 
 class _CompactChip extends StatelessWidget {
   const _CompactChip({required this.label, required this.color});
