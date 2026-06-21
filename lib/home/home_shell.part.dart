@@ -300,8 +300,6 @@ class WorldGraduatesHome extends StatefulWidget {
 }
 
 class _WorldGraduatesHomeState extends State<WorldGraduatesHome> {
-  bool _blurPins = false;
-
   @override
   Widget build(BuildContext context) {
     return SoftBackground(
@@ -322,18 +320,6 @@ class _WorldGraduatesHomeState extends State<WorldGraduatesHome> {
                     fontSize: 16,
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(
-                    _blurPins
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                  ),
-                  onPressed: () => setState(() => _blurPins = !_blurPins),
-                  tooltip: _blurPins
-                      ? 'Show faces'
-                      : 'Blur faces for privacy',
-                ),
               ],
             ),
           ),
@@ -353,10 +339,7 @@ class _WorldGraduatesHomeState extends State<WorldGraduatesHome> {
                 if (graduates.isEmpty) {
                   return const _EmptyWorldGraduates();
                 }
-                return _GlobeWrapper(
-                  graduates: graduates,
-                  blurPins: _blurPins,
-                );
+                return _GlobeWrapper(graduates: graduates);
               },
             ),
           ),
@@ -375,6 +358,7 @@ class _GraduateMapPerson {
     required this.city,
     required this.lat,
     required this.lng,
+    this.blurPhoto = false,
   });
 
   final String id;
@@ -384,6 +368,7 @@ class _GraduateMapPerson {
   final String city;
   final double lat;
   final double lng;
+  final bool blurPhoto;
 
   static List<_GraduateMapPerson> fromSnapshot(dynamic value) {
     if (value is! Map) return const <_GraduateMapPerson>[];
@@ -409,6 +394,7 @@ class _GraduateMapPerson {
           city: city,
           lat: lat,
           lng: lng,
+          blurPhoto: m['blurPhoto'] == true,
         ),
       );
     });
@@ -462,13 +448,9 @@ class _EmptyWorldGraduates extends StatelessWidget {
 }
 
 class _GlobeWrapper extends StatefulWidget {
-  const _GlobeWrapper({
-    required this.graduates,
-    required this.blurPins,
-  });
+  const _GlobeWrapper({required this.graduates});
 
   final List<_GraduateMapPerson> graduates;
-  final bool blurPins;
 
   @override
   State<_GlobeWrapper> createState() => _GlobeWrapperState();
@@ -486,15 +468,15 @@ class _GlobeWrapperState extends State<_GlobeWrapper> {
   @override
   void didUpdateWidget(_GlobeWrapper oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.graduates != oldWidget.graduates ||
-        widget.blurPins != oldWidget.blurPins) {
+    if (widget.graduates != oldWidget.graduates) {
       _controller?.dispose();
       _createGlobe();
     }
   }
 
   void _createGlobe() {
-    _controller = EarthController()..enableAutoRotate = true;
+    _controller = EarthController()
+      ..enableAutoRotate = true;
     for (final g in widget.graduates) {
       _controller!.addNode(
         EarthNode(
@@ -503,11 +485,12 @@ class _GlobeWrapperState extends State<_GlobeWrapper> {
           longitude: g.lng,
           child: _GraduatePhotoPin(
             person: g,
-            blurred: widget.blurPins,
+            blurred: g.blurPhoto,
           ),
         ),
       );
     }
+    _controller!.setZoom(3.0);
   }
 
   @override
@@ -524,6 +507,7 @@ class _GlobeWrapperState extends State<_GlobeWrapper> {
           ? const SizedBox()
           : Earth3D(
               controller: _controller!,
+              initialScale: 1.0,
               texture: const AssetImage('assets/2k_earth_day.jpg'),
             ),
     );

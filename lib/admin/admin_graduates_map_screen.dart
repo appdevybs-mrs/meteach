@@ -181,6 +181,11 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
                               ? Colors.green.withValues(alpha: 0.12)
                               : Colors.orange.withValues(alpha: 0.12),
                         ),
+                        if (item.blurPhoto)
+                          Chip(
+                            label: const Text('Blurred'),
+                            backgroundColor: Colors.grey.withValues(alpha: 0.12),
+                          ),
                         IconButton(
                           tooltip: 'Edit',
                           onPressed: () => _openEditor(item),
@@ -226,6 +231,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   late final TextEditingController _lngC;
   String _photoUrl = '';
   bool _active = true;
+  bool _blurPhoto = false;
   bool _saving = false;
   bool _uploading = false;
 
@@ -264,6 +270,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     );
     _photoUrl = item?.photoUrl ?? '';
     _active = item?.active ?? true;
+    _blurPhoto = item?.blurPhoto ?? false;
     _selectedCountry = item?.country ?? '';
     _loadWorldData();
   }
@@ -410,6 +417,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
         'lat': lat,
         'lng': lng,
         'active': _active,
+        'blurPhoto': _blurPhoto,
         'updatedAt': ServerValue.timestamp,
         'updatedByUid': user.uid,
       };
@@ -600,6 +608,12 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
                   onChanged: (v) => setState(() => _active = v),
                   title: const Text('Show on public World tab'),
                 ),
+                SwitchListTile(
+                  value: _blurPhoto,
+                  onChanged: (v) => setState(() => _blurPhoto = v),
+                  title: const Text('Blur photo on World map'),
+                  subtitle: const Text('Protect privacy of shy graduates'),
+                ),
               ],
             ),
           ),
@@ -638,6 +652,7 @@ class _GraduateMapAdminItem {
     required this.lat,
     required this.lng,
     required this.active,
+    this.blurPhoto = false,
   });
 
   final String id;
@@ -648,6 +663,7 @@ class _GraduateMapAdminItem {
   final double lat;
   final double lng;
   final bool active;
+  final bool blurPhoto;
 
   static List<_GraduateMapAdminItem> fromSnapshot(dynamic value) {
     if (value is! Map) return const <_GraduateMapAdminItem>[];
@@ -665,6 +681,7 @@ class _GraduateMapAdminItem {
           lat: _toDouble(m['lat']) ?? 0,
           lng: _toDouble(m['lng']) ?? 0,
           active: m['active'] != false,
+          blurPhoto: m['blurPhoto'] == true,
         ),
       );
     });
