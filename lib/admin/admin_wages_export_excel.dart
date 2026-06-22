@@ -1,8 +1,11 @@
 import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
+import '../shared/web_download.dart';
 
 class AdminWagesExcelExporter {
   static int _asInt(dynamic v) {
@@ -282,10 +285,14 @@ class AdminWagesExcelExporter {
       throw Exception('Excel encoding failed');
     }
 
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/wages_export.xlsx');
-    await file.writeAsBytes(bytes, flush: true);
+    if (kIsWeb) {
+      downloadBytes(bytes, 'wages_export.xlsx');
+    } else {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/wages_export.xlsx');
+      await file.writeAsBytes(bytes, flush: true);
 
-    await Share.shareXFiles([XFile(file.path)], text: 'Wages export');
+      await Share.shareXFiles([XFile(file.path)], text: 'Wages export');
+    }
   }
 }

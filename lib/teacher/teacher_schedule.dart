@@ -8,8 +8,9 @@
 // ✅ No new dependencies added
 
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -378,7 +379,7 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   }
 
   Future<void> _showBatteryPopupOnce() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
     if (!_prefsReady) return;
 
     final alreadyShown = _prefs.getBool('battery_popup_shown') ?? false;

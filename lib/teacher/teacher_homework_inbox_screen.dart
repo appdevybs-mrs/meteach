@@ -1944,22 +1944,19 @@ class _TeacherHomeworkInboxScreenState
                                                   ),
                                                 ),
                                                 const SizedBox(width: 8),
-                                                Expanded(
-                                                  child: Text(
-                                                    _fmtTime(v.row.updatedAtMs),
-                                                    textAlign: TextAlign.right,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: Colors.black
-                                                          .withValues(
-                                                            alpha: 0.58,
-                                                          ),
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
+                                                Text(
+                                                  _fmtTime(v.row.updatedAtMs),
+                                                  textAlign: TextAlign.right,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.black
+                                                        .withValues(
+                                                          alpha: 0.58,
+                                                        ),
+                                                    fontWeight: FontWeight.w700,
                                                   ),
                                                 ),
                                               ],

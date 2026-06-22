@@ -192,7 +192,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
 
     Uint8List? uploadBytes;
     var usedClientOptimization = false;
-    if (isThumbnail) {
+    if (isThumbnail && !kIsWeb) {
       final optimized = await _compressThumbnailBytes(picked);
       if (optimized != null && optimized.isNotEmpty) {
         uploadBytes = optimized;
@@ -217,7 +217,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
           filename: picked.name,
         ),
       );
-    } else if (picked.path != null && picked.path!.isNotEmpty) {
+    } else if (!kIsWeb && picked.path != null && picked.path!.isNotEmpty) {
       req.files.add(
         await http.MultipartFile.fromPath(
           'file',
@@ -228,7 +228,7 @@ class _TeacherStoriesScreenState extends State<TeacherStoriesScreen> {
     } else {
       final bytes = picked.bytes;
       if (bytes == null) {
-        throw Exception('Could not read selected file');
+        throw Exception('Could not read selected file.');
       }
       req.files.add(
         http.MultipartFile.fromBytes('file', bytes, filename: picked.name),

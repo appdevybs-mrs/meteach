@@ -1,12 +1,15 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
+
+import '../shared/web_download.dart';
 import '../models/certificate_model.dart';
 import '../models/admin_certificate_model.dart';
 import '../services/certificate_pdf_service.dart';
@@ -3531,12 +3534,16 @@ class _CertificateViewSheet extends StatelessWidget {
     try {
       final bytes = await _pdfService.generateCertificatePdfBytes(certificate);
       final fileName = CertificatePdfService.buildPdfFileName(certificate);
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(bytes, flush: true);
-      await Share.shareXFiles([
-        XFile(file.path, mimeType: 'application/pdf', name: fileName),
-      ]);
+      if (kIsWeb) {
+        downloadBytes(bytes, fileName);
+      } else {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/$fileName');
+        await file.writeAsBytes(bytes, flush: true);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf', name: fileName),
+        ]);
+      }
       if (!context.mounted) return;
       AppToast.show(
         context,

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:excel/excel.dart' hide Border;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -815,6 +817,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   }
 
   Future<String?> _defaultDownloadsDirectoryPath() async {
+    if (kIsWeb) return null;
     try {
       if (Platform.isAndroid) {
         const androidDownloads = '/storage/emulated/0/Download';

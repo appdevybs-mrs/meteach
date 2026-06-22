@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -1471,16 +1473,22 @@ class _AddReminderDialogState extends State<_AddReminderDialog> {
     setState(() => _uploading = true);
 
     try {
-      final result = await FilePicker.platform.pickFiles(withData: false);
+      final result = await FilePicker.platform.pickFiles(withData: kIsWeb);
       if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
-      if (file.path == null) return;
-
-      final f = File(file.path!);
-      final url = await ReminderUploadClient.defaultClient().uploadFile(
-        file: f,
-      );
+      final client = ReminderUploadClient.defaultClient();
+      String url;
+      if (kIsWeb) {
+        final bytes = file.bytes;
+        if (bytes == null) throw Exception('Could not read file bytes.');
+        url = await client.uploadBytes(bytes: bytes, filename: file.name);
+      } else {
+        final path = file.path;
+        if (path == null || path.isEmpty) return;
+        final f = File(path);
+        url = await client.uploadFile(file: f);
+      }
 
       if (!mounted) return;
 
@@ -1705,6 +1713,34 @@ class ReminderUploadClient {
       ..fields['app_id'] = appId
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
+    return _sendAndParse(req);
+  }
+
+  Future<String> uploadBytes({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await BackendApi.authToken();
+
+    final req = http.MultipartRequest('POST', uri)
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Token': token,
+        'X-Auth-Uid': user.uid,
+      })
+      ..fields['auth_token'] = token
+      ..fields['auth_uid'] = user.uid
+      ..fields['app_id'] = appId
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+
+    return _sendAndParse(req);
+  }
+
+  Future<String> _sendAndParse(http.MultipartRequest req) async {
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
 

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter/services.dart';
@@ -92,6 +94,77 @@ class MailUploadClient {
           total,
           filename: file.uri.pathSegments.last,
         ),
+      );
+
+    final streamed = await _http.send(req).timeout(const Duration(minutes: 10));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(minutes: 10),
+    );
+
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
+    }
+
+    final decoded = _tryDecodeJson(body);
+    if (decoded == null) {
+      throw Exception('Upload failed: invalid JSON\n$body');
+    }
+
+    final success = decoded['success'] == true;
+    final url = (decoded['url'] ?? '').toString();
+
+    if (!success || url.trim().isEmpty) {
+      throw Exception('Upload failed: $decoded');
+    }
+
+    onProgress?.call(1);
+
+    return url;
+  }
+
+  Future<String> uploadBytes({
+    required Uint8List bytes,
+    required String filename,
+    void Function(double progress)? onProgress,
+  }) async {
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await BackendApi.authToken();
+
+    final total = bytes.length;
+    if (total <= 0) {
+      throw Exception('Could not read selected file bytes.');
+    }
+    if (total > maxUploadBytes) {
+      throw Exception('File is too large. Maximum allowed size is 250 MB.');
+    }
+    onProgress?.call(0);
+    var sent = 0;
+    final stream = Stream<List<int>>.value(bytes).transform(
+      StreamTransformer<List<int>, List<int>>.fromHandlers(
+        handleData: (chunk, sink) {
+          sent += chunk.length;
+          if (total > 0) {
+            onProgress?.call((sent / total).clamp(0.0, 1.0));
+          }
+          sink.add(chunk);
+        },
+      ),
+    );
+
+    final req = http.MultipartRequest('POST', uri)
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Token': token,
+        'X-Auth-Uid': user.uid,
+      })
+      ..fields['auth_token'] = token
+      ..fields['auth_uid'] = user.uid
+      ..fields['app_id'] = appId
+      ..files.add(
+        http.MultipartFile('file', stream, total, filename: filename),
       );
 
     final streamed = await _http.send(req).timeout(const Duration(minutes: 10));
@@ -599,25 +672,13 @@ class _AdminTeacherMailThreadScreenState
 
   Future<void> _pickAndUploadAttachment() async {
     try {
-      final picked = await FilePicker.platform.pickFiles(withData: false);
+      final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
       if (picked == null || picked.files.isEmpty) {
         _snack('Upload was cancelled.');
         return;
       }
       final f = picked.files.first;
-      if (f.path == null) {
-        _snack(
-          'The app does not have permission to access this file or action.',
-        );
-        return;
-      }
-
-      final file = File(f.path!);
-      final size = await file.length();
-      if (size > MailUploadClient.maxUploadBytes) {
-        _snack('This file is too large. Maximum allowed size is 250 MB.');
-        return;
-      }
+      final client = MailUploadClient.defaultClient();
 
       setState(() {
         _fileUploading = true;
@@ -625,14 +686,28 @@ class _AdminTeacherMailThreadScreenState
         _uploadingFileName = f.name;
       });
 
-      final url = await MailUploadClient.defaultClient().uploadFile(
-        file: file,
-        onProgress: (p) {
-          if (!mounted) return;
-          setState(() => _fileUploadProgress = p.clamp(0.0, 1.0));
-        },
-      );
+      String url;
+      if (kIsWeb) {
+        final bytes = f.bytes;
+        if (bytes == null) throw Exception('Could not read file bytes.');
+        if (bytes.length > MailUploadClient.maxUploadBytes) {
+          throw Exception('This file is too large. Maximum allowed size is 250 MB.');
+        }
+        url = await client.uploadBytes(bytes: bytes, filename: f.name);
+      } else {
+        final path = f.path;
+        if (path == null || path.isEmpty) {
+          throw Exception('Could not read file path.');
+        }
+        final file = File(path);
+        final size = await file.length();
+        if (size > MailUploadClient.maxUploadBytes) {
+          throw Exception('This file is too large. Maximum allowed size is 250 MB.');
+        }
+        url = await client.uploadFile(file: file);
+      }
 
+      if (!mounted) return;
       setState(() {
         _attachments.add({'name': f.name, 'url': url});
         _fileUploading = false;

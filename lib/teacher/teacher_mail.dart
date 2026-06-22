@@ -2185,26 +2185,25 @@ class _ComposeSheetState extends State<_ComposeSheet> {
 
   Future<void> _uploadGroupPicture() async {
     if (_uploadingGroupPic) return;
-    if (kIsWeb) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Group picture upload is not supported on web yet.'),
-        ),
-      );
-      return;
-    }
-    final picked = await FilePicker.platform.pickFiles(withData: false);
-    final path = picked?.files.single.path;
-    if (path == null || path.trim().isEmpty) return;
+    final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
+    if (picked == null || picked.files.isEmpty) return;
+    final file = picked.files.single;
     setState(() => _uploadingGroupPic = true);
     try {
-      final parts = path.replaceAll('\\', '/').split('/');
-      final filename = parts.isEmpty ? 'group.jpg' : parts.last;
-      final url = await MailUploadClient.defaultClient().uploadPath(
-        path: path,
-        filename: filename,
-      );
+      final client = MailUploadClient.defaultClient();
+      final filename = file.name.isNotEmpty ? file.name : 'group.jpg';
+      String url;
+      if (kIsWeb) {
+        final bytes = file.bytes;
+        if (bytes == null) {
+          throw Exception('Could not read selected file.');
+        }
+        url = await client.uploadBytes(bytes: bytes, filename: filename);
+      } else {
+        final path = file.path;
+        if (path == null || path.trim().isEmpty) return;
+        url = await client.uploadPath(path: path, filename: filename);
+      }
       _groupPicUrlC.text = url.trim();
       if (!mounted) return;
       ScaffoldMessenger.of(
