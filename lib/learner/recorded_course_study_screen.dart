@@ -29,6 +29,7 @@ import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/learner_notice_popup.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/web_download.dart';
 import 'recorded_video_player_screen.dart';
@@ -130,17 +131,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   String _cachedInstructorName = '';
   Map<String, String> _cachedIdentity = <String, String>{};
 
-  late final ConfettiController _confettiController =
-      ConfettiController(duration: const Duration(seconds: 4));
+  late final ConfettiController _confettiController = ConfettiController(
+    duration: const Duration(seconds: 4),
+  );
   bool _celebrated = false;
 
   @override
   void initState() {
     super.initState();
-    _cachedCpdHours =
-        (widget.courseData['cpd_hours'] ?? '40').toString();
-    _cachedShortDescription =
-        (widget.courseData['short_description'] ?? '').toString();
+    _cachedCpdHours = (widget.courseData['cpd_hours'] ?? '40').toString();
+    _cachedShortDescription = (widget.courseData['short_description'] ?? '')
+        .toString();
     _offlineVideos.addListener(_onOfflineVideosChanged);
     unawaited(_offlineVideos.ensureLoaded());
     _loadAll();
@@ -291,10 +292,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         );
       }
 
-      _cachedCpdHours =
-          (widget.courseData['cpd_hours'] ?? '40').toString();
-      _cachedShortDescription =
-          (widget.courseData['short_description'] ?? '').toString();
+      _cachedCpdHours = (widget.courseData['cpd_hours'] ?? '40').toString();
+      _cachedShortDescription = (widget.courseData['short_description'] ?? '')
+          .toString();
 
       if (!mounted) return;
       setState(() {
@@ -500,8 +500,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       }
     }
   }
-
-
 
   static List<Map<String, dynamic>> _asListOfMaps(dynamic node) {
     final out = <Map<String, dynamic>>[];
@@ -970,29 +968,26 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       return;
     }
     if (_daysLeft < 0) {
-      AppToast.show(
-        context,
+      _notice(
         'Your recorded access is expired. Please renew to download videos.',
-        type: AppToastType.error,
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
     if (AppConnectivity.instance.isOffline) {
-      AppToast.show(
-        context,
+      _notice(
         'No internet connection. Connect to download videos.',
-        type: AppToastType.error,
+        tone: LearnerNoticeTone.error,
       );
       return;
     }
     await _offlineVideos.enqueueAll(requests);
     if (!mounted) return;
-    AppToast.show(
-      context,
+    _notice(
       requests.length == 1
           ? 'Download started.'
           : '${requests.length} downloads queued.',
-      type: AppToastType.success,
+      tone: LearnerNoticeTone.success,
     );
   }
 
@@ -1036,11 +1031,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (confirmed != true) return;
     await _offlineVideos.deleteMany(existing);
     if (!mounted) return;
-    AppToast.show(
-      context,
-      'Offline content deleted.',
-      type: AppToastType.success,
-    );
+    _notice('Offline content deleted.', tone: LearnerNoticeTone.success);
   }
 
   Future<bool> _isLessonAssetMissingOnServer({required String url}) async {
@@ -1099,10 +1090,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           },
         );
       } else if (AppConnectivity.instance.isOffline) {
-        AppToast.show(
-          context,
+        _notice(
           'Reading materials need internet. Download them beforehand to read offline.',
-          type: AppToastType.info,
+          tone: LearnerNoticeTone.warning,
         );
         return;
       } else {
@@ -1147,11 +1137,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Widget _buildCompletionBanner() => _certHandler._buildCompletionBanner(
-        certificateUnlocked: _courseCertificateUnlocked,
-        completedSessions: _completedSessions,
-        totalSessions: _totalSessions,
-        onCertificateTap: _onCertificateTap,
-      );
+    certificateUnlocked: _courseCertificateUnlocked,
+    completedSessions: _completedSessions,
+    totalSessions: _totalSessions,
+    onCertificateTap: _onCertificateTap,
+  );
 
   Widget _buildTopOverviewCard() {
     final style = _expiryStyle;
@@ -1433,10 +1423,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: isDone ? const Color(0xFFEA580C) : Colors.transparent,
-              border: Border.all(
-                color: const Color(0xFFEA580C),
-                width: 2,
-              ),
+              border: Border.all(color: const Color(0xFFEA580C), width: 2),
             ),
           );
         }),
@@ -1623,9 +1610,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         child: OutlinedButton.icon(
                           onPressed: () {
                             _offlineVideos.cancelCurrent();
-                            AppToast.show(
-                              context,
+                            _notice(
                               'Cancelling current download.',
+                              tone: LearnerNoticeTone.info,
                             );
                           },
                           icon: const Icon(Icons.cancel_rounded),
@@ -1667,16 +1654,18 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _debug('openVideo sessionId=${session.id} hasVideo=$hasVideo');
       if (!hasVideo || !_isValidWebUrl(videoUrl)) {
         _snack(
-          _lessonUnavailableMessage(lessonType: 'Video lesson', session: session),
+          _lessonUnavailableMessage(
+            lessonType: 'Video lesson',
+            session: session,
+          ),
         );
         return;
       }
 
       if (_daysLeft < 0) {
-        AppToast.show(
-          context,
+        _notice(
           'Your recorded access is expired. Please renew to watch videos.',
-          type: AppToastType.error,
+          tone: LearnerNoticeTone.warning,
         );
         return;
       }
@@ -1696,11 +1685,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         'learner.recorded.video.${widget.courseKey}.${session.id}',
         () async {
           final flatSessions = _flatSessions
-              .map((ref) => {
-                    'id': ref.session.id,
-                    'title': ref.session.title,
-                    'videoUrl': ref.session.videoUrl.trim(),
-                  })
+              .map(
+                (ref) => {
+                  'id': ref.session.id,
+                  'title': ref.session.title,
+                  'videoUrl': ref.session.videoUrl.trim(),
+                },
+              )
               .toList();
 
           await Navigator.push(
@@ -1739,16 +1730,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
     final out = <String, String>{'fullName': 'Learner', 'nationalIdNumber': ''};
     try {
-      final snap = await _usersRef.child(_uid).get().timeout(
-        const Duration(seconds: 10),
-      );
+      final snap = await _usersRef
+          .child(_uid)
+          .get()
+          .timeout(const Duration(seconds: 10));
       if (!snap.exists || snap.value is! Map) return out;
       final m = Map<String, dynamic>.from(snap.value as Map);
       final first = (m['first_name'] ?? '').toString().trim();
       final last = (m['last_name'] ?? '').toString().trim();
       final full = '$first $last'.trim();
-      final nationalId = (m['national_id_number'] ?? m['nationalIdNumber'] ?? '')
-          .toString();
+      final nationalId =
+          (m['national_id_number'] ?? m['nationalIdNumber'] ?? '').toString();
       if (full.isNotEmpty) out['fullName'] = full;
       out['nationalIdNumber'] = nationalId.trim();
       _cachedIdentity = Map<String, String>.from(out);
@@ -2093,12 +2085,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return math.max(p.videoCompletedAt, p.materialsCompletedAt);
   }
 
-
   Future<void> _onCertificateTap() => _certHandler._onCertificateTap(
-        context: context,
-        mounted: mounted,
-        setState: setState,
-      );
+    context: context,
+    mounted: mounted,
+    setState: setState,
+  );
 
   void _celebrateIfComplete() {
     if (!_celebrated &&
@@ -2116,43 +2107,52 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required String moduleLabel,
     required List<_RecordedUnit> moduleUnits,
     required int moduleIndex,
-  }) =>
-      _certHandler._onModuleCertificateTap(
-        context: context,
-        mounted: mounted,
-        setState: setState,
-        moduleLabel: moduleLabel,
-        moduleUnits: moduleUnits,
-        moduleIndex: moduleIndex,
-      );
+  }) => _certHandler._onModuleCertificateTap(
+    context: context,
+    mounted: mounted,
+    setState: setState,
+    moduleLabel: moduleLabel,
+    moduleUnits: moduleUnits,
+    moduleIndex: moduleIndex,
+  );
 
   Widget _buildModuleMilestoneCard({
     required String moduleLabel,
     required List<_RecordedUnit> moduleUnits,
     required int moduleIndex,
-  }) =>
-      _certHandler._buildModuleMilestoneCard(
-        moduleLabel: moduleLabel,
-        moduleUnits: moduleUnits,
-        moduleIndex: moduleIndex,
-        deepOrange: _kYbsDeepOrange,
-        orangeTextStrong: _kYbsOrangeTextStrong,
-        deepBlue: _kYbsDeepBlue,
-        onModuleCertificateTap: ({
+  }) => _certHandler._buildModuleMilestoneCard(
+    moduleLabel: moduleLabel,
+    moduleUnits: moduleUnits,
+    moduleIndex: moduleIndex,
+    deepOrange: _kYbsDeepOrange,
+    orangeTextStrong: _kYbsOrangeTextStrong,
+    deepBlue: _kYbsDeepBlue,
+    onModuleCertificateTap:
+        ({
           required String moduleLabel,
           required List<_RecordedUnit> moduleUnits,
           required int moduleIndex,
-        }) =>
-            _onModuleCertificateTap(
+        }) => _onModuleCertificateTap(
           moduleLabel: moduleLabel,
           moduleUnits: moduleUnits,
           moduleIndex: moduleIndex,
         ),
-      );
+  );
 
   void _snack(String message) {
     if (!mounted) return;
-    AppToast.show(context, message, type: AppToastType.info);
+    _notice(message);
+  }
+
+  void _notice(String message, {LearnerNoticeTone? tone}) {
+    if (!mounted) return;
+    unawaited(
+      showLearnerNoticePopup(
+        context,
+        message: message,
+        tone: tone ?? learnerNoticeToneForMessage(message),
+      ),
+    );
   }
 
   int _countCompletedInUnit(_RecordedUnit unit) {
@@ -2644,8 +2644,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     Widget card = Container(
       margin: EdgeInsets.only(top: isNarrow ? 6 : 7),
       padding: EdgeInsets.symmetric(
-        horizontal: isNarrow ? 9 : isWide ? 20 : 10,
-        vertical: isNarrow ? 8 : isWide ? 16 : 9,
+        horizontal: isNarrow
+            ? 9
+            : isWide
+            ? 20
+            : 10,
+        vertical: isNarrow
+            ? 8
+            : isWide
+            ? 16
+            : 9,
       ),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -2661,8 +2669,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           Row(
             children: [
               Container(
-                width: isNarrow ? 20 : isWide ? 32 : 22,
-                height: isNarrow ? 20 : isWide ? 32 : 22,
+                width: isNarrow
+                    ? 20
+                    : isWide
+                    ? 32
+                    : 22,
+                height: isNarrow
+                    ? 20
+                    : isWide
+                    ? 32
+                    : 22,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -2674,11 +2690,21 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w900,
                     color: dotColor,
-                    fontSize: isNarrow ? 9.5 : isWide ? 14 : 10,
+                    fontSize: isNarrow
+                        ? 9.5
+                        : isWide
+                        ? 14
+                        : 10,
                   ),
                 ),
               ),
-              SizedBox(width: isNarrow ? 7 : isWide ? 12 : 8),
+              SizedBox(
+                width: isNarrow
+                    ? 7
+                    : isWide
+                    ? 12
+                    : 8,
+              ),
               Expanded(
                 child: Text(
                   session.title.trim().isEmpty
@@ -2689,7 +2715,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   style: TextStyle(
                     color: Color(0xFF0F172A),
                     fontWeight: FontWeight.w800,
-                    fontSize: isNarrow ? 12.5 : isWide ? 18 : 13,
+                    fontSize: isNarrow
+                        ? 12.5
+                        : isWide
+                        ? 18
+                        : 13,
                   ),
                 ),
               ),
@@ -2708,8 +2738,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       });
                     },
                     child: Container(
-                      width: isNarrow ? 22 : isWide ? 34 : 24,
-                      height: isNarrow ? 22 : isWide ? 34 : 24,
+                      width: isNarrow
+                          ? 22
+                          : isWide
+                          ? 34
+                          : 24,
+                      height: isNarrow
+                          ? 22
+                          : isWide
+                          ? 34
+                          : 24,
                       alignment: Alignment.center,
                       child: Text(
                         '!',
@@ -2729,25 +2767,40 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     message: _openingVideoSessionId == session.id
                         ? 'Opening…'
                         : progress.videoCompleted
-                            ? 'Rewatch video'
-                            : 'Watch video',
+                        ? 'Rewatch video'
+                        : 'Watch video',
                     child: TextButton.icon(
                       onPressed: isUnlocked && _openingVideoSessionId == null
                           ? () => _openVideoPlaceholder(session)
                           : null,
-                      icon: Icon(Icons.play_arrow_rounded, size: isNarrow ? 16 : isWide ? 22 : 18),
+                      icon: Icon(
+                        Icons.play_arrow_rounded,
+                        size: isNarrow
+                            ? 16
+                            : isWide
+                            ? 22
+                            : 18,
+                      ),
                       label: Text(
                         _openingVideoSessionId == session.id
                             ? 'Opening…'
                             : 'Watch',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          fontSize: isNarrow ? 12 : isWide ? 16 : 13,
+                          fontSize: isNarrow
+                              ? 12
+                              : isWide
+                              ? 16
+                              : 13,
                         ),
                       ),
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.symmetric(
-                          horizontal: isNarrow ? 8 : isWide ? 18 : 10,
+                          horizontal: isNarrow
+                              ? 8
+                              : isWide
+                              ? 18
+                              : 10,
                           vertical: isWide ? 10 : 4,
                         ),
                         foregroundColor: isUnlocked
@@ -2772,25 +2825,41 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     message: _openingMaterialsSessionId == session.id
                         ? 'Opening…'
                         : progress.materialsCompleted
-                            ? 'Open reading again'
-                            : 'Open reading',
+                        ? 'Open reading again'
+                        : 'Open reading',
                     child: TextButton.icon(
-                      onPressed: isUnlocked && _openingMaterialsSessionId == null
+                      onPressed:
+                          isUnlocked && _openingMaterialsSessionId == null
                           ? () => _openMaterials(session)
                           : null,
-                      icon: Icon(Icons.menu_book_rounded, size: isNarrow ? 16 : isWide ? 22 : 18),
+                      icon: Icon(
+                        Icons.menu_book_rounded,
+                        size: isNarrow
+                            ? 16
+                            : isWide
+                            ? 22
+                            : 18,
+                      ),
                       label: Text(
                         _openingMaterialsSessionId == session.id
                             ? 'Opening…'
                             : 'Read',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          fontSize: isNarrow ? 12 : isWide ? 16 : 13,
+                          fontSize: isNarrow
+                              ? 12
+                              : isWide
+                              ? 16
+                              : 13,
                         ),
                       ),
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.symmetric(
-                          horizontal: isNarrow ? 8 : isWide ? 18 : 10,
+                          horizontal: isNarrow
+                              ? 8
+                              : isWide
+                              ? 18
+                              : 10,
                           vertical: isWide ? 10 : 4,
                         ),
                         foregroundColor: isUnlocked
@@ -2843,7 +2912,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       icon: const Icon(Icons.check_circle_outline, size: 14),
                       label: const Text(
                         'Mark video done',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -2871,7 +2943,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       icon: const Icon(Icons.check_circle_outline, size: 14),
                       label: const Text(
                         'Mark reading done',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -2956,6 +3031,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 }
                 return false;
               }
+
               final moduleLocked = isModuleIndexLocked(moduleIndex);
               final moduleExpanded = _expandedModuleLabels.contains(
                 moduleLabel,
@@ -3049,7 +3125,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             ),
                             if (!kIsWeb)
                               _buildScopeDownloadActions(
-                                requests: _downloadRequestsForModule(moduleUnits),
+                                requests: _downloadRequestsForModule(
+                                  moduleUnits,
+                                ),
                                 label: 'Module',
                                 deleteTitle: 'Delete module downloads?',
                                 compact: true,
@@ -3240,7 +3318,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                               ),
                             if (!kIsWeb)
                               _buildScopeDownloadActions(
-                                requests: _downloadRequestsForUnit(selectedUnit),
+                                requests: _downloadRequestsForUnit(
+                                  selectedUnit,
+                                ),
                                 label: 'Download unit',
                                 deleteTitle: 'Delete unit downloads?',
                               ),
@@ -3282,10 +3362,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
     if (!mounted) return;
     if (!enrolled) {
-      AppToast.show(
-        context,
+      _notice(
         'Only enrolled learners can add a review.',
-        type: AppToastType.error,
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -3297,11 +3376,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           .get();
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(
-        context,
-        humanizeUiMessage(e.toString()),
-        type: AppToastType.error,
-      );
+      _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
       return;
     }
     if (!mounted) return;
@@ -3372,10 +3447,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     child: FilledButton.icon(
                       onPressed: () {
                         if (commentC.text.trim().isEmpty) {
-                          AppToast.show(
-                            ctx,
-                            'Please add a comment before submitting.',
-                            type: AppToastType.error,
+                          unawaited(
+                            showLearnerNoticePopup(
+                              ctx,
+                              message:
+                                  'Please add a comment before submitting.',
+                              tone: LearnerNoticeTone.warning,
+                            ),
                           );
                           return;
                         }
@@ -3402,14 +3480,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         comment: commentC.text,
       );
       if (!mounted) return;
-      AppToast.show(context, 'Your review was submitted for approval.');
+      _notice(
+        'Your review was submitted for approval.',
+        tone: LearnerNoticeTone.success,
+      );
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(
-        context,
-        humanizeUiMessage(e.toString()),
-        type: AppToastType.error,
-      );
+      _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
     }
   }
 
@@ -3654,9 +3731,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       RepaintBoundary(child: _buildUnitsList()),
                     ],
                   ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
     }
 
     final Widget wrappedContent = ConfettiWidget(
@@ -3984,9 +4061,10 @@ class _PulseWidgetState extends State<_PulseWidget>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _scaleAnim = Tween<double>(begin: 1.0, end: 1.06).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnim = Tween<double>(
+      begin: 1.0,
+      end: 1.06,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
     _borderAnim = ColorTween(
       begin: const Color(0xFFE2E8F0),
       end: const Color(0xFF4F46E5),

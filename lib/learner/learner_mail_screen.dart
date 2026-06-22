@@ -11,7 +11,7 @@ import '../shared/learner_web_layout.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/watermark_background.dart';
 import 'learner_mail_thread_screen.dart';
-import '../shared/app_feedback.dart';
+import '../shared/learner_notice_popup.dart';
 import '../shared/profile_avatar.dart';
 
 class LearnerMailScreen extends StatefulWidget {
@@ -81,7 +81,13 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
 
   void _snack(String msg) {
     if (!mounted) return;
-    AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
+    unawaited(
+      showLearnerNoticePopup(
+        context,
+        message: msg,
+        tone: learnerNoticeToneForMessage(msg),
+      ),
+    );
   }
 
   Future<void> _ensureUserPhotoCached(String uid) {
@@ -909,8 +915,8 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
                                                           overflow: TextOverflow
                                                               .ellipsis,
                                                           style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w700,
+                                                            fontWeight:
+                                                                FontWeight.w700,
                                                             color: _navy,
                                                             fontSize: 15,
                                                           ),
@@ -1080,14 +1086,16 @@ class _LearnerMailScreenState extends State<LearnerMailScreen>
                                                   Text(
                                                     isReport
                                                         ? _reportPreview(
-                                                            lastMessage)
-                                                        : lastMessage.trim()
-                                                                .isEmpty
-                                                            ? '—'
-                                                            : _short(
-                                                                lastMessage,
-                                                                90,
-                                                              ),
+                                                            lastMessage,
+                                                          )
+                                                        : lastMessage
+                                                              .trim()
+                                                              .isEmpty
+                                                        ? '—'
+                                                        : _short(
+                                                            lastMessage,
+                                                            90,
+                                                          ),
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,

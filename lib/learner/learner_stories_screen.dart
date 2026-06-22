@@ -5,7 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../shared/app_theme.dart';
-import '../shared/app_feedback.dart';
+import '../shared/learner_notice_popup.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/responsive_layout.dart';
@@ -407,9 +407,12 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
 
     if (pdfUrl.isEmpty && audioUrl.isEmpty) {
       if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('No media available for this story.')),
+      unawaited(
+        showLearnerNoticePopup(
+          context,
+          message: 'No media available for this story.',
+          tone: LearnerNoticeTone.warning,
+        ),
       );
       return;
     }
@@ -1497,10 +1500,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                style: TextStyle(
-                  color: p.primary,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: TextStyle(color: p.primary, fontWeight: FontWeight.w800),
               ),
             ),
           ),
@@ -1514,9 +1514,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                 _showFilters = !_showFilters;
               });
             },
-            icon: _showFilters
-                ? Icons.tune_rounded
-                : Icons.filter_alt_outlined,
+            icon: _showFilters ? Icons.tune_rounded : Icons.filter_alt_outlined,
             iconColor: p.primary,
           ),
         ],
@@ -1547,18 +1545,12 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                 decoration: BoxDecoration(
                   color: p.cardBg,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: p.border.withValues(alpha: 0.85),
-                  ),
+                  border: Border.all(color: p.border.withValues(alpha: 0.85)),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.menu_book_rounded,
-                      size: 50,
-                      color: p.primary,
-                    ),
+                    Icon(Icons.menu_book_rounded, size: 50, color: p.primary),
                     const SizedBox(height: 12),
                     Text(
                       'No stories available yet.',

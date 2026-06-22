@@ -30,9 +30,15 @@ class LearnerHomeworkScreen extends StatefulWidget {
 
 class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   static const usersNode = 'users';
+  static const Set<String> _adminHomeworkReceiverUids = {
+    '40Jo9GaY7yXyx5jlur0R4K7COuo1',
+    'bx3V05SRysTn2PBYU7PQrcF1fyY2',
+    'ewYMeMDCkXU4sRhemweN7IiTINy1',
+  };
 
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
+  final Map<String, Future<_HomeworkReceiver>> _receiverByClassId = {};
 
   bool _busy = true;
   String? _error;
@@ -42,9 +48,66 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   String _courseId = '';
   List<Map<String, dynamic>> _items = [];
   final Set<String> _expanded = <String>{};
-  String _lang = 'en';
+  String _lang = 'ar';
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+
+  Future<_HomeworkReceiver> _resolveHomeworkReceiver({
+    required String classId,
+    required String fallbackUid,
+    required String fallbackName,
+  }) async {
+    final cleanClassId = classId.trim();
+    final cleanFallbackUid = fallbackUid.trim();
+    final cleanFallbackName = fallbackName.trim();
+
+    if (cleanClassId.isEmpty) {
+      return _HomeworkReceiver(uid: cleanFallbackUid, name: cleanFallbackName);
+    }
+
+    final cached = _receiverByClassId[cleanClassId];
+    if (cached != null) {
+      final receiver = await cached;
+      if (receiver.uid.isNotEmpty &&
+          !_adminHomeworkReceiverUids.contains(receiver.uid)) {
+        return receiver;
+      }
+      return _HomeworkReceiver(uid: cleanFallbackUid, name: cleanFallbackName);
+    }
+
+    final future = () async {
+      try {
+        final snap = await _db.child('classes/$cleanClassId').get();
+        if (!snap.exists || snap.value is! Map) {
+          return const _HomeworkReceiver();
+        }
+        final classNode = (snap.value as Map).map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
+        final current = classNode['instructor_current'] is Map
+            ? (classNode['instructor_current'] as Map).map(
+                (k, v) => MapEntry(k.toString(), v),
+              )
+            : <String, dynamic>{};
+        final uid = (current['uid'] ?? '').toString().trim();
+        final name = (current['name'] ?? classNode['instructor'] ?? '')
+            .toString()
+            .trim();
+        return _HomeworkReceiver(uid: uid, name: name);
+      } catch (_) {
+        return const _HomeworkReceiver();
+      }
+    }();
+
+    _receiverByClassId[cleanClassId] = future;
+    final receiver = await future;
+    if (receiver.uid.isNotEmpty &&
+        !_adminHomeworkReceiverUids.contains(receiver.uid)) {
+      return receiver;
+    }
+    return _HomeworkReceiver(uid: cleanFallbackUid, name: cleanFallbackName);
+  }
+
   Future<String> _resolveLearnerUidFromAuth(String authUid) async {
     final clean = authUid.trim();
     if (clean.isEmpty) return '';
@@ -404,7 +467,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   String _confirmTitle() {
     switch (_lang) {
       case 'ar':
-        return 'إرسال الواجب البريدية؟';
+        return 'إرسال الواجب؟';
       default:
         return 'Send homework email?';
     }
@@ -633,13 +696,18 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           final reviewNote = (hw['reviewNote'] ?? '').toString();
           final needsRedo = hw['needsRedo'] == true;
 
-          final teacherUid = (rec['teacherUid'] ?? '').toString().trim();
-          final teacherName = (rec['teacherName'] ?? '').toString().trim();
+          final classId = (rec['class_id'] ?? '').toString().trim();
+          final receiver = await _resolveHomeworkReceiver(
+            classId: classId,
+            fallbackUid: (rec['teacherUid'] ?? '').toString(),
+            fallbackName: (rec['teacherName'] ?? '').toString(),
+          );
 
           list.add({
             'itemKey': itemKey,
             'source': source,
             'homeworkRefPath': homeworkRefPath,
+            'classId': classId,
             'sessionId': sessionId,
             'date': date,
             'taughtTitle': taughtTitle,
@@ -655,8 +723,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
             'reviewGrade': reviewGrade,
             'reviewNote': reviewNote,
             'needsRedo': needsRedo,
-            'teacherUid': teacherUid,
-            'teacherName': teacherName,
+            'teacherUid': receiver.uid,
+            'teacherName': receiver.name,
           });
         }
       }
@@ -997,7 +1065,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                           ),
                         ],
                       )
-                    : _buildHomeworkTimeline()),
+                    : _buildHomeworkTimeline(
+                      padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).viewPadding.bottom + 20,
+                      ),
+                    )),
         ),
       ),
     );
@@ -1412,4 +1484,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       },
     );
   }
+}
+
+class _HomeworkReceiver {
+  const _HomeworkReceiver({this.uid = '', this.name = ''});
+
+  final String uid;
+  final String name;
 }

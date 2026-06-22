@@ -2,7 +2,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../shared/material_webview_screen.dart';
-import '../shared/app_feedback.dart';
+import '../shared/learner_notice_popup.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/profile_avatar.dart';
@@ -184,9 +184,10 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     if (link.isEmpty) {
       if (!mounted) return;
-      AppToast.fromSnackBar(
+      await showLearnerNoticePopup(
         context,
-        const SnackBar(content: Text('This game has no link.')),
+        message: 'This game has no link.',
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -294,6 +295,8 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                   ],
                   Text(
                     name.isEmpty ? 'Untitled Game' : name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
@@ -395,6 +398,8 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     const SizedBox(height: 6),
                     Text(
                       description,
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         height: 1.5,
@@ -414,6 +419,8 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                     const SizedBox(height: 6),
                     Text(
                       rules,
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         height: 1.5,

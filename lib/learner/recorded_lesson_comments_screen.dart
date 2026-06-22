@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 
-import '../shared/app_feedback.dart';
 import '../shared/app_connectivity.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/learner_notice_popup.dart';
 import '../shared/profile_avatar.dart';
 import '../services/course_feedback_service.dart';
 
@@ -50,6 +52,17 @@ class _RecordedLessonCommentsScreenState
   int _replyCountRequestId = 0;
   final Map<String, int?> _nextBeforeByCourse = {};
   static const int _pageSize = 18;
+
+  void _notice(String message, {LearnerNoticeTone? tone}) {
+    if (!mounted) return;
+    unawaited(
+      showLearnerNoticePopup(
+        context,
+        message: message,
+        tone: tone ?? learnerNoticeToneForMessage(message),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -269,7 +282,7 @@ class _RecordedLessonCommentsScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() => _loadingMore = false);
-      AppToast.show(context, toHumanError(e), type: AppToastType.error);
+      _notice(toHumanError(e), tone: LearnerNoticeTone.error);
     }
   }
 
@@ -305,11 +318,7 @@ class _RecordedLessonCommentsScreenState
       setState(() {
         _loadingReplies.remove(item.id);
       });
-      AppToast.show(
-        context,
-        'Could not load replies.',
-        type: AppToastType.error,
-      );
+      _notice('Could not load replies.', tone: LearnerNoticeTone.error);
     }
   }
 
@@ -355,27 +364,21 @@ class _RecordedLessonCommentsScreenState
 
   Future<void> _postComment() async {
     if (AppConnectivity.instance.isOffline) {
-      AppToast.show(
-        context,
+      _notice(
         'Comments need internet. Use lesson notes while offline.',
-        type: AppToastType.info,
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
     final text = _commentC.text.trim();
     if (text.isEmpty) {
-      AppToast.show(
-        context,
-        'Write a comment first.',
-        type: AppToastType.error,
-      );
+      _notice('Write a comment first.', tone: LearnerNoticeTone.warning);
       return;
     }
     if (text.length > 400) {
-      AppToast.show(
-        context,
+      _notice(
         'Comment is too long (max 400 chars).',
-        type: AppToastType.error,
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -392,15 +395,11 @@ class _RecordedLessonCommentsScreenState
       _commentC.clear();
       await _loadComments(reset: true);
       if (!mounted) return;
-      AppToast.show(context, 'Comment posted.');
+      _notice('Comment posted.', tone: LearnerNoticeTone.success);
       FocusScope.of(context).requestFocus(_commentFocus);
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(
-        context,
-        humanizeUiMessage(e.toString()),
-        type: AppToastType.error,
-      );
+      _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
     } finally {
       if (mounted) {
         setState(() => _posting = false);
@@ -410,10 +409,9 @@ class _RecordedLessonCommentsScreenState
 
   Future<void> _replyToComment(String commentId, String courseId) async {
     if (AppConnectivity.instance.isOffline) {
-      AppToast.show(
-        context,
+      _notice(
         'Replies need internet. Use lesson notes while offline.',
-        type: AppToastType.info,
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -490,7 +488,10 @@ class _RecordedLessonCommentsScreenState
 
   Future<void> _reportComment(String commentId, String courseId) async {
     if (AppConnectivity.instance.isOffline) {
-      AppToast.show(context, 'Reporting comments needs internet.');
+      _notice(
+        'Reporting comments needs internet.',
+        tone: LearnerNoticeTone.warning,
+      );
       return;
     }
     await CourseFeedbackService.reportLessonComment(
@@ -501,14 +502,18 @@ class _RecordedLessonCommentsScreenState
       reason: 'Reported by learner',
     );
     if (!mounted) return;
-    AppToast.show(context, 'Comment reported.');
+    _notice('Comment reported.', tone: LearnerNoticeTone.success);
   }
 
   Future<void> _editComment(LessonCommentItem item, String courseId) async {
     if (AppConnectivity.instance.isOffline) {
-      AppToast.show(context, 'Editing comments needs internet.');
+      _notice(
+        'Editing comments needs internet.',
+        tone: LearnerNoticeTone.warning,
+      );
       return;
     }
+    if (!mounted) return;
     final controller = TextEditingController(text: item.text.trim());
     final submit = await showModalBottomSheet<bool>(
       context: context,
@@ -571,11 +576,7 @@ class _RecordedLessonCommentsScreenState
     if (submit != true) return;
     if (!mounted) return;
     if (text.isEmpty) {
-      AppToast.show(
-        context,
-        'Write a comment first.',
-        type: AppToastType.error,
-      );
+      _notice('Write a comment first.', tone: LearnerNoticeTone.warning);
       return;
     }
 
@@ -589,14 +590,10 @@ class _RecordedLessonCommentsScreenState
       );
       await _loadComments(reset: true);
       if (!mounted) return;
-      AppToast.show(context, 'Comment updated.');
+      _notice('Comment updated.', tone: LearnerNoticeTone.success);
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(
-        context,
-        humanizeUiMessage(e.toString()),
-        type: AppToastType.error,
-      );
+      _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
     }
   }
 
@@ -605,9 +602,13 @@ class _RecordedLessonCommentsScreenState
     String courseId,
   ) async {
     if (AppConnectivity.instance.isOffline) {
-      AppToast.show(context, 'Deleting comments needs internet.');
+      _notice(
+        'Deleting comments needs internet.',
+        tone: LearnerNoticeTone.warning,
+      );
       return;
     }
+    if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -641,14 +642,10 @@ class _RecordedLessonCommentsScreenState
       );
       await _loadComments(reset: true);
       if (!mounted) return;
-      AppToast.show(context, 'Comment deleted.');
+      _notice('Comment deleted.', tone: LearnerNoticeTone.success);
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(
-        context,
-        humanizeUiMessage(e.toString()),
-        type: AppToastType.error,
-      );
+      _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
     }
   }
 

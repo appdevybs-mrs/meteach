@@ -34,6 +34,7 @@ import '../shared/icon_theme.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/course_join_rules.dart';
 import '../shared/payment_status.dart';
+import '../shared/learner_notice_popup.dart';
 import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
 import '../services/learner_notification_settings_service.dart';
@@ -41,6 +42,19 @@ import '../services/notification_service.dart';
 import '../services/learner_join_signal_service.dart';
 import '../services/story_preload_service.dart';
 import '../services/window_access_service.dart';
+
+Future<void> _showLearnerHomeNotice(
+  BuildContext context,
+  String message, {
+  required _HomePalette palette,
+}) async {
+  if (!context.mounted) return;
+  await showLearnerNoticePopup(
+    context,
+    message: message,
+    tone: learnerNoticeToneForMessage(message),
+  );
+}
 
 Future<String> _resolveLearnerUidForAuth(
   DatabaseReference db,
@@ -94,12 +108,18 @@ class _LearnerHomeState extends State<LearnerHome> {
     _profilePhotoFuture = _myProfilePhoto();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      FirstLoginAgreement.ensureAccepted(context, roleKey: 'learner');
-      unawaited(_showPaymentDueToastOnLoginIfNeeded());
-      unawaited(_maybePromptProfileCompletion());
+      unawaited(_runLearnerStartupPrompts());
       unawaited(_seedNotificationSettingsRecord());
       unawaited(StoryPreloadService.preloadFromHome(context));
     });
+  }
+
+  Future<void> _runLearnerStartupPrompts() async {
+    await FirstLoginAgreement.ensureAccepted(context, roleKey: 'learner');
+    if (!mounted) return;
+    await _showPaymentDueDialogOnLoginIfNeeded();
+    if (!mounted) return;
+    unawaited(_maybePromptProfileCompletion());
   }
 
   @override
@@ -228,7 +248,7 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
-  Future<void> _showPaymentDueToastOnLoginIfNeeded() async {
+  Future<void> _showPaymentDueDialogOnLoginIfNeeded() async {
     if (_paymentDueToastChecked) return;
     _paymentDueToastChecked = true;
 
@@ -239,7 +259,8 @@ class _LearnerHomeState extends State<LearnerHome> {
       final userSnap = await _db.child('users').child(uid).get();
       if (userSnap.value is Map) {
         final userMap = userSnap.value as Map;
-        final isExam = userMap['examMode'] == true ||
+        final isExam =
+            userMap['examMode'] == true ||
             userMap['examMode']?.toString() == 'true';
         if (isExam) return;
       }
@@ -255,14 +276,257 @@ class _LearnerHomeState extends State<LearnerHome> {
       final hasDue = courses.any(_isCoursePaymentNeeded);
       if (!hasDue || !mounted) return;
 
-      AppToast.show(
-        context,
-        'تنبيه لطيف: يوجد دفع مستحق في إحدى دوراتك. يرجى التواصل مع Your Bridge School 💛\n'
-        'Friendly reminder: a payment is due for one of your courses. Please contact Your Bridge School 💛',
-        type: AppToastType.info,
-        duration: const Duration(seconds: 5),
-      );
+      final school = await _loadSchoolContactInfo(_db);
+      if (!mounted) return;
+      await _showPaymentDueDialog(school: school);
     } catch (_) {}
+  }
+
+  Future<void> _showPaymentDueDialog({_SchoolContactInfo? school}) async {
+    if (!mounted) return;
+
+    final p = palette;
+    final hasContact = school?.hasAnyContact ?? false;
+    final schoolName = (school?.name ?? '').trim();
+    final accent = const Color(0xFFC28A21);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dCtx) {
+        return Dialog(
+          elevation: 18,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
+          backgroundColor: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(28),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [p.cardBg, const Color(0xFFFFF7E7)],
+                ),
+                border: Border.all(color: accent.withValues(alpha: 0.24)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x30000000),
+                    blurRadius: 28,
+                    offset: Offset(0, 16),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -28,
+                      top: -30,
+                      child: Container(
+                        width: 118,
+                        height: 118,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: accent.withValues(alpha: 0.11),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 62,
+                            height: 62,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: accent.withValues(alpha: 0.13),
+                              border: Border.all(
+                                color: accent.withValues(alpha: 0.28),
+                              ),
+                            ),
+                            child: const Icon(
+                              LearnerIcons.creditsWallet,
+                              color: Color(0xFFC28A21),
+                              size: 30,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'تذكير بالدفع',
+                            textDirection: TextDirection.rtl,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: p.text,
+                              fontSize: 23,
+                              fontWeight: FontWeight.w900,
+                              height: 1.15,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Payment Reminder',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: p.primary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _paymentDueMessageCard(
+                            p: p,
+                            accent: accent,
+                            arabic:
+                                'يوجد دفع مستحق في إحدى دوراتك. يرجى التواصل مع Your Bridge School لإتمام التجديد.',
+                            english:
+                                'A payment is due for one of your courses. Please contact Your Bridge School to complete your renewal.',
+                          ),
+                          if (schoolName.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.68),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: p.border.withValues(alpha: 0.55),
+                                ),
+                              ),
+                              child: Text(
+                                schoolName,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: p.primary,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 18),
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: p.text,
+                                  side: BorderSide(
+                                    color: p.border.withValues(alpha: 0.8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 13,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                                onPressed: () => Navigator.of(dCtx).pop(),
+                                child: const Text(
+                                  'حسنًا / OK',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                              FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                    vertical: 13,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                                onPressed: hasContact
+                                    ? () async {
+                                        Navigator.of(dCtx).pop();
+                                        await _openContactSchool(
+                                          context,
+                                          school,
+                                        );
+                                      }
+                                    : null,
+                                icon: const Icon(LearnerIcons.contactSchool),
+                                label: const Text(
+                                  'تواصل معنا / Contact',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _paymentDueMessageCard({
+    required _HomePalette p,
+    required Color accent,
+    required String arabic,
+    required String english,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 13),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            arabic,
+            textDirection: TextDirection.rtl,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: p.text,
+              fontWeight: FontWeight.w800,
+              height: 1.55,
+              fontSize: 15,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            child: Divider(height: 1, color: p.border.withValues(alpha: 0.55)),
+          ),
+          Text(
+            english,
+            textAlign: TextAlign.left,
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.82),
+              fontWeight: FontWeight.w700,
+              height: 1.45,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _isMissingProfileData(Map<String, dynamic> m) {
@@ -894,8 +1158,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
     if (uid == null || uid.isEmpty) return;
     try {
       final snap = await _db.child('users/$uid/examMode').get();
-      final isExam =
-          snap.value == true || snap.value?.toString() == 'true';
+      final isExam = snap.value == true || snap.value?.toString() == 'true';
       if (mounted) setState(() => _examMode = isExam);
     } catch (_) {}
   }
@@ -1326,18 +1589,24 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
     final uri = Uri.tryParse(u);
     if (uri == null) {
       if (!mounted || !context.mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Invalid meeting link.')),
+      unawaited(
+        _showLearnerHomeNotice(
+          context,
+          'Invalid meeting link.',
+          palette: palette,
+        ),
       );
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted && context.mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open the link.')),
+      unawaited(
+        _showLearnerHomeNotice(
+          context,
+          'Could not open the link.',
+          palette: palette,
+        ),
       );
     }
   }
@@ -2524,7 +2793,9 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
             child: ValueListenableBuilder<_JoinFabPayload?>(
               valueListenable: _joinFabPayload,
               builder: (context, payload, _) {
-                if (payload == null || _examMode) return const SizedBox.shrink();
+                if (payload == null || _examMode) {
+                  return const SizedBox.shrink();
+                }
 
                 if (isNarrowPhone) {
                   return SizedBox(
@@ -2835,18 +3106,24 @@ class _ProgressCard extends StatelessWidget {
     final uri = Uri.tryParse(u);
     if (uri == null) {
       if (!context.mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Invalid meeting link.')),
+      unawaited(
+        _showLearnerHomeNotice(
+          context,
+          'Invalid meeting link.',
+          palette: _paletteFromTheme(),
+        ),
       );
       return;
     }
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open the link.')),
+      unawaited(
+        _showLearnerHomeNotice(
+          context,
+          'Could not open the link.',
+          palette: _paletteFromTheme(),
+        ),
       );
     }
   }
@@ -4203,9 +4480,12 @@ class _BookingTopCardState extends State<_BookingTopCard>
     final uri = Uri.tryParse(u);
     if (uri == null) {
       if (context.mounted) {
-        AppToast.fromSnackBar(
-          context,
-          const SnackBar(content: Text('Invalid meeting link.')),
+        unawaited(
+          _showLearnerHomeNotice(
+            context,
+            'Invalid meeting link.',
+            palette: _paletteFromTheme(),
+          ),
         );
       }
       return;
@@ -4213,9 +4493,12 @@ class _BookingTopCardState extends State<_BookingTopCard>
 
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open the link.')),
+      unawaited(
+        _showLearnerHomeNotice(
+          context,
+          'Could not open the link.',
+          palette: _paletteFromTheme(),
+        ),
       );
     }
   }
@@ -5135,9 +5418,12 @@ Future<void> _openContactSchool(
     final uri = Uri(scheme: 'tel', path: phone);
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open phone app.')),
+      unawaited(
+        _showLearnerHomeNotice(
+          context,
+          'Could not open phone app.',
+          palette: _paletteFromTheme(),
+        ),
       );
     }
     return;
@@ -5151,19 +5437,23 @@ Future<void> _openContactSchool(
     );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open email app.')),
+      unawaited(
+        _showLearnerHomeNotice(
+          context,
+          'Could not open email app.',
+          palette: _paletteFromTheme(),
+        ),
       );
     }
     return;
   }
 
   if (context.mounted) {
-    AppToast.fromSnackBar(
-      context,
-      const SnackBar(
-        content: Text('School contact is not available right now.'),
+    unawaited(
+      _showLearnerHomeNotice(
+        context,
+        'School contact is not available right now.',
+        palette: _paletteFromTheme(),
       ),
     );
   }
@@ -5302,9 +5592,12 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   final authUid = me?.uid ?? '';
   if (authUid.isEmpty) {
     if (!context.mounted) return;
-    AppToast.fromSnackBar(
-      context,
-      const SnackBar(content: Text('Not logged in.')),
+    unawaited(
+      _showLearnerHomeNotice(
+        context,
+        'Not logged in.',
+        palette: _paletteFromTheme(),
+      ),
     );
     return;
   }
@@ -5394,12 +5687,11 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
     }
   } catch (e) {
     if (!context.mounted) return;
-    AppToast.fromSnackBar(
-      context,
-      SnackBar(
-        content: Text(
-          toHumanError(e, fallback: 'Could not load your courses right now.'),
-        ),
+    unawaited(
+      _showLearnerHomeNotice(
+        context,
+        toHumanError(e, fallback: 'Could not load your courses right now.'),
+        palette: _paletteFromTheme(),
       ),
     );
     return;
@@ -5408,10 +5700,11 @@ Future<void> _openBookingCoursePicker(BuildContext context) async {
   if (!context.mounted) return;
 
   if (courses.isEmpty) {
-    AppToast.fromSnackBar(
-      context,
-      const SnackBar(
-        content: Text('No Seats available. Please try again later.'),
+    unawaited(
+      _showLearnerHomeNotice(
+        context,
+        'No Seats available. Please try again later.',
+        palette: _paletteFromTheme(),
       ),
     );
     return;
@@ -5856,9 +6149,12 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
   final uid = me?.uid ?? '';
   if (uid.isEmpty) {
     if (!context.mounted) return;
-    AppToast.fromSnackBar(
-      context,
-      const SnackBar(content: Text('Not logged in.')),
+    unawaited(
+      _showLearnerHomeNotice(
+        context,
+        'Not logged in.',
+        palette: _paletteFromTheme(),
+      ),
     );
     return;
   }
@@ -5933,12 +6229,11 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
     }
   } catch (e) {
     if (!context.mounted) return;
-    AppToast.fromSnackBar(
-      context,
-      SnackBar(
-        content: Text(
-          toHumanError(e, fallback: 'Could not load your courses right now.'),
-        ),
+    unawaited(
+      _showLearnerHomeNotice(
+        context,
+        toHumanError(e, fallback: 'Could not load your courses right now.'),
+        palette: _paletteFromTheme(),
       ),
     );
     return;
@@ -5947,9 +6242,12 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
   if (!context.mounted) return;
 
   if (courses.isEmpty) {
-    AppToast.fromSnackBar(
-      context,
-      const SnackBar(content: Text('No courses available right now.')),
+    unawaited(
+      _showLearnerHomeNotice(
+        context,
+        'No courses available right now.',
+        palette: _paletteFromTheme(),
+      ),
     );
     return;
   }

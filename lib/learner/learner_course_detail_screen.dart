@@ -40,8 +40,8 @@ import '../shared/human_error.dart';
 import '../shared/payment_status.dart';
 import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
-import '../shared/app_feedback.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/learner_notice_popup.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/responsive_layout.dart';
@@ -88,6 +88,17 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
   late final DatabaseReference _classesRef = _db.child(classesNode);
   late final DatabaseReference _coursesRef = _db.child('courses');
+
+  void _notice(String message, {LearnerNoticeTone? tone}) {
+    if (!mounted) return;
+    unawaited(
+      showLearnerNoticePopup(
+        context,
+        message: message,
+        tone: tone ?? learnerNoticeToneForMessage(message),
+      ),
+    );
+  }
 
   bool _busy = true;
   String? _error;
@@ -564,18 +575,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final uri = Uri.tryParse(u);
     if (uri == null) {
       if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Invalid meeting link.')),
-      );
+      _notice('Invalid meeting link.', tone: LearnerNoticeTone.error);
       return;
     }
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open the link.')),
-      );
+      _notice('Could not open the link.', tone: LearnerNoticeTone.error);
     }
   }
 
@@ -754,18 +759,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final uri = Uri.tryParse(normalized);
     if (uri == null) {
       if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(content: Text('Invalid $label URL.')),
-      );
+      _notice('Invalid $label URL.', tone: LearnerNoticeTone.error);
       return;
     }
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(content: Text('Could not open $label.')),
-      );
+      _notice('Could not open $label.', tone: LearnerNoticeTone.error);
     }
   }
 
@@ -909,12 +908,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       final teachers = await _loadAssignedTeachersForMessaging();
       if (!mounted) return;
       if (teachers.isEmpty) {
-        AppToast.fromSnackBar(
-          context,
-          const SnackBar(
-            content: Text('No assigned teachers for this course.'),
-          ),
-        );
+        _notice('No assigned teachers for this course.');
         return;
       }
       final picked = await _pickTeacherForMail(teachers);
@@ -934,10 +928,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(content: Text('Could not open teacher mail: $e')),
-      );
+      _notice('Could not open teacher mail: $e', tone: LearnerNoticeTone.error);
     } finally {
       if (mounted) {
         setState(() => _mailingTeacher = false);
@@ -1696,9 +1687,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           }
         }
 
-        sSnap ??= await rootSyllabusRef
-            .get()
-            .timeout(const Duration(seconds: 10));
+        sSnap ??= await rootSyllabusRef.get().timeout(
+          const Duration(seconds: 10),
+        );
 
         if (sSnap.exists && sSnap.value != null && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
@@ -2387,10 +2378,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     final isPresent =
         (row['status'] ?? '').toString().toLowerCase().trim() == 'present';
     if (!isPresent) {
-      AppToast.show(
-        context,
+      _notice(
         'You can review this session after attending it.',
-        type: AppToastType.error,
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -2430,10 +2420,12 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           builder: (context, setD) {
             Future<void> submit() async {
               if (rating < 1 || rating > 5) {
-                AppToast.show(
-                  context,
-                  'Please choose a rating from 1 to 5 stars.',
-                  type: AppToastType.error,
+                unawaited(
+                  showLearnerNoticePopup(
+                    context,
+                    message: 'Please choose a rating from 1 to 5 stars.',
+                    tone: LearnerNoticeTone.warning,
+                  ),
                 );
                 return;
               }
@@ -2472,13 +2464,18 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
                 if (!context.mounted) return;
                 Navigator.pop(context);
-                AppToast.show(context, 'Session review submitted.');
+                _notice(
+                  'Session review submitted.',
+                  tone: LearnerNoticeTone.success,
+                );
               } catch (e) {
                 if (!context.mounted) return;
-                AppToast.show(
-                  context,
-                  toHumanError(e),
-                  type: AppToastType.error,
+                unawaited(
+                  showLearnerNoticePopup(
+                    context,
+                    message: toHumanError(e),
+                    tone: LearnerNoticeTone.error,
+                  ),
                 );
               } finally {
                 if (context.mounted) {
@@ -2691,10 +2688,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
     if (!mounted) return;
     if (!enrolled) {
-      AppToast.show(
-        context,
+      _notice(
         'Only enrolled learners can add a review.',
-        type: AppToastType.error,
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -2706,11 +2702,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           .get();
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(
-        context,
-        humanizeUiMessage(e.toString()),
-        type: AppToastType.error,
-      );
+      _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
       return;
     }
     if (!mounted) return;
@@ -2781,10 +2773,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                     child: FilledButton.icon(
                       onPressed: () {
                         if (commentC.text.trim().isEmpty) {
-                          AppToast.show(
-                            ctx,
-                            'Please add a comment before submitting.',
-                            type: AppToastType.error,
+                          unawaited(
+                            showLearnerNoticePopup(
+                              ctx,
+                              message:
+                                  'Please add a comment before submitting.',
+                              tone: LearnerNoticeTone.warning,
+                            ),
                           );
                           return;
                         }
@@ -2811,14 +2806,13 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         comment: commentC.text,
       );
       if (!mounted) return;
-      AppToast.show(context, 'Your review was submitted for approval.');
+      _notice(
+        'Your review was submitted for approval.',
+        tone: LearnerNoticeTone.success,
+      );
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(
-        context,
-        humanizeUiMessage(e.toString()),
-        type: AppToastType.error,
-      );
+      _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
     }
   }
 
@@ -2945,9 +2939,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             decoration: BoxDecoration(
               color: Colors.purple.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.purple.withValues(alpha: 0.2),
-              ),
+              border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
             ),
             child: const Row(
               children: [
@@ -3222,9 +3214,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   void _openFlexibleBooking() {
     if (_courseId.trim().isEmpty) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Course booking is not available yet.')),
+      _notice(
+        'Course booking is not available yet.',
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -3700,9 +3692,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   void _openRecordedStudy() {
     if (_courseId.trim().isEmpty) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Recorded course is not available.')),
+      _notice(
+        'Recorded course is not available.',
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -4306,7 +4298,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       children: [
         Row(
           children: [
-            const Icon(Icons.track_changes_rounded, size: 20, color: Colors.white70),
+            const Icon(
+              Icons.track_changes_rounded,
+              size: 20,
+              color: Colors.white70,
+            ),
             const SizedBox(width: 6),
             Text(
               '$overallPct% complete',
@@ -4355,10 +4351,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: isDone ? const Color(0xFFFF9800) : Colors.transparent,
-                  border: Border.all(
-                    color: const Color(0xFFFF9800),
-                    width: 2,
-                  ),
+                  border: Border.all(color: const Color(0xFFFF9800), width: 2),
                 ),
               );
             }),
@@ -4380,7 +4373,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               children: [
-                const Icon(Icons.verified_rounded, size: 20, color: Color(0xFF4ADE80)),
+                const Icon(
+                  Icons.verified_rounded,
+                  size: 20,
+                  color: Color(0xFF4ADE80),
+                ),
                 const SizedBox(width: 6),
                 Text(
                   'Access active · $paymentLabel',
@@ -4391,7 +4388,11 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   ),
                 ),
                 const Spacer(),
-                const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white38),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 16,
+                  color: Colors.white38,
+                ),
               ],
             ),
           ),
@@ -6149,13 +6150,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   void _showMissingHomeworkMessage() {
-    AppToast.fromSnackBar(
-      context,
-      const SnackBar(
-        content: Text(
-          'Homework file is not available yet. Please contact Your Bridge School administration for support.',
-        ),
-      ),
+    _notice(
+      'Homework file is not available yet. Please contact Your Bridge School administration for support.',
+      tone: LearnerNoticeTone.warning,
     );
   }
 
@@ -6199,9 +6196,9 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   Future<void> _openCourseBook() async {
     final url = _courseBookUrl.trim();
     if (!_isHttpUrl(url)) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Course book is not available yet.')),
+      _notice(
+        'Course book is not available yet.',
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -6223,10 +6220,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       );
     } catch (_) {
       if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('Could not open course book.')),
-      );
+      _notice('Could not open course book.', tone: LearnerNoticeTone.error);
     }
   }
 

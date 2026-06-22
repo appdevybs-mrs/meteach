@@ -23,25 +23,25 @@ class _CertificateHandler {
     required Future<Map<String, String>> Function() learnerIdentity,
     required Future<String> Function() resolveInstructorName,
     required void Function(String) snack,
-  })  : _certificateService = certificateService,
-        _certificatePdfService = certificatePdfService,
-        _getUid = getUid,
-        _getCourseId = getCourseId,
-        _getCourseKey = getCourseKey,
-        _getTitle = getTitle,
-        _getCachedCpdHours = getCachedCpdHours,
-        _getCachedShortDescription = getCachedShortDescription,
-        _getFlatSessions = getFlatSessions,
-        _progressOf = progressOf,
-        _isSessionCompleted = isSessionCompleted,
-        _sessionCompletionAt = sessionCompletionAt,
-        _isModuleCompleted = isModuleCompleted,
-        _sanitizeIdPart = sanitizeIdPart,
-        _fmtYmd = fmtYmd,
-        _oneYearAfter = oneYearAfter,
-        _learnerIdentity = learnerIdentity,
-        _resolveInstructorName = resolveInstructorName,
-        _snack = snack;
+  }) : _certificateService = certificateService,
+       _certificatePdfService = certificatePdfService,
+       _getUid = getUid,
+       _getCourseId = getCourseId,
+       _getCourseKey = getCourseKey,
+       _getTitle = getTitle,
+       _getCachedCpdHours = getCachedCpdHours,
+       _getCachedShortDescription = getCachedShortDescription,
+       _getFlatSessions = getFlatSessions,
+       _progressOf = progressOf,
+       _isSessionCompleted = isSessionCompleted,
+       _sessionCompletionAt = sessionCompletionAt,
+       _isModuleCompleted = isModuleCompleted,
+       _sanitizeIdPart = sanitizeIdPart,
+       _fmtYmd = fmtYmd,
+       _oneYearAfter = oneYearAfter,
+       _learnerIdentity = learnerIdentity,
+       _resolveInstructorName = resolveInstructorName,
+       _snack = snack;
 
   final CertificateService _certificateService;
   final CertificatePdfService _certificatePdfService;
@@ -219,10 +219,7 @@ class _CertificateHandler {
                     borderRadius: BorderRadius.circular(36),
                   ),
                   child: const Center(
-                    child: Text(
-                      '🎓',
-                      style: TextStyle(fontSize: 36),
-                    ),
+                    child: Text('🎓', style: TextStyle(fontSize: 36)),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -335,7 +332,9 @@ class _CertificateHandler {
     required void Function(void Function()) setState,
   }) async {
     if (AppConnectivity.instance.isOffline) {
-      _snack('Certificate generation needs internet. Come back online to generate your certificate.');
+      _snack(
+        'Certificate generation needs internet. Come back online to generate your certificate.',
+      );
       return;
     }
     if (!mounted) return;
@@ -379,10 +378,15 @@ class _CertificateHandler {
       if (e.toString().contains('National ID')) {
         _showNationalIdRequiredDialog(context: context, mounted: mounted);
       } else {
-        AppToast.show(
-          context,
-          toHumanError(e, fallback: 'Could not generate certificate.'),
-          type: AppToastType.error,
+        unawaited(
+          showLearnerNoticePopup(
+            context,
+            message: toHumanError(
+              e,
+              fallback: 'Could not generate certificate.',
+            ),
+            tone: LearnerNoticeTone.error,
+          ),
         );
       }
     }
@@ -400,7 +404,9 @@ class _CertificateHandler {
     if (_generatingModuleCertificateKeys.contains(moduleKey)) return;
 
     if (AppConnectivity.instance.isOffline) {
-      _snack('Certificate generation needs internet. Come back online to generate your certificate.');
+      _snack(
+        'Certificate generation needs internet. Come back online to generate your certificate.',
+      );
       return;
     }
 
@@ -442,9 +448,9 @@ class _CertificateHandler {
           : 'Module ${moduleIndex + 1}: $rawTitle';
       final bytes = await _certificatePdfService
           .generateMilestoneCertificatePdfBytes(
-        cert: cert,
-        moduleLabel: displayModuleLabel,
-      );
+            cert: cert,
+            moduleLabel: displayModuleLabel,
+          );
 
       if (loadingDialogContext != null && loadingDialogContext!.mounted) {
         Navigator.of(loadingDialogContext!).pop();
@@ -473,10 +479,15 @@ class _CertificateHandler {
       if (e.toString().contains('National ID')) {
         _showNationalIdRequiredDialog(context: context, mounted: mounted);
       } else {
-        AppToast.show(
-          context,
-          toHumanError(e, fallback: 'Could not generate milestone certificate.'),
-          type: AppToastType.error,
+        unawaited(
+          showLearnerNoticePopup(
+            context,
+            message: toHumanError(
+              e,
+              fallback: 'Could not generate milestone certificate.',
+            ),
+            tone: LearnerNoticeTone.error,
+          ),
         );
       }
     } finally {
@@ -525,10 +536,7 @@ class _CertificateHandler {
                   borderRadius: BorderRadius.circular(36),
                 ),
                 child: const Center(
-                  child: Text(
-                    '🌍',
-                    style: TextStyle(fontSize: 36),
-                  ),
+                  child: Text('🌍', style: TextStyle(fontSize: 36)),
                 ),
               ),
               const SizedBox(height: 20),
@@ -619,10 +627,7 @@ class _CertificateHandler {
                   borderRadius: BorderRadius.circular(36),
                 ),
                 child: const Center(
-                  child: Text(
-                    '✅',
-                    style: TextStyle(fontSize: 36),
-                  ),
+                  child: Text('✅', style: TextStyle(fontSize: 36)),
                 ),
               ),
               const SizedBox(height: 20),
@@ -672,10 +677,12 @@ class _CertificateHandler {
     if (action == 'print') {
       await Printing.layoutPdf(onLayout: (_) async => bytes);
       if (!mounted) return;
-      AppToast.show(
-        context,
-        'Certificate opened in print preview.',
-        type: AppToastType.success,
+      unawaited(
+        showLearnerNoticePopup(
+          context,
+          message: 'Certificate opened in print preview.',
+          tone: LearnerNoticeTone.success,
+        ),
       );
       return;
     }
@@ -683,10 +690,12 @@ class _CertificateHandler {
     if (kIsWeb) {
       downloadBytes(bytes, defaultFileName);
       if (!mounted) return;
-      AppToast.show(
-        context,
-        'Certificate downloaded.',
-        type: AppToastType.success,
+      unawaited(
+        showLearnerNoticePopup(
+          context,
+          message: 'Certificate downloaded.',
+          tone: LearnerNoticeTone.success,
+        ),
       );
     } else {
       final dir = await getTemporaryDirectory();
@@ -699,10 +708,12 @@ class _CertificateHandler {
       ]);
 
       if (!mounted) return;
-      AppToast.show(
-        context,
-        'Certificate is ready to save or share.',
-        type: AppToastType.success,
+      unawaited(
+        showLearnerNoticePopup(
+          context,
+          message: 'Certificate is ready to save or share.',
+          tone: LearnerNoticeTone.success,
+        ),
       );
     }
   }
@@ -736,7 +747,11 @@ class _CertificateHandler {
               color: const Color(0xFF22C55E),
               borderRadius: BorderRadius.circular(19),
             ),
-            child: const Icon(Icons.check_rounded, color: Colors.white, size: 22),
+            child: const Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -795,7 +810,8 @@ class _CertificateHandler {
       required String moduleLabel,
       required List<_RecordedUnit> moduleUnits,
       required int moduleIndex,
-    }) onModuleCertificateTap,
+    })
+    onModuleCertificateTap,
   }) {
     final completed = _isModuleCompleted(moduleUnits);
     if (!completed) return const SizedBox.shrink();
@@ -813,9 +829,7 @@ class _CertificateHandler {
       decoration: BoxDecoration(
         color: const Color(0xFFFFF7ED),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: deepOrange,
-        ),
+        border: Border.all(color: deepOrange),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),

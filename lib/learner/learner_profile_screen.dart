@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,7 +19,7 @@ import '../shared/ybs_busy_logo.dart';
 import '../services/backend_api.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
-import '../shared/app_feedback.dart';
+import '../shared/learner_notice_popup.dart';
 
 enum _LeaveChoice { save, discard, cancel }
 
@@ -83,6 +84,17 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
   late final DatabaseReference _usersRef = _db.child(usersNode);
   late final DatabaseReference _syllabiRef = _db.child(syllabiNode);
+
+  void _notice(String message, {LearnerNoticeTone? tone}) {
+    if (!mounted) return;
+    unawaited(
+      showLearnerNoticePopup(
+        context,
+        message: message,
+        tone: tone ?? learnerNoticeToneForMessage(message),
+      ),
+    );
+  }
 
   final _formKey = GlobalKey<FormState>();
 
@@ -429,11 +441,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
     final remaining = _maxExtraPhotos - _photoUrls.length;
     if (remaining <= 0) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(
-          content: Text('You already reached the 6 extra photo limit.'),
-        ),
+      _notice(
+        'You already reached the 6 extra photo limit.',
+        tone: LearnerNoticeTone.warning,
       );
       return;
     }
@@ -953,10 +963,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
 
       if (!mounted) return true;
       if (showSuccessSnackBar) {
-        AppToast.fromSnackBar(
-          context,
-          const SnackBar(content: Text('Profile updated ✅')),
-        );
+        _notice('Profile updated ✅', tone: LearnerNoticeTone.success);
       }
       await _load();
       return true;
@@ -1166,10 +1173,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     final p = palette;
 
     if (currentUser == null) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('You must be logged in.')),
-      );
+      _notice('You must be logged in.', tone: LearnerNoticeTone.error);
       return;
     }
 
@@ -1228,10 +1232,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 if (!mounted) return;
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
-                AppToast.fromSnackBar(
-                  context,
-                  const SnackBar(content: Text('Password updated ✅')),
-                );
+                _notice('Password updated ✅', tone: LearnerNoticeTone.success);
               } on FirebaseAuthException catch (e) {
                 String msg = e.message ?? 'Failed to update password.';
                 if (e.code == 'wrong-password') {
@@ -1242,14 +1243,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                       'Please log in again, then retry changing your password.';
                 }
                 if (mounted) {
-                  AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
+                  _notice(msg, tone: LearnerNoticeTone.error);
                 }
               } catch (e) {
                 if (mounted) {
-                  AppToast.fromSnackBar(
-                    context,
-                    SnackBar(content: Text(toHumanError(e))),
-                  );
+                  _notice(toHumanError(e), tone: LearnerNoticeTone.error);
                 }
               } finally {
                 if (mounted) setState(() => _busy = false);
