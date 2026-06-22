@@ -2859,6 +2859,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
   void _showLearnersSheet(
     BuildContext context, {
     required String title,
+    required Color color,
+    required String ruleExplanation,
     required List<String> names,
   }) {
     showModalBottomSheet<void>(
@@ -2877,14 +2879,39 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AdminHome.primaryBlue,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 28,
+                      margin: const EdgeInsets.only(right: 10),
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
+                if (ruleExplanation.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 14),
+                    child: Text(
+                      ruleExplanation,
+                      style: TextStyle(
+                        color: color.withValues(alpha: 0.65),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 10),
                 if (names.isEmpty)
                   const Padding(
@@ -2905,9 +2932,9 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) => ListTile(
                         dense: true,
-                        leading: const Icon(
+                        leading: Icon(
                           Icons.person_rounded,
-                          color: AdminHome.primaryBlue,
+                          color: color,
                         ),
                         title: Text(
                           names[i],
@@ -3039,7 +3066,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 100),
                   child: Wrap(
-                    spacing: isMobileCard ? 4 : 5,
+                    spacing: isMobileCard ? 6 : 8,
+                    runSpacing: isMobileCard ? 4 : 5,
                     children: [
                       _StatusLabel(
                         label: 'Learners',
@@ -3055,6 +3083,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.blackLabel,
+                          color: _PayLegend.blackColor,
+                          ruleExplanation: 'No active payment package or sessions are past due.',
                           names: details.overdueLearners,
                         ),
                       ),
@@ -3066,6 +3096,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.redLabel,
+                          color: _PayLegend.redColor,
+                          ruleExplanation: 'All paid sessions have been consumed. Payment is required.',
                           names: details.dueNowLearners,
                         ),
                       ),
@@ -3077,6 +3109,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.yellowLabel,
+                          color: _PayLegend.yellowColor,
+                          ruleExplanation: 'Sessions are running low. Payment will be due soon.',
                           names: details.warningLearners,
                         ),
                       ),
@@ -3088,6 +3122,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.noCourseLabel,
+                          color: _PayLegend.noCourseColor,
+                          ruleExplanation: 'Not enrolled in any course.',
                           names: details.noCourseLearners,
                         ),
                       ),
@@ -3099,6 +3135,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.examLabel,
+                          color: _PayLegend.examColor,
+                          ruleExplanation: 'Currently in exam mode.',
                           names: details.examLearners,
                         ),
                       ),
@@ -3144,6 +3182,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
   void _showLearnersSheet(
     BuildContext context, {
     required String title,
+    required Color color,
+    required String ruleExplanation,
     required List<String> names,
   }) {
     showModalBottomSheet<void>(
@@ -3162,14 +3202,39 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AdminHome.primaryBlue,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 28,
+                      margin: const EdgeInsets.only(right: 10),
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
                 ),
+                if (ruleExplanation.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 14),
+                    child: Text(
+                      ruleExplanation,
+                      style: TextStyle(
+                        color: color.withValues(alpha: 0.65),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 10),
                 if (names.isEmpty)
                   const Padding(
@@ -3190,9 +3255,9 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) => ListTile(
                         dense: true,
-                        leading: const Icon(
+                        leading: Icon(
                           Icons.person_rounded,
-                          color: AdminHome.primaryBlue,
+                          color: color,
                         ),
                         title: Text(
                           names[i],
@@ -3681,7 +3746,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 100),
                 child: Wrap(
-                  spacing: isMobileCard ? 4 : 5,
+                  spacing: isMobileCard ? 6 : 8,
+                  runSpacing: isMobileCard ? 4 : 5,
                   children: [
                     _StatusLabel(
                       label: 'Learners',
@@ -3697,6 +3763,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.noCourseLabel,
+                        color: _PayLegend.noCourseColor,
+                        ruleExplanation: 'Not enrolled in any course.',
                         names: noCourseNames,
                       ),
                     ),
@@ -3708,6 +3776,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.blackLabel,
+                        color: _PayLegend.blackColor,
+                        ruleExplanation: 'No active payment package or sessions are past due.',
                         names: blackNames,
                       ),
                     ),
@@ -3719,6 +3789,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.redLabel,
+                        color: _PayLegend.redColor,
+                        ruleExplanation: 'All paid sessions have been consumed. Payment is required.',
                         names: redNames,
                       ),
                     ),
@@ -3730,6 +3802,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.yellowLabel,
+                        color: _PayLegend.yellowColor,
+                        ruleExplanation: 'Sessions are running low. Payment will be due soon.',
                         names: yellowNames,
                       ),
                     ),
@@ -3741,6 +3815,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.okLabel,
+                        color: _PayLegend.okColor,
+                        ruleExplanation: 'Payment is up to date.',
                         names: okNames,
                       ),
                     ),
@@ -3752,6 +3828,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.examLabel,
+                        color: _PayLegend.examColor,
+                        ruleExplanation: 'Currently in exam mode.',
                         names: examNames,
                       ),
                     ),
@@ -4179,7 +4257,7 @@ class _DashCard extends StatelessWidget {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 100),
                     child: Wrap(
-                      spacing: isMobileCard ? 4 : 5,
+                      spacing: isMobileCard ? 6 : 8,
                       runSpacing: isMobileCard ? 4 : 5,
                       children: statusLabels
                           .map((sl) => _StatusLabel(

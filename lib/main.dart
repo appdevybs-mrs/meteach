@@ -2774,9 +2774,9 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                       padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
+                            crossAxisCount: 4,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
                             childAspectRatio: 1,
                           ),
                       itemCount: selectedItems.length,
@@ -3206,7 +3206,7 @@ class _PublicGalleryVideoTileState extends State<_PublicGalleryVideoTile> {
             child: Icon(
               Icons.play_circle_fill_rounded,
               color: Colors.white,
-              size: 52,
+              size: 26,
             ),
           ),
         ],
@@ -3251,7 +3251,7 @@ class _PublicGalleryVideoTileState extends State<_PublicGalleryVideoTile> {
           child: Icon(
             Icons.play_circle_fill_rounded,
             color: Colors.white,
-            size: 52,
+            size: 26,
           ),
         ),
       ],

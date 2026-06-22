@@ -384,7 +384,7 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             if (!mounted) return;
             setState(() {
               loading = false;
-              error = 'This app is not for admin accounts.\nPlease use the Teacher app.';
+              error = 'This app is not for admin accounts.\nPlease use the Admin app.';
             });
             return;
           }

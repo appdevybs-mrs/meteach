@@ -1376,7 +1376,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                   left: 20,
                   right: 20,
                   top: 20,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 20,
                 ),
                 child: Form(
                   key: _formKey,
@@ -2034,7 +2034,10 @@ class _SuggestionField extends StatelessWidget {
                   return ListTile(
                     dense: true,
                     title: Text(value),
-                    onTap: () => onSelected(value),
+                    onTap: () {
+                            onSelected(value);
+                            FocusScope.of(context).unfocus();
+                          },
                     onLongPress: suggestion?.key != null &&
                             onRemoveSuggestion != null
                         ? () {
@@ -2130,7 +2133,7 @@ class _AdminCertCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cvn = certificate.cvn;
-    final grade = certificate.grade;
+    final profileUrl = certificate.frontIdUrl ?? certificate.passportUrl ?? '';
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -2149,10 +2152,10 @@ class _AdminCertCard extends StatelessWidget {
               CircleAvatar(
                 radius: 28,
                 backgroundColor: _appBg,
-                backgroundImage: certificate.effectivePicUrl.isNotEmpty
-                    ? NetworkImage(certificate.effectivePicUrl)
+                backgroundImage: profileUrl.isNotEmpty
+                    ? NetworkImage(profileUrl)
                     : null,
-                child: certificate.effectivePicUrl.isEmpty
+                child: profileUrl.isEmpty
                     ? const Icon(Icons.person, color: _softText)
                     : null,
               ),
@@ -2170,51 +2173,14 @@ class _AdminCertCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            certificate.certificateName,
-                            style: const TextStyle(
-                              color: _actionOrange,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        if (grade.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: grade == 'F'
-                                  ? Colors.red.withValues(alpha: 0.12)
-                                  : Colors.amber.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              'Grade $grade',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: grade == 'F'
-                                    ? Colors.red[800]
-                                    : const Color(0xFFB8860B),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    if (certificate.subline.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        certificate.subline,
-                        style:
-                            const TextStyle(color: _softText, fontSize: 12),
+                    Text(
+                      certificate.certificateName,
+                      style: const TextStyle(
+                        color: _actionOrange,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
+                    ),
                     const SizedBox(height: 6),
                     Row(
                       children: [
@@ -2222,64 +2188,57 @@ class _AdminCertCard extends StatelessWidget {
                           icon: Icons.calendar_today,
                           label: certificate.issueDate,
                         ),
-                        const SizedBox(width: 8),
-                        _MiniChip(
-                          icon: Icons.badge_outlined,
-                          label: certificate.idType == 'passport'
-                              ? 'Passport'
-                              : 'National ID',
-                        ),
+                        if (cvn.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: cvn));
+                              AppToast.show(
+                                context,
+                                'CVN copied to clipboard',
+                                type: AppToastType.success,
+                              );
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _primaryBlue.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.verified,
+                                    size: 13,
+                                    color: _primaryBlue.withValues(alpha: 0.7),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    cvn,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: _primaryBlue.withValues(alpha: 0.8),
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.copy,
+                                    size: 12,
+                                    color: _primaryBlue.withValues(alpha: 0.5),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    if (cvn.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      GestureDetector(
-                        onTap: () {
-                          Clipboard.setData(ClipboardData(text: cvn));
-                          AppToast.show(
-                            context,
-                            'CVN copied to clipboard',
-                            type: AppToastType.success,
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _primaryBlue.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.verified,
-                                size: 13,
-                                color: _primaryBlue.withValues(alpha: 0.7),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                cvn,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: _primaryBlue.withValues(alpha: 0.8),
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.copy,
-                                size: 12,
-                                color: _primaryBlue.withValues(alpha: 0.5),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -2734,6 +2693,9 @@ class _AdminCertViewSheet extends StatelessWidget {
                                   'Certificate deleted',
                                   type: AppToastType.success,
                                 );
+                              }
+                              if (context.mounted) {
+                                Navigator.pop(context);
                               }
                               onDeleted();
                             } catch (e) {

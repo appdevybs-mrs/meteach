@@ -46,10 +46,10 @@ android {
             applicationId = "com.yourbridgeschool.dreamenglish"
             manifestPlaceholders["appName"] = "Your Bridge School"
         }
-        create("teacher") {
+        create("admin") {
             dimension = "app"
             applicationId = "com.dreamenglish.academy.dream_english_academy"
-            manifestPlaceholders["appName"] = "YBS Teacher"
+            manifestPlaceholders["appName"] = "YBS Admin"
         }
     }
 

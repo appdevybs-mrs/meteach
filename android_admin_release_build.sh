@@ -39,12 +39,8 @@ else
   echo "Install Android command-line tools to avoid release build failures."
 fi
 
-echo "Building teacher release APK..."
-"$FLUTTER_BIN" build apk --release --flavor=teacher --dart-define=APP_FLAVOR=teacher
-
-echo "Building teacher release AAB..."
-"$FLUTTER_BIN" build appbundle --release --flavor=teacher --dart-define=APP_FLAVOR=teacher
+echo "Building admin release APK..."
+"$FLUTTER_BIN" build apk --release --flavor=admin --dart-define=APP_FLAVOR=admin
 
 echo "Done. Artifacts:"
-echo "- $PROJECT_DIR/build/app/outputs/flutter-apk/app-teacher-release.apk"
-echo "- $PROJECT_DIR/build/app/outputs/bundle/teacherRelease/app-teacher-release.aab"
+echo "- $PROJECT_DIR/build/app/outputs/flutter-apk/app-admin-release.apk"

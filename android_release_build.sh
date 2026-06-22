@@ -40,11 +40,7 @@ else
 fi
 
 echo "Building release APK..."
-"$FLUTTER_BIN" build apk --release --dart-define=APP_FLAVOR=prod
-
-echo "Building release AAB..."
-"$FLUTTER_BIN" build appbundle --release --dart-define=APP_FLAVOR=prod
+"$FLUTTER_BIN" build apk --release --flavor=prod --dart-define=APP_FLAVOR=prod
 
 echo "Done. Artifacts:"
-echo "- $PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
-echo "- $PROJECT_DIR/build/app/outputs/bundle/release/app-release.aab"
+echo "- $PROJECT_DIR/build/app/outputs/flutter-apk/app-prod-release.apk"

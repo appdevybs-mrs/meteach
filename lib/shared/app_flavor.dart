@@ -4,5 +4,5 @@ class AppFlavor {
     defaultValue: 'prod',
   );
   static const bool isProd = current == 'prod';
-  static const bool isTeacher = current == 'teacher';
+  static const bool isAdmin = current == 'admin';
 }
