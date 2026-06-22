@@ -22,6 +22,7 @@ import '../shared/priority_alert_gate.dart';
 import 'deleted_action_screen.dart';
 import 'blocked_action_screen.dart';
 import 'paused_action_screen.dart';
+import '../shared/app_flavor.dart';
 
 class AuthGate extends StatefulWidget {
   final Widget signedOutHome;
@@ -342,6 +343,9 @@ class _AuthGateState extends State<AuthGate> {
                 unawaited(FCMService.syncTokenAfterLogin());
 
                 if (role == 'admin') {
+                  if (AppFlavor.isProd) {
+                    return const NotAuthorized(role: 'admin');
+                  }
                   return const PriorityAlertGate(child: AdminHome());
                 }
 

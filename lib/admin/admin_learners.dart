@@ -2805,6 +2805,137 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     }
   }
 
+  Future<void> _showChangeEmailDialog() async {
+    final newEmailC = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change email address'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Current: ${emailC.text.trim()}'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: newEmailC,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'New email *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(newEmailC.text.trim()),
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    );
+    newEmailC.dispose();
+    if (result == null || result.isEmpty) return;
+    await _changeEmail(result);
+  }
+
+  Future<void> _changeEmail(String newEmail) async {
+    final currentEmail = emailC.text.trim();
+    if (newEmail == currentEmail) {
+      _toast('No change — same email.');
+      return;
+    }
+
+    final emailNorm = newEmail.toLowerCase();
+    final emailKey = emailNorm.replaceAll('.', ',');
+    final blockedSnap = await FirebaseDatabase.instance
+        .ref('blocked_emails/$emailKey')
+        .get();
+    if (blockedSnap.exists) {
+      _toast('This email has been blocked.');
+      return;
+    }
+
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change email?'),
+        content: Text(
+          'This will update the learner\'s sign-in email to:\n\n$newEmail\n\n'
+          'The learner will need to sign in with the new email next time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Change email'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await _callUpdateEmailServer(widget.uid!, newEmail);
+      await _usersRef.child(widget.uid!).child('email').set(newEmail);
+      emailC.text = newEmail;
+      if (mounted) _toast('Email changed successfully ✅');
+    } catch (e) {
+      if (mounted) _toast(toHumanError(e));
+    }
+  }
+
+  Future<void> _callUpdateEmailServer(
+      String targetUid, String newEmail) async {
+    final uri = await BackendApi.withAuthQuery(
+      BackendApi.uri('update_auth_user_email_secure.php'),
+    );
+    final headers = {
+      ...await BackendApi.authHeaders(json: true),
+    };
+
+    final response = await http
+        .post(
+          uri,
+          headers: headers,
+          body: jsonEncode({
+            'targetUid': targetUid,
+            'newEmail': newEmail,
+          }),
+        )
+        .timeout(const Duration(seconds: 18));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Email update failed (HTTP ${response.statusCode}). ${response.body}',
+      );
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception('Email update failed: invalid server response.');
+    }
+
+    if (decoded is! Map || decoded['success'] != true) {
+      final message = decoded is Map
+          ? (decoded['message']?.toString().trim() ?? 'Email update failed.')
+          : 'Email update failed.';
+      throw Exception(message);
+    }
+  }
+
   Widget _buildResponsiveSections(List<Widget> sections) {
     final webWide = isWebDesktop(context, minWidth: 1200);
     if (!webWide) {
@@ -3063,27 +3194,60 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    GestureDetector(
-                      onLongPress: () async {
-                        final email = emailC.text.trim();
-                        if (email.isEmpty) return;
-                        await Clipboard.setData(ClipboardData(text: email));
-                        _toast('Email copied ✅');
-                      },
-                      child: _TextField(
-                        controller: emailC,
-                        label: 'Email *',
-                        hint: 'learner@email.com',
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (v) {
-                          final t = (v ?? '').trim();
-                          if (t.isEmpty) return 'Required';
-                          if (!t.contains('@')) return 'Invalid email';
-                          return null;
+                    if (isEdit)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: emailC,
+                              enabled: false,
+                              maxLines: 1,
+                              decoration: InputDecoration(
+                                labelText: 'Email *',
+                                filled: true,
+                                fillColor: AdminLearnersScreen.appBg,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              color: AdminLearnersScreen.primaryBlue,
+                              tooltip: 'Change email',
+                              onPressed: _showChangeEmailDialog,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      GestureDetector(
+                        onLongPress: () async {
+                          final email = emailC.text.trim();
+                          if (email.isEmpty) return;
+                          await Clipboard.setData(ClipboardData(text: email));
+                          _toast('Email copied ✅');
                         },
-                        enabled: !isEdit,
+                        child: _TextField(
+                          controller: emailC,
+                          label: 'Email *',
+                          hint: 'learner@email.com',
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (v) {
+                            final t = (v ?? '').trim();
+                            if (t.isEmpty) return 'Required';
+                            if (!t.contains('@')) return 'Invalid email';
+                            return null;
+                          },
+                          enabled: true,
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 12),
                     if (!isEdit)
                       _TextField(

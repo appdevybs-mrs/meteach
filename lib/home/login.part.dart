@@ -368,6 +368,31 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
 
       if (!mounted) return;
 
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null && AppFlavor.isProd) {
+        final roleSnap = await FirebaseDatabase.instance
+            .ref('users/$uid/role')
+            .get()
+            .timeout(const Duration(seconds: 8));
+        if (roleSnap.exists) {
+          final role = (roleSnap.value?.toString() ?? '')
+              .toLowerCase()
+              .replaceAll(RegExp(r'[\s\u00A0\u200B\u200C\u200D\uFEFF]+'), '')
+              .trim();
+          if (role == 'admin') {
+            await FirebaseAuth.instance.signOut();
+            if (!mounted) return;
+            setState(() {
+              loading = false;
+              error = 'This app is not for admin accounts.\nPlease use the Teacher app.';
+            });
+            return;
+          }
+        }
+      }
+
+      if (!mounted) return;
+
       setState(() {
         loading = false;
         failedAttempts = 0;

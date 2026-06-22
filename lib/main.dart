@@ -38,6 +38,7 @@ import 'shared/human_error.dart';
 import 'shared/profile_avatar.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'shared/icon_theme.dart';
+import 'shared/app_flavor.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
 import 'package:video_player/video_player.dart';
