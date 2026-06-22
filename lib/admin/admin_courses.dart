@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:convert';
 import 'package:dream_english_academy/admin/course_syllabus_screen.dart';
 import 'package:dream_english_academy/shared/human_error.dart';
 import 'package:dream_english_academy/services/backend_api.dart';
@@ -2094,12 +2096,17 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         imageQuality: 85,
       );
       if (xfile == null) return;
-      setState(() {
-        _uploadingThumb = true;
-        _localThumbFile = File(xfile.path);
-      });
+      setState(() => _uploadingThumb = true);
 
-      final url = await widget.uploadClient.uploadFile(file: File(xfile.path));
+      final client = widget.uploadClient;
+      String url;
+      if (kIsWeb) {
+        final bytes = await xfile.readAsBytes();
+        url = await client.uploadBytes(bytes: bytes, filename: xfile.name);
+      } else {
+        _localThumbFile = File(xfile.path);
+        url = await client.uploadFile(file: File(xfile.path));
+      }
 
       if (!mounted) return;
 
@@ -2663,6 +2670,50 @@ class UploadClient {
     }
 
     _debug('upload success url=$url');
+    return url;
+  }
+
+  Future<String> uploadBytes({
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await BackendApi.authToken();
+    final authFields = await BackendApi.authFormFields();
+
+    final req = http.MultipartRequest('POST', uri)
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'Bearer-Token': token,
+        'X-Auth-Token': token,
+        'X-Auth-Uid': user.uid,
+      })
+      ..fields.addAll(authFields)
+      ..fields['app_id'] = appId
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+
+    final streamed = await req.send();
+    final body = await streamed.stream.bytesToString();
+
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
+    }
+
+    final decoded = _tryDecodeJson(body);
+    if (decoded == null) {
+      throw Exception('Upload failed: invalid JSON response\n$body');
+    }
+
+    final success = decoded['success'] == true;
+    final url = (decoded['url'] ?? '').toString();
+
+    if (!success || url.trim().isEmpty) {
+      throw Exception('Upload failed: $decoded');
+    }
+
     return url;
   }
 

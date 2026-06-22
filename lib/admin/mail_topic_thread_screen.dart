@@ -120,6 +120,77 @@ class MailUploadClient {
     return url;
   }
 
+  Future<String> uploadBytes({
+    required Uint8List bytes,
+    required String filename,
+    void Function(double progress)? onProgress,
+  }) async {
+    final uri = await BackendApi.withAuthQuery(Uri.parse(endpoint));
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('Not logged in.');
+    final token = await BackendApi.authToken();
+
+    final total = bytes.length;
+    if (total <= 0) {
+      throw Exception('Could not read selected file bytes.');
+    }
+    if (total > maxUploadBytes) {
+      throw Exception('File is too large. Maximum allowed size is 250 MB.');
+    }
+    onProgress?.call(0);
+    var sent = 0;
+    final stream = Stream<List<int>>.value(bytes).transform(
+      StreamTransformer<List<int>, List<int>>.fromHandlers(
+        handleData: (chunk, sink) {
+          sent += chunk.length;
+          if (total > 0) {
+            onProgress?.call((sent / total).clamp(0.0, 1.0));
+          }
+          sink.add(chunk);
+        },
+      ),
+    );
+
+    final req = http.MultipartRequest('POST', uri)
+      ..headers.addAll({
+        'X-Requested-With': 'XMLHttpRequest',
+        'Authorization': 'Bearer $token',
+        'X-Auth-Token': token,
+        'X-Auth-Uid': user.uid,
+      })
+      ..fields['auth_token'] = token
+      ..fields['auth_uid'] = user.uid
+      ..fields['app_id'] = appId
+      ..files.add(
+        http.MultipartFile('file', stream, total, filename: filename),
+      );
+
+    final streamed = await _http.send(req).timeout(const Duration(minutes: 10));
+    final body = await streamed.stream.bytesToString().timeout(
+      const Duration(minutes: 10),
+    );
+
+    if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+      throw Exception('Upload failed: HTTP ${streamed.statusCode}\n$body');
+    }
+
+    final decoded = _tryDecodeJson(body);
+    if (decoded == null) {
+      throw Exception('Upload failed: invalid JSON\n$body');
+    }
+
+    final success = decoded['success'] == true;
+    final url = (decoded['url'] ?? '').toString();
+
+    if (!success || url.trim().isEmpty) {
+      throw Exception('Upload failed: $decoded');
+    }
+
+    onProgress?.call(1);
+
+    return url;
+  }
+
   static Map<String, dynamic>? _tryDecodeJson(String s) {
     try {
       return (jsonDecode(s) as Map).cast<String, dynamic>();
