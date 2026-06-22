@@ -16,6 +16,7 @@ import '../services/mail_consistency_service.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
+import '../shared/web_download.dart';
 import '../shared/payment_status.dart';
 import '../shared/study_variant.dart';
 
@@ -1153,25 +1154,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         return;
                       }
 
-                      String? dirPath;
-                      if (saveMode == 'choose') {
-                        dirPath = await FilePicker.platform.getDirectoryPath(
-                          dialogTitle: 'Choose folder to save exports',
-                        );
-                      } else {
-                        dirPath = await _defaultDownloadsDirectoryPath();
-                      }
-
-                      if ((dirPath ?? '').trim().isEmpty) {
-                        _toast('Export cancelled: no folder selected.');
-                        return;
-                      }
-
-                      final dir = Directory(dirPath!);
-                      if (!await dir.exists()) {
-                        await dir.create(recursive: true);
-                      }
-
                       final monthTag = _safeFilePart(
                         pickedMonth ?? 'all_months',
                       );
@@ -1184,49 +1166,101 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       final prefix =
                           'payments_${monthTag}_${learnerTag}_$stamp';
 
-                      final savedPaths = <String>[];
+                      if (kIsWeb) {
+                        if (exportType == 'all' || exportType == 'backup') {
+                          final b = await _buildBackupJsonBytes(
+                            rows: filtered,
+                            month: pickedMonth ?? 'all',
+                            learner: pickedUid == null
+                                ? 'all'
+                                : (learnersByUid[pickedUid!] ?? pickedUid!),
+                          );
+                          downloadBytes(b, '$prefix.backup.json');
+                        }
+                        if (exportType == 'all' || exportType == 'excel') {
+                          final b = await _buildExcelBytes(filtered);
+                          downloadBytes(b, '$prefix.xlsx');
+                        }
+                        if (exportType == 'all' || exportType == 'pdf') {
+                          final b = await _buildPdfBytes(
+                            rows: filtered,
+                            month: pickedMonth ?? 'all',
+                            learner: pickedUid == null
+                                ? 'all'
+                                : (learnersByUid[pickedUid!] ?? pickedUid!),
+                          );
+                          downloadBytes(b, '$prefix.pdf');
+                        }
+                        if (!mounted) return;
+                        if (dialogCtx.mounted &&
+                            Navigator.of(dialogCtx).canPop()) {
+                          Navigator.pop(dialogCtx);
+                        }
+                        _toast('Downloading export file(s)...');
+                      } else {
+                        String? dirPath;
+                        if (saveMode == 'choose') {
+                          dirPath = await FilePicker.platform.getDirectoryPath(
+                            dialogTitle: 'Choose folder to save exports',
+                          );
+                        } else {
+                          dirPath = await _defaultDownloadsDirectoryPath();
+                        }
 
-                      if (exportType == 'all' || exportType == 'backup') {
-                        final b = await _buildBackupJsonBytes(
-                          rows: filtered,
-                          month: pickedMonth ?? 'all',
-                          learner: pickedUid == null
-                              ? 'all'
-                              : (learnersByUid[pickedUid!] ?? pickedUid!),
+                        if ((dirPath ?? '').trim().isEmpty) {
+                          _toast('Export cancelled: no folder selected.');
+                          return;
+                        }
+
+                        final dir = Directory(dirPath!);
+                        if (!await dir.exists()) {
+                          await dir.create(recursive: true);
+                        }
+
+                        final savedPaths = <String>[];
+
+                        if (exportType == 'all' || exportType == 'backup') {
+                          final b = await _buildBackupJsonBytes(
+                            rows: filtered,
+                            month: pickedMonth ?? 'all',
+                            learner: pickedUid == null
+                                ? 'all'
+                                : (learnersByUid[pickedUid!] ?? pickedUid!),
+                          );
+                          final file = File('${dir.path}/$prefix.backup.json');
+                          await file.writeAsBytes(b, flush: true);
+                          savedPaths.add(file.path);
+                        }
+
+                        if (exportType == 'all' || exportType == 'excel') {
+                          final b = await _buildExcelBytes(filtered);
+                          final file = File('${dir.path}/$prefix.xlsx');
+                          await file.writeAsBytes(b, flush: true);
+                          savedPaths.add(file.path);
+                        }
+
+                        if (exportType == 'all' || exportType == 'pdf') {
+                          final b = await _buildPdfBytes(
+                            rows: filtered,
+                            month: pickedMonth ?? 'all',
+                            learner: pickedUid == null
+                                ? 'all'
+                                : (learnersByUid[pickedUid!] ?? pickedUid!),
+                          );
+                          final file = File('${dir.path}/$prefix.pdf');
+                          await file.writeAsBytes(b, flush: true);
+                          savedPaths.add(file.path);
+                        }
+
+                        if (!mounted) return;
+                        if (dialogCtx.mounted &&
+                            Navigator.of(dialogCtx).canPop()) {
+                          Navigator.pop(dialogCtx);
+                        }
+                        _toast(
+                          'Exported ${savedPaths.length} file(s) to ${dir.path}',
                         );
-                        final file = File('${dir.path}/$prefix.backup.json');
-                        await file.writeAsBytes(b, flush: true);
-                        savedPaths.add(file.path);
                       }
-
-                      if (exportType == 'all' || exportType == 'excel') {
-                        final b = await _buildExcelBytes(filtered);
-                        final file = File('${dir.path}/$prefix.xlsx');
-                        await file.writeAsBytes(b, flush: true);
-                        savedPaths.add(file.path);
-                      }
-
-                      if (exportType == 'all' || exportType == 'pdf') {
-                        final b = await _buildPdfBytes(
-                          rows: filtered,
-                          month: pickedMonth ?? 'all',
-                          learner: pickedUid == null
-                              ? 'all'
-                              : (learnersByUid[pickedUid!] ?? pickedUid!),
-                        );
-                        final file = File('${dir.path}/$prefix.pdf');
-                        await file.writeAsBytes(b, flush: true);
-                        savedPaths.add(file.path);
-                      }
-
-                      if (!mounted) return;
-                      if (dialogCtx.mounted &&
-                          Navigator.of(dialogCtx).canPop()) {
-                        Navigator.pop(dialogCtx);
-                      }
-                      _toast(
-                        'Exported ${savedPaths.length} file(s) to ${dir.path}',
-                      );
                     } catch (e) {
                       _toast(toHumanError(e, fallback: 'Export failed.'));
                     }

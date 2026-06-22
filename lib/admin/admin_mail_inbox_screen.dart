@@ -220,18 +220,25 @@ class _AdminMailInboxScreenState extends State<AdminMailInboxScreen> {
 
     Future<void> uploadGroupPic(StateSetter setLocal) async {
       if (uploading) return;
-      if (kIsWeb) {
-        _snack('Group picture upload is not supported on web yet.');
-        return;
-      }
-      final file = await FilePicker.platform.pickFiles(withData: false);
-      final path = file?.files.single.path;
-      if (path == null || path.trim().isEmpty) return;
+      final picked = await FilePicker.platform.pickFiles(withData: kIsWeb);
+      if (picked == null || picked.files.isEmpty) return;
+      final file = picked.files.single;
       setLocal(() => uploading = true);
       try {
-        final url = await MailUploadClient.defaultClient().uploadFile(
-          file: File(path),
-        );
+        final client = MailUploadClient.defaultClient();
+        final filename = file.name.isNotEmpty ? file.name : 'group.jpg';
+        String url;
+        if (kIsWeb) {
+          final bytes = file.bytes;
+          if (bytes == null) {
+            throw Exception('Could not read selected file.');
+          }
+          url = await client.uploadBytes(bytes: bytes, filename: filename);
+        } else {
+          final path = file.path;
+          if (path == null || path.trim().isEmpty) return;
+          url = await client.uploadFile(file: File(path));
+        }
         setLocal(() => groupPicUrl = url.trim());
       } catch (e) {
         _snack('Upload failed: $e');

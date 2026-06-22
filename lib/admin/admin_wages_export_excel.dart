@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -286,7 +287,7 @@ class AdminWagesExcelExporter {
     }
 
     if (kIsWeb) {
-      downloadBytes(bytes, 'wages_export.xlsx');
+      downloadBytes(Uint8List.fromList(bytes), 'wages_export.xlsx');
     } else {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/wages_export.xlsx');

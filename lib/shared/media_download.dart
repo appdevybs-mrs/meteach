@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver/image_gallery_saver.dart';
@@ -9,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_feedback.dart';
+import 'web_download.dart';
 
 class MediaDownload {
   static Future<void> downloadUrl(
@@ -24,6 +26,32 @@ class MediaDownload {
         context,
         const SnackBar(content: Text('No file URL to download.')),
       );
+      return;
+    }
+
+    if (kIsWeb) {
+      try {
+        final res = await http.get(Uri.parse(cleanedUrl));
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          throw Exception('Download failed (${res.statusCode})');
+        }
+        final fileName = _safeName(
+          suggestedName,
+          fallbackExt: _extFromUrl(cleanedUrl),
+        );
+        downloadBytes(res.bodyBytes, fileName);
+        if (!context.mounted) return;
+        AppToast.fromSnackBar(
+          context,
+          const SnackBar(content: Text('Download started.')),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        AppToast.fromSnackBar(
+          context,
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
       return;
     }
 
@@ -63,6 +91,9 @@ class MediaDownload {
     required String url,
     required bool isVideo,
   }) async {
+    if (kIsWeb) {
+      throw UnsupportedError('Save to gallery is not supported on web.');
+    }
     try {
       final tempDir = await getTemporaryDirectory();
       final fileName =
