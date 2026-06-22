@@ -51,69 +51,87 @@ class AdminCertificateService {
     await _certRef.child(key).remove();
   }
 
-  Future<List<String>> getSuggestedNames() async {
+  Future<List<AdminCertificateSuggestion>> getSuggestedNames() async {
     final snap = await _nameRef.get();
-    final list = <String>[];
+    final list = <AdminCertificateSuggestion>[];
     if (snap.value != null && snap.value is Map) {
-      (snap.value as Map).forEach((_, value) {
+      (snap.value as Map).forEach((key, value) {
         if (value is Map) {
           final v = (value['value'] ?? '').toString().trim();
-          if (v.isNotEmpty) list.add(v);
+          if (v.isNotEmpty) {
+            list.add(AdminCertificateSuggestion(key: key.toString(), value: v));
+          }
         }
       });
     }
     return list;
+  }
+
+  Future<void> deleteSuggestedName(String key) async {
+    await _nameRef.child(key).remove();
   }
 
   Future<void> addSuggestedName(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
     final existing = await getSuggestedNames();
-    if (existing.contains(trimmed)) return;
+    if (existing.any((s) => s.value == trimmed)) return;
     await _nameRef.push().set({'value': trimmed});
   }
 
-  Future<List<String>> getSuggestedSublines() async {
+  Future<List<AdminCertificateSuggestion>> getSuggestedSublines() async {
     final snap = await _sublineRef.get();
-    final list = <String>[];
+    final list = <AdminCertificateSuggestion>[];
     if (snap.value != null && snap.value is Map) {
-      (snap.value as Map).forEach((_, value) {
+      (snap.value as Map).forEach((key, value) {
         if (value is Map) {
           final v = (value['value'] ?? '').toString().trim();
-          if (v.isNotEmpty) list.add(v);
+          if (v.isNotEmpty) {
+            list.add(AdminCertificateSuggestion(key: key.toString(), value: v));
+          }
         }
       });
     }
     return list;
+  }
+
+  Future<void> deleteSuggestedSubline(String key) async {
+    await _sublineRef.child(key).remove();
   }
 
   Future<void> addSuggestedSubline(String subline) async {
     final trimmed = subline.trim();
     if (trimmed.isEmpty) return;
     final existing = await getSuggestedSublines();
-    if (existing.contains(trimmed)) return;
+    if (existing.any((s) => s.value == trimmed)) return;
     await _sublineRef.push().set({'value': trimmed});
   }
 
-  Future<List<String>> getSuggestedDescriptions() async {
+  Future<List<AdminCertificateSuggestion>> getSuggestedDescriptions() async {
     final snap = await _descRef.get();
-    final list = <String>[];
+    final list = <AdminCertificateSuggestion>[];
     if (snap.value != null && snap.value is Map) {
-      (snap.value as Map).forEach((_, value) {
+      (snap.value as Map).forEach((key, value) {
         if (value is Map) {
           final v = (value['value'] ?? '').toString().trim();
-          if (v.isNotEmpty) list.add(v);
+          if (v.isNotEmpty) {
+            list.add(AdminCertificateSuggestion(key: key.toString(), value: v));
+          }
         }
       });
     }
     return list;
   }
 
+  Future<void> deleteSuggestedDescription(String key) async {
+    await _descRef.child(key).remove();
+  }
+
   Future<void> addSuggestedDescription(String description) async {
     final trimmed = description.trim();
     if (trimmed.isEmpty) return;
     final existing = await getSuggestedDescriptions();
-    if (existing.contains(trimmed)) return;
+    if (existing.any((s) => s.value == trimmed)) return;
     await _descRef.push().set({'value': trimmed});
   }
 

@@ -91,6 +91,7 @@ flutter:
     - assets/fonts/PlayfairDisplay-Bold.ttf
     - assets/fonts/HughIsLife.ttf
     - assets/images/cpd.pdf
+    - assets/images/cpdgraded.pdf
     - assets/images/milestone.pdf
     - assets/world_data.json
     - assets/cities_index.json

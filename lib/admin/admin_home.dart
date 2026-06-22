@@ -309,15 +309,13 @@ class _AdminHomeState extends State<AdminHome> {
         : (width >= 900 ? 12.0 : (isMobileDashboard ? 8.0 : 10.0));
 
     _HomeCardItem card(
-      String title,
-      String subtitle, {
+      String title, {
       required Widget child,
       String? windowKey,
       bool adminOnly = false,
     }) {
       return _HomeCardItem(
         title: title,
-        subtitle: subtitle,
         child: child,
         windowKey: windowKey,
         adminOnly: adminOnly,
@@ -327,7 +325,6 @@ class _AdminHomeState extends State<AdminHome> {
     final allCards = <_HomeCardItem>[
       card(
         'Learners',
-        'Students list',
         windowKey: AppWindowKeys.adminLearners,
         child: KeyedSubtree(
           key: _learnersCardKey,
@@ -345,7 +342,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Classes',
-        'Manage classes',
         windowKey: AppWindowKeys.adminClasses,
         child: _ClassesDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -359,7 +355,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Payments',
-        'Financial records',
         windowKey: AppWindowKeys.adminPayments,
         child: KeyedSubtree(
           key: _paymentsCardKey,
@@ -376,12 +371,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Finance',
-        'Range income and X plans',
         windowKey: AppWindowKeys.adminFinance,
         child: _DashCard(
           title: 'Finance',
-          subtitle: 'Range income and X plans',
-          tags: const ['From-To', '1x/2x/...'],
           icon: AdminIcons.finance,
           color: AdminHome.accentAmber,
           isReceptionistStyle: !_isAdminMode,
@@ -395,12 +387,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Schedule',
-        'Weekly timetable',
         windowKey: AppWindowKeys.adminSchedule,
         child: _DashCard(
           title: 'Schedule',
-          subtitle: 'Weekly timetable',
-          tags: const ['This week', 'Open classes'],
           icon: Icons.calendar_view_week_rounded,
           color: AdminHome.accentTeal,
           isReceptionistStyle: !_isAdminMode,
@@ -414,12 +403,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Attendance',
-        'Daily / Weekly stats',
         windowKey: AppWindowKeys.adminAttendance,
         child: _DashCard(
           title: 'Attendance',
-          subtitle: 'Daily / Weekly stats',
-          tags: const ['Today', 'Weekly'],
           icon: AdminIcons.attendance,
           color: AdminHome.accentIndigo,
           isReceptionistStyle: !_isAdminMode,
@@ -435,12 +421,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Courses',
-        'Manage courses',
         windowKey: AppWindowKeys.adminCourses,
         child: _DashCard(
           title: 'Courses',
-          subtitle: 'Manage courses',
-          tags: const ['Catalog', 'Manage'],
           icon: Icons.menu_book_rounded,
           color: AdminHome.primaryBlue,
           isReceptionistStyle: !_isAdminMode,
@@ -454,12 +437,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Study Coach',
-        'Vocabulary, grammar, speaking',
         windowKey: AppWindowKeys.adminVocabLists,
         child: _DashCard(
           title: 'Study Coach',
-          subtitle: 'Vocabulary, grammar, speaking',
-          tags: const ['Study Coach', 'CSV'],
           icon: AdminIcons.studyCoach,
           color: AdminHome.accentCyan,
           isReceptionistStyle: !_isAdminMode,
@@ -475,7 +455,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Course Reviews',
-        'Moderate learner reviews',
         windowKey: AppWindowKeys.adminCourseReviews,
         child: _CourseFeedbackDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -491,19 +470,15 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Online Booking',
-        'Online Booking management',
         windowKey: AppWindowKeys.adminOnlineBooking,
         child: _AdminOnlineBookingDashCard(isReceptionistStyle: !_isAdminMode),
       ),
       card(
         'Teacher Sessions',
-        'Session count per teacher',
         windowKey: AppWindowKeys.adminTeacherSessionCount,
         child: _DashCard(
           title: 'Teacher Sessions',
-          subtitle: 'Session count per teacher',
-          tags: const ['Sessions', 'Count'],
-          icon: AdminIcons.onlineBooking,
+          icon: Icons.person_search_rounded,
           color: AdminHome.accentGreen,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
@@ -518,7 +493,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Reminders',
-        'Send & manage reminders',
         windowKey: AppWindowKeys.adminReminders,
         child: _RemindersDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -534,7 +508,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Priority Alerts',
-        'Send one-time popup alerts',
         windowKey: AppWindowKeys.adminPriorityAlerts,
         child: _PriorityAlertsDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -550,12 +523,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Activity Center',
-        'Centralized system logs',
         windowKey: AppWindowKeys.adminActivityCenter,
         child: _DashCard(
           title: 'Activity Center',
-          subtitle: 'Centralized system logs',
-          tags: const ['Teacher', 'Learner', 'Admin'],
           icon: AdminIcons.activityCenter,
           color: AdminHome.accentIndigo,
           isReceptionistStyle: !_isAdminMode,
@@ -571,12 +541,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Notification Audit',
-        'Push delivery monitoring',
         windowKey: AppWindowKeys.adminNotificationAudit,
         child: _DashCard(
           title: 'Notification Audit',
-          subtitle: 'Push delivery monitoring',
-          tags: const ['Push Events', 'Failures'],
           icon: AdminIcons.notificationAudit,
           color: AdminHome.accentSky,
           isReceptionistStyle: !_isAdminMode,
@@ -592,7 +559,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Staff',
-        'Teachers & staff',
         windowKey: AppWindowKeys.adminStaff,
         child: _StaffMailDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -606,12 +572,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'International Teachers',
-        'Assign courses & subscription',
         child: _DashCard(
           title: 'International Teachers',
-          subtitle: 'Assign courses & subscription',
-          tags: const ['OTeacher', 'Flexible'],
-          icon: AdminIcons.staff,
+          icon: Icons.language_rounded,
           color: AdminHome.accentCyan,
           isReceptionistStyle: !_isAdminMode,
           onTap: () => Navigator.of(context).push(
@@ -623,7 +586,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Admin Mail',
-        'Central inbox hub',
         windowKey: AppWindowKeys.adminMail,
         child: _AdminMailDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -637,7 +599,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Wages',
-        'Teacher payments',
         windowKey: AppWindowKeys.adminWages,
         child: _WagesDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -651,7 +612,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Teacher Availability',
-        'Coverage & staffing overview',
         windowKey: AppWindowKeys.adminTeacherAvailability,
         child: _TeacherAvailabilityDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -667,24 +627,19 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Subscriptions',
-        'Registration requests',
         windowKey: AppWindowKeys.adminSubscriptions,
         child: _SubscriptionsDashCard(isReceptionistStyle: !_isAdminMode),
       ),
       card(
         'Certificates',
-        'Issued certificates',
         windowKey: AppWindowKeys.adminCertificates,
         child: _CertificatesDashCard(isReceptionistStyle: !_isAdminMode),
       ),
       card(
         'File Manager',
-        'Courses & Games files',
         windowKey: AppWindowKeys.adminFileManager,
         child: _DashCard(
           title: 'File Manager',
-          subtitle: 'Courses & Games files',
-          tags: const ['Courses', 'Games'],
           icon: AdminIcons.fileManager,
           color: AdminHome.accentGreen,
           isReceptionistStyle: !_isAdminMode,
@@ -698,7 +653,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Shared Files',
-        'Teacher shared files',
         windowKey: AppWindowKeys.adminSharedFiles,
         child: KeyedSubtree(
           key: _sharedCardKey,
@@ -707,7 +661,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Public Gallery',
-        'Teaser media',
         windowKey: AppWindowKeys.adminPublicGallery,
         child: _PublicGalleryDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -723,12 +676,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Graduates Map',
-        'World photo pins',
         windowKey: AppWindowKeys.adminGraduatesMap,
         child: _DashCard(
           title: 'Graduates Map',
-          subtitle: 'World photo pins',
-          tags: const ['Public', 'World'],
           icon: Icons.public_rounded,
           color: AdminHome.accentSky,
           isReceptionistStyle: !_isAdminMode,
@@ -744,7 +694,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Contract',
-        'Contracts & documents',
         windowKey: AppWindowKeys.adminContract,
         child: _ContractDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -758,7 +707,6 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Settings',
-        'Force update config',
         windowKey: AppWindowKeys.adminSettings,
         child: _SettingsDashCard(
           isReceptionistStyle: !_isAdminMode,
@@ -774,12 +722,9 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Window Access',
-        'Open or close windows',
         adminOnly: true,
         child: _DashCard(
           title: 'Window Access',
-          subtitle: 'Open or close windows',
-          tags: const ['Learner', 'Teacher', 'Admin'],
           icon: AdminIcons.windowAccess,
           color: AdminHome.accentSlate,
           isReceptionistStyle: !_isAdminMode,
@@ -798,18 +743,14 @@ class _AdminHomeState extends State<AdminHome> {
       ),
       card(
         'Job Applications',
-        'Hiring pipeline',
         windowKey: AppWindowKeys.adminJobApplications,
         child: _JobApplicationsDashCard(isReceptionistStyle: !_isAdminMode),
       ),
       card(
         'Diary',
-        'Shared daily office log',
         windowKey: AppWindowKeys.adminDiary,
         child: _DashCard(
           title: 'Diary',
-          subtitle: 'Shared daily office log',
-          tags: const ['Shared', 'Follow-up'],
           icon: AdminIcons.diary,
           color: AdminHome.accentRose,
           isReceptionistStyle: !_isAdminMode,
@@ -828,8 +769,7 @@ class _AdminHomeState extends State<AdminHome> {
         .where((c) {
           final matchesSearch =
               q.isEmpty ||
-              c.title.toLowerCase().contains(q) ||
-              c.subtitle.toLowerCase().contains(q);
+              c.title.toLowerCase().contains(q);
           if (!matchesSearch) return false;
           if (_isAdminMode) return true;
           if (c.adminOnly) return false;
@@ -1207,14 +1147,12 @@ class _AdminHomeState extends State<AdminHome> {
 class _HomeCardItem {
   const _HomeCardItem({
     required this.title,
-    required this.subtitle,
     required this.child,
     this.windowKey,
     this.adminOnly = false,
   });
 
   final String title;
-  final String subtitle;
   final Widget child;
   final String? windowKey;
   final bool adminOnly;
@@ -1829,14 +1767,13 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
       builder: (context, snap) {
         final stats = _bookingStats(snap.data?.snapshot.value);
 
-        final subtitle = stats.upcoming == 0
-            ? 'Online Booking management'
-            : 'Today ${stats.today} • Week ${stats.week} • Upcoming ${stats.upcoming}';
-
         return _DashCard(
           title: 'Online Booking',
-          subtitle: subtitle,
-          tags: ['Today ${stats.today}', 'Upcoming ${stats.upcoming}'],
+          statusLabels: [
+            _StatusLabelData(label: 'Today', count: stats.today, color: AdminHome.accentGreen),
+            _StatusLabelData(label: 'Week', count: stats.week, color: AdminHome.accentBlue),
+            _StatusLabelData(label: 'Upcoming', count: stats.upcoming, color: AdminHome.accentAmber),
+          ],
           icon: AdminIcons.onlineBooking,
           color: AdminHome.accentGreen,
           badgeCount: stats.upcoming,
@@ -1866,14 +1803,11 @@ class _SubscriptionsDashCard extends StatelessWidget {
         final v = snap.data?.snapshot.value;
         if (v is Map) count = v.length;
 
-        final subtitle = count == 0
-            ? 'No new registrations'
-            : '$count new application${count == 1 ? '' : 's'}';
-
         return _DashCard(
           title: 'Subscriptions',
-          subtitle: subtitle,
-          tags: ['New $count', count == 0 ? 'No queue' : 'Needs review'],
+          statusLabels: [
+            _StatusLabelData(label: 'New', count: count, color: AdminHome.accentAmber),
+          ],
           icon: AdminIcons.subscriptions,
           color: AdminHome.accentAmber,
           badgeCount: count,
@@ -1923,14 +1857,13 @@ class _JobApplicationsDashCard extends StatelessWidget {
           });
         }
 
-        final subtitle = total == 0
-            ? 'No applications yet'
-            : 'Uncalled $uncalledCount • Follow-up $followUp • Total $total';
-
         return _DashCard(
           title: 'Job Applications',
-          subtitle: subtitle,
-          tags: ['New $uncalledCount', 'Follow-up $followUp'],
+          statusLabels: [
+            _StatusLabelData(label: 'New', count: uncalledCount, color: AdminHome.accentRose),
+            _StatusLabelData(label: 'Follow-up', count: followUp, color: AdminHome.accentAmber),
+            _StatusLabelData(label: 'Total', count: total, color: AdminHome.accentSlate),
+          ],
           icon: AdminIcons.jobApplications,
           color: AdminHome.accentSlate,
           badgeCount: uncalledCount,
@@ -1961,14 +1894,12 @@ class _ClassesDashCard extends StatelessWidget {
     return StreamBuilder<DatabaseEvent>(
       stream: ref.onValue,
       builder: (context, snap) {
-        int total = 0;
         int open = 0;
         int closed = 0;
         final learnerUids = <String>{};
 
         final v = snap.data?.snapshot.value;
         if (v is Map) {
-          total = v.length;
           v.forEach((_, raw) {
             if (raw is! Map) return;
             final m = raw.map((k, val) => MapEntry(k.toString(), val));
@@ -1992,17 +1923,15 @@ class _ClassesDashCard extends StatelessWidget {
           });
         }
 
-        final subtitle = total == 0
-            ? 'Manage classes'
-            : 'Open $open • Closed $closed • Learners ${learnerUids.length}';
-
         return _DashCard(
           title: 'Classes',
-          subtitle: subtitle,
-          tags: ['Open $open', 'Learners ${learnerUids.length}'],
+          statusLabels: [
+            _StatusLabelData(label: 'Open', count: open, color: AdminHome.accentGreen),
+            _StatusLabelData(label: 'Closed', count: closed, color: AdminHome.accentSlate),
+            _StatusLabelData(label: 'Learners', count: learnerUids.length, color: AdminHome.accentBlue),
+          ],
           icon: Icons.class_rounded,
           color: AdminHome.actionOrange,
-          badgeCount: 0,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
         );
@@ -2027,14 +1956,11 @@ class _AdminSharedFilesDashCard extends StatelessWidget {
         final v = snap.data?.snapshot.value;
         if (v is Map) count = v.length;
 
-        final subtitle = count == 0
-            ? 'No shared files'
-            : '$count shared file${count == 1 ? '' : 's'}';
-
         return _DashCard(
           title: 'Shared Files',
-          subtitle: subtitle,
-          tags: ['Shared $count', count == 0 ? 'No updates' : 'Check latest'],
+          statusLabels: [
+            _StatusLabelData(label: 'Shared', count: count, color: AdminHome.accentTeal),
+          ],
           icon: AdminIcons.sharedFiles,
           color: AdminHome.accentTeal,
           badgeCount: count,
@@ -2108,14 +2034,12 @@ class _CertificatesDashCardState extends State<_CertificatesDashCard> {
   Widget build(BuildContext context) {
     final totalCount = _adminCount + _recordedCount;
 
-    final subtitle = totalCount == 0
-        ? 'No certificates yet'
-        : '$totalCount total • $_recordedCount recorded achievement${_recordedCount == 1 ? '' : 's'}';
-
     return _DashCard(
       title: 'Certificates',
-      subtitle: subtitle,
-      tags: ['Total $totalCount', 'Recorded $_recordedCount'],
+      statusLabels: [
+        _StatusLabelData(label: 'Total', count: totalCount, color: AdminHome.accentIndigo),
+        _StatusLabelData(label: 'Recorded', count: _recordedCount, color: AdminHome.accentGreen),
+      ],
       icon: Icons.workspace_premium_rounded,
       color: AdminHome.accentIndigo,
       badgeCount: totalCount,
@@ -2178,14 +2102,12 @@ class _WagesDashCard extends StatelessWidget {
           });
         }
 
-        final subtitle = pending == 0
-            ? 'Teacher payments are on track'
-            : '$pending payment${pending == 1 ? '' : 's'} pending';
-
         return _DashCard(
           title: 'Wages',
-          subtitle: subtitle,
-          tags: ['Pending $pending', 'This month $paidThisMonth'],
+          statusLabels: [
+            _StatusLabelData(label: 'Pending', count: pending, color: AdminHome.accentRose),
+            _StatusLabelData(label: 'Paid', count: paidThisMonth, color: AdminHome.accentGreen),
+          ],
           icon: AdminIcons.wages,
           color: AdminHome.accentRose,
           isReceptionistStyle: isReceptionistStyle,
@@ -2224,15 +2146,12 @@ class _ContractDashCard extends StatelessWidget {
           if (l is Map) learnerCount = l.length;
         }
 
-        final total = teacherCount + learnerCount;
-        final subtitle = total == 0
-            ? 'No contract templates yet'
-            : '$total contract template${total == 1 ? '' : 's'}';
-
         return _DashCard(
           title: 'Contract',
-          subtitle: subtitle,
-          tags: ['Teacher $teacherCount', 'Learner $learnerCount'],
+          statusLabels: [
+            _StatusLabelData(label: 'Teacher', count: teacherCount, color: AdminHome.accentCyan),
+            _StatusLabelData(label: 'Learner', count: learnerCount, color: AdminHome.accentGreen),
+          ],
           icon: AdminIcons.contract,
           color: AdminHome.accentCyan,
           isReceptionistStyle: isReceptionistStyle,
@@ -2319,8 +2238,10 @@ class _SettingsDashCard extends StatelessWidget {
 
         return _DashCard(
           title: 'Settings',
-          subtitle: 'Force update config',
-          tags: ['Android minBuild $a', 'iOS minBuild $i'],
+          statusLabels: [
+            _StatusLabelData(label: 'Android', count: int.tryParse(a) ?? 0, color: AdminHome.accentGreen),
+            _StatusLabelData(label: 'iOS', count: int.tryParse(i) ?? 0, color: AdminHome.accentBlue),
+          ],
           icon: Icons.settings_rounded,
           color: AdminHome.accentIndigo,
           isReceptionistStyle: isReceptionistStyle,
@@ -2353,14 +2274,12 @@ class _PriorityAlertsDashCard extends StatelessWidget {
         final unseen = counts.unseen;
         final today = counts.today;
 
-        final subtitle = unseen == 0
-            ? 'No unseen alerts'
-            : '$unseen unseen priority alert${unseen == 1 ? '' : 's'}';
-
         return _DashCard(
           title: 'Priority Alerts',
-          subtitle: subtitle,
-          tags: ['Unseen $unseen', 'Today $today'],
+          statusLabels: [
+            _StatusLabelData(label: 'Unseen', count: unseen, color: AdminHome.accentRose),
+            _StatusLabelData(label: 'Today', count: today, color: AdminHome.accentAmber),
+          ],
           icon: AdminIcons.priorityAlerts,
           color: AdminHome.actionOrange,
           badgeCount: unseen,
@@ -2394,12 +2313,11 @@ class _PublicGalleryDashCard extends StatelessWidget {
 
         return _DashCard(
           title: 'Public Gallery',
-          subtitle: count == 0
-              ? 'No teasers published'
-              : '$count teaser item${count == 1 ? '' : 's'}',
-          tags: ['Teasers $count', count == 0 ? 'Empty' : 'Published'],
+          statusLabels: [
+            _StatusLabelData(label: 'Teasers', count: count, color: AdminHome.accentPurple),
+          ],
           icon: AdminIcons.publicGallery,
-          color: AdminHome.accentSky,
+          color: AdminHome.accentPurple,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
         );
@@ -2445,13 +2363,11 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
       builder: (context, snap) {
         int online = 0;
         int slots = 0;
-        int total = 0;
 
         final root = snap.data?.snapshot.value;
         if (root is Map) {
           root.forEach((_, teacherNode) {
             if (teacherNode is! Map) return;
-            total += 1;
             final m = teacherNode.map((k, v) => MapEntry(k.toString(), v));
             final settings = m['settings'];
             if (settings is Map) {
@@ -2462,14 +2378,12 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
           });
         }
 
-        final subtitle = total == 0
-            ? 'No teacher availability yet'
-            : 'Online $online • Offline ${total - online}';
-
         return _DashCard(
           title: 'Teacher Availability',
-          subtitle: subtitle,
-          tags: ['Online $online', 'Slots $slots'],
+          statusLabels: [
+            _StatusLabelData(label: 'Online', count: online, color: AdminHome.accentGreen),
+            _StatusLabelData(label: 'Slots', count: slots, color: AdminHome.accentBlue),
+          ],
           icon: AdminIcons.teacherAvailability,
           color: AdminHome.accentCyan,
           isReceptionistStyle: isReceptionistStyle,
@@ -2479,7 +2393,6 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
     );
   }
 }
-
 // ===================== PAY FLAG =====================
 
 enum _PayFlag { ok, yellow, red, black, exempt, noCourse, exam }
@@ -3012,6 +2925,48 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final usersRef = FirebaseDatabase.instance.ref('users');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: usersRef.onValue,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return _buildCardUi(
+            context,
+            details: const _PaymentAttentionDetails(
+              summary: _PaymentAttentionSummary(
+                totalLearners: 0,
+                noCourse: 0,
+                black: 0,
+                red: 0,
+                yellow: 0,
+                ok: 0,
+              ),
+              noCourseLearners: <String>[],
+              overdueLearners: <String>[],
+              dueNowLearners: <String>[],
+              warningLearners: <String>[],
+              okLearners: <String>[],
+            ),
+            loading: true,
+          );
+        }
+
+        final details = _PaymentAttentionDetails.fromUsers(
+          snap.data?.snapshot.value,
+        );
+
+        return _buildCardUi(
+          context,
+          details: details,
+          loading: false,
+        );
+      },
+    );
+  }
+
   Widget _buildCardUi(
     BuildContext context, {
     required _PaymentAttentionDetails details,
@@ -3049,29 +3004,26 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: isMobileCard ? 38 : 42,
-                height: isMobileCard ? 38 : 42,
-                decoration: BoxDecoration(
-                  color: isReceptionistStyle
-                      ? const Color(0xFFFFF2E8)
-                      : const Color(0xFFEAF2FF),
-                  borderRadius: BorderRadius.circular(isMobileCard ? 12 : 14),
-                ),
-                child: loading
-                    ? const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        AdminIcons.payments,
-                        color: isReceptionistStyle
-                            ? AdminHome.actionOrange
-                            : AdminHome.accentBlue,
-                        size: isMobileCard ? 18 : 20,
+              Expanded(
+                child: Stack(
+                  children: [
+                    _CardArtPanel(
+                      icon: AdminIcons.payments,
+                      color: isReceptionistStyle
+                          ? AdminHome.actionOrange
+                          : AdminHome.accentBlue,
+                      isMobile: isMobileCard,
+                    ),
+                    if (loading)
+                      const Positioned.fill(
+                        child: Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
+                  ],
+                ),
               ),
-              SizedBox(height: isMobileCard ? 7 : 10),
+              SizedBox(height: isMobileCard ? 5 : 7),
               const Text(
                 'Payments',
                 maxLines: 1,
@@ -3082,75 +3034,68 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                   color: AdminHome.primaryBlue,
                 ),
               ),
-              SizedBox(height: isMobileCard ? 1 : 2),
-              Text(
-                'Payment attention overview',
-                maxLines: isMobileCard ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
-                  color: AdminHome.softText,
-                ),
-              ),
-              SizedBox(height: isMobileCard ? 5 : 7),
+              SizedBox(height: isMobileCard ? 4 : 6),
               Flexible(
-                child: SingleChildScrollView(
-                  physics: const ClampingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 100),
                   child: Wrap(
-                    spacing: isMobileCard ? 5 : 6,
-                    runSpacing: isMobileCard ? 5 : 6,
+                    spacing: isMobileCard ? 4 : 5,
                     children: [
-                      _MiniStatChip(
-                        label: 'Learners ${summary.totalLearners}',
+                      _StatusLabel(
+                        label: 'Learners',
+                        count: summary.totalLearners,
                         color: Colors.blueGrey,
-                        background: const Color(0xFFF2F5F8),
+                        isMobile: isMobileCard,
                       ),
-                      _MiniStatChip(
-                        label: '${_PayLegend.blackLabel} ${summary.black}',
+                      _StatusLabel(
+                        label: _PayLegend.blackLabel,
+                        count: summary.black,
                         color: _PayLegend.blackColor,
-                        background: const Color(0xFFF1F3F5),
+                        isMobile: isMobileCard,
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.blackLabel,
                           names: details.overdueLearners,
                         ),
                       ),
-                      _MiniStatChip(
-                        label: '${_PayLegend.redLabel} ${summary.red}',
+                      _StatusLabel(
+                        label: _PayLegend.redLabel,
+                        count: summary.red,
                         color: _PayLegend.redColor,
-                        background: const Color(0xFFFFEEEE),
+                        isMobile: isMobileCard,
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.redLabel,
                           names: details.dueNowLearners,
                         ),
                       ),
-                      _MiniStatChip(
-                        label: '${_PayLegend.yellowLabel} ${summary.yellow}',
+                      _StatusLabel(
+                        label: _PayLegend.yellowLabel,
+                        count: summary.yellow,
                         color: _PayLegend.yellowColor,
-                        background: const Color(0xFFFFF4E4),
+                        isMobile: isMobileCard,
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.yellowLabel,
                           names: details.warningLearners,
                         ),
                       ),
-                      _MiniStatChip(
-                        label:
-                            '${_PayLegend.noCourseLabel} ${summary.noCourse}',
+                      _StatusLabel(
+                        label: _PayLegend.noCourseLabel,
+                        count: summary.noCourse,
                         color: _PayLegend.noCourseColor,
-                        background: const Color(0xFFEFF5FF),
+                        isMobile: isMobileCard,
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.noCourseLabel,
                           names: details.noCourseLearners,
                         ),
                       ),
-                      _MiniStatChip(
-                        label: '${_PayLegend.examLabel} ${summary.exam}',
+                      _StatusLabel(
+                        label: _PayLegend.examLabel,
+                        count: summary.exam,
                         color: _PayLegend.examColor,
-                        background: const Color(0xFFF3E8FF),
+                        isMobile: isMobileCard,
                         onTap: () => _showLearnersSheet(
                           context,
                           title: _PayLegend.examLabel,
@@ -3167,49 +3112,7 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
       ),
     );
   }
-
-  @override
-  Widget build(BuildContext context) {
-    final usersRef = FirebaseDatabase.instance.ref('users');
-
-    return StreamBuilder<DatabaseEvent>(
-      stream: usersRef.onValue,
-      builder: (context, snap) {
-        if (!snap.hasData) {
-          return _buildCardUi(
-            context,
-            details: const _PaymentAttentionDetails(
-              summary: _PaymentAttentionSummary(
-                totalLearners: 0,
-                noCourse: 0,
-                black: 0,
-                red: 0,
-                yellow: 0,
-                ok: 0,
-                exam: 0,
-              ),
-              noCourseLearners: <String>[],
-              overdueLearners: <String>[],
-              dueNowLearners: <String>[],
-              warningLearners: <String>[],
-              okLearners: <String>[],
-              examLearners: <String>[],
-            ),
-            loading: true,
-          );
-        }
-
-        final details = _PaymentAttentionDetails.fromUsers(
-          snap.data?.snapshot.value,
-        );
-
-        return _buildCardUi(context, details: details, loading: false);
-      },
-    );
-  }
 }
-
-// ===================== LEARNERS CARD =====================
 
 class _LearnersDashCard extends StatefulWidget {
   final VoidCallback onTap;
@@ -3744,31 +3647,25 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Container(
-              width: isMobileCard ? 38 : 42,
-              height: isMobileCard ? 38 : 42,
-              decoration: BoxDecoration(
-                color: isReceptionistStyle
-                    ? const Color(0xFFFFF2E8)
-                    : const Color(0xFFF1EAFE),
-                borderRadius: BorderRadius.circular(isMobileCard ? 12 : 14),
-              ),
-              child: loading
-                  ? const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      AdminIcons.learners,
-                      color: isReceptionistStyle
-                          ? AdminHome.actionOrange
-                          : AdminHome.accentPurple,
-                      size: isMobileCard ? 18 : 20,
+            Expanded(
+              child: Stack(
+                children: [
+                  _CardArtPanel(
+                    icon: AdminIcons.learners,
+                    color: AdminHome.accentPurple,
+                    isMobile: isMobileCard,
+                  ),
+                  if (loading)
+                    const Positioned.fill(
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     ),
+                ],
+              ),
             ),
-            SizedBox(height: isMobileCard ? 7 : 10),
+            SizedBox(height: isMobileCard ? 5 : 7),
             const Text(
               'Learners',
               maxLines: 1,
@@ -3779,84 +3676,79 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                 color: AdminHome.primaryBlue,
               ),
             ),
-            SizedBox(height: isMobileCard ? 1 : 2),
-            Text(
-              isReceptionistStyle ? 'Students overview' : 'Students list',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 11,
-                color: AdminHome.softText,
-              ),
-            ),
-            SizedBox(height: isMobileCard ? 5 : 7),
+            SizedBox(height: isMobileCard ? 4 : 6),
             Flexible(
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 100),
                 child: Wrap(
-                  spacing: isMobileCard ? 5 : 6,
-                  runSpacing: isMobileCard ? 5 : 6,
+                  spacing: isMobileCard ? 4 : 5,
                   children: [
-                    _MiniStatChip(
-                      label: 'Learners $total',
+                    _StatusLabel(
+                      label: 'Learners',
+                      count: total,
                       color: Colors.blueGrey,
-                      background: const Color(0xFFF2F5F8),
+                      isMobile: isMobileCard,
                     ),
-                    _MiniStatChip(
-                      label: '${_PayLegend.noCourseLabel} $blue',
+                    _StatusLabel(
+                      label: _PayLegend.noCourseLabel,
+                      count: blue,
                       color: _PayLegend.noCourseColor,
-                      background: const Color(0xFFEFF5FF),
+                      isMobile: isMobileCard,
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.noCourseLabel,
                         names: noCourseNames,
                       ),
                     ),
-                    _MiniStatChip(
-                      label: '${_PayLegend.blackLabel} $black',
+                    _StatusLabel(
+                      label: _PayLegend.blackLabel,
+                      count: black,
                       color: _PayLegend.blackColor,
-                      background: const Color(0xFFF1F3F5),
+                      isMobile: isMobileCard,
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.blackLabel,
                         names: blackNames,
                       ),
                     ),
-                    _MiniStatChip(
-                      label: '${_PayLegend.redLabel} $red',
+                    _StatusLabel(
+                      label: _PayLegend.redLabel,
+                      count: red,
                       color: _PayLegend.redColor,
-                      background: const Color(0xFFFFEEEE),
+                      isMobile: isMobileCard,
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.redLabel,
                         names: redNames,
                       ),
                     ),
-                    _MiniStatChip(
-                      label: '${_PayLegend.yellowLabel} $yellow',
+                    _StatusLabel(
+                      label: _PayLegend.yellowLabel,
+                      count: yellow,
                       color: _PayLegend.yellowColor,
-                      background: const Color(0xFFFFF4E4),
+                      isMobile: isMobileCard,
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.yellowLabel,
                         names: yellowNames,
                       ),
                     ),
-                    _MiniStatChip(
-                      label: '${_PayLegend.okLabel} $ok',
+                    _StatusLabel(
+                      label: _PayLegend.okLabel,
+                      count: ok,
                       color: _PayLegend.okColor,
-                      background: const Color(0xFFEAF2FF),
+                      isMobile: isMobileCard,
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.okLabel,
                         names: okNames,
                       ),
                     ),
-                    _MiniStatChip(
-                      label: '${_PayLegend.examLabel} $exam',
+                    _StatusLabel(
+                      label: _PayLegend.examLabel,
+                      count: exam,
                       color: _PayLegend.examColor,
-                      background: const Color(0xFFF3E8FF),
+                      isMobile: isMobileCard,
                       onTap: () => _showLearnersSheet(
                         context,
                         title: _PayLegend.examLabel,
@@ -3869,55 +3761,6 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _MiniStatChip extends StatelessWidget {
-  const _MiniStatChip({
-    required this.label,
-    required this.color,
-    required this.background,
-    this.onTap,
-  });
-
-  final String label;
-  final Color color;
-  final Color background;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isMobileChip = MediaQuery.of(context).size.width < 760;
-    final chip = Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isMobileChip ? 7 : 8,
-        vertical: isMobileChip ? 4 : 5,
-      ),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.18)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w900,
-          fontSize: isMobileChip ? 9.5 : 10,
-        ),
-      ),
-    );
-
-    if (onTap == null) return chip;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: onTap,
-        child: chip,
       ),
     );
   }
@@ -3965,18 +3808,15 @@ class _RemindersDashCard extends StatelessWidget {
           });
         }
 
-        final total = done + seen + undone;
-        final subtitle = total == 0
-            ? 'Send & manage reminders'
-            : 'Done $done • Seen $seen • Undone $undone';
-
         return _DashCard(
           title: 'Reminders',
-          subtitle: subtitle,
-          tags: ['Undone $undone', 'Done $done'],
+          statusLabels: [
+            _StatusLabelData(label: 'Undone', count: undone, color: AdminHome.accentRose),
+            _StatusLabelData(label: 'Seen', count: seen, color: AdminHome.accentBlue),
+            _StatusLabelData(label: 'Done', count: done, color: AdminHome.accentGreen),
+          ],
           icon: Icons.notifications_active_rounded,
           color: AdminHome.accentPurple,
-          badgeCount: 0,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
         );
@@ -4000,8 +3840,6 @@ class _StaffMailDashCard extends StatelessWidget {
     if (meUid.isEmpty) {
       return _DashCard(
         title: 'Staff',
-        subtitle: 'Teachers & staff',
-        tags: const ['Unread 0', 'Threads 0'],
         icon: AdminIcons.staff,
         color: AdminHome.accentAmber,
         isReceptionistStyle: isReceptionistStyle,
@@ -4025,14 +3863,12 @@ class _StaffMailDashCard extends StatelessWidget {
           );
         }
 
-        final subtitle = threads == 0
-            ? 'Teachers & staff'
-            : 'Unread $unread • Threads $threads';
-
         return _DashCard(
           title: 'Staff',
-          subtitle: subtitle,
-          tags: ['Unread $unread', 'Threads $threads'],
+          statusLabels: [
+            _StatusLabelData(label: 'Unread', count: unread, color: AdminHome.accentRose),
+            _StatusLabelData(label: 'Threads', count: threads, color: AdminHome.accentBlue),
+          ],
           icon: AdminIcons.staff,
           color: AdminHome.accentAmber,
           badgeCount: unread,
@@ -4059,8 +3895,6 @@ class _AdminMailDashCard extends StatelessWidget {
     if (meUid.isEmpty) {
       return _DashCard(
         title: 'Admin Mail',
-        subtitle: 'Central inbox hub',
-        tags: const ['Unread 0', 'Threads 0'],
         icon: AdminIcons.adminMail,
         color: AdminHome.accentSky,
         isReceptionistStyle: isReceptionistStyle,
@@ -4084,14 +3918,12 @@ class _AdminMailDashCard extends StatelessWidget {
           );
         }
 
-        final subtitle = threads == 0
-            ? 'Central inbox hub'
-            : 'Unread $unread • Threads $threads';
-
         return _DashCard(
           title: 'Admin Mail',
-          subtitle: subtitle,
-          tags: ['Unread $unread', 'Threads $threads'],
+          statusLabels: [
+            _StatusLabelData(label: 'Unread', count: unread, color: AdminHome.accentRose),
+            _StatusLabelData(label: 'Threads', count: threads, color: AdminHome.accentBlue),
+          ],
           icon: AdminIcons.adminMail,
           color: AdminHome.accentSky,
           badgeCount: unread,
@@ -4103,12 +3935,130 @@ class _AdminMailDashCard extends StatelessWidget {
   }
 }
 
+class _StatusLabelData {
+  final String label;
+  final int count;
+  final Color color;
+
+  const _StatusLabelData({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+}
+
+class _StatusLabel extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  final bool isMobile;
+  final VoidCallback? onTap;
+
+  const _StatusLabel({
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.isMobile,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final chip = Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 6 : 8,
+        vertical: isMobile ? 3.5 : 4.5,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        '$label $count',
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: isMobile ? 9.5 : 10,
+          height: 1,
+        ),
+      ),
+    );
+
+    if (onTap == null) return chip;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: chip,
+      ),
+    );
+  }
+}
+
+class _CardArtPanel extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final bool isMobile;
+
+  const _CardArtPanel({
+    required this.icon,
+    required this.color,
+    required this.isMobile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final iconSize = (isMobile ? 32 : 38).toDouble();
+    return Stack(
+      children: [
+        Positioned(
+          right: isMobile ? -4 : -8,
+          top: isMobile ? -4 : -8,
+          child: Container(
+            width: isMobile ? 50 : 65,
+            height: isMobile ? 50 : 65,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.08),
+            ),
+          ),
+        ),
+        Positioned(
+          left: isMobile ? -2 : -4,
+          bottom: isMobile ? -2 : -4,
+          child: Container(
+            width: isMobile ? 30 : 40,
+            height: isMobile ? 30 : 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.06),
+            ),
+          ),
+        ),
+        Center(
+          child: Container(
+            width: iconSize + 14,
+            height: iconSize + 14,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, size: iconSize, color: color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ===================== GENERIC DASH CARD =====================
 
 class _DashCard extends StatelessWidget {
   final String title;
-  final String subtitle;
-  final List<String> tags;
+  final List<_StatusLabelData> statusLabels;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
@@ -4117,8 +4067,7 @@ class _DashCard extends StatelessWidget {
 
   const _DashCard({
     required this.title,
-    required this.subtitle,
-    this.tags = const [],
+    this.statusLabels = const [],
     required this.icon,
     required this.color,
     required this.onTap,
@@ -4141,46 +4090,12 @@ class _DashCard extends StatelessWidget {
     return const Color(0xFFEAF2FF);
   }
 
-  String _compactMobileTitle(String value) {
-    switch (value) {
-      case 'Priority Alerts':
-        return 'Alerts';
-      case 'Teacher Availability':
-        return 'Availability';
-      case 'File Manager':
-        return 'Files';
-      case 'Public Gallery':
-        return 'Gallery';
-      case 'Course Reviews':
-        return 'Reviews';
-      case 'Online Booking':
-        return 'Booking';
-      case 'Job Applications':
-        return 'Applications';
-      case 'Notification Audit':
-        return 'Notif Audit';
-      case 'Activity Center':
-        return 'Activity';
-      case 'Shared Files':
-        return 'Shared';
-      case 'Diary':
-        return 'Diary';
-      default:
-        return value;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final isMobileCard = MediaQuery.of(context).size.width < 760;
-    final titleText = isMobileCard ? _compactMobileTitle(title) : title;
-    final visibleTags = isMobileCard
-        ? tags.where((e) => e.trim().isNotEmpty).take(2).toList()
-        : const <String>[];
     final borderColor = isReceptionistStyle
         ? const Color(0xFFFFEAD8)
         : AdminHome.uiBorder;
-
     final shadowOpacity = isReceptionistStyle ? 0.025 : 0.04;
 
     return InkWell(
@@ -4192,9 +4107,7 @@ class _DashCard extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              _softBg(
-                color,
-              ).withValues(alpha: isReceptionistStyle ? 0.22 : 0.26),
+              _softBg(color).withValues(alpha: isReceptionistStyle ? 0.22 : 0.26),
               AdminHome.cardBg,
               AdminHome.cardBg,
             ],
@@ -4211,113 +4124,73 @@ class _DashCard extends StatelessWidget {
           ],
         ),
         child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: isMobileCard ? 10 : 12,
-            vertical: isMobileCard ? 9 : 12,
-          ),
+          padding: EdgeInsets.all(isMobileCard ? 9 : 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: isMobileCard
-                ? MainAxisAlignment.start
-                : MainAxisAlignment.center,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: isMobileCard ? 38 : 42,
-                    height: isMobileCard ? 38 : 42,
-                    decoration: BoxDecoration(
-                      color: isReceptionistStyle
-                          ? _softBg(color).withValues(alpha: 0.82)
-                          : _softBg(color),
-                      borderRadius: BorderRadius.circular(
-                        isMobileCard ? 12 : 14,
-                      ),
-                    ),
-                    child: Icon(
-                      icon,
+              Expanded(
+                child: Stack(
+                  children: [
+                    _CardArtPanel(
+                      icon: icon,
                       color: color,
-                      size: isMobileCard ? 19 : 21,
+                      isMobile: isMobileCard,
                     ),
-                  ),
-                  const Spacer(),
-                  if (badgeCount > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        badgeCount > 99 ? '99+' : badgeCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 10,
+                    if (badgeCount > 0)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            badgeCount > 99 ? '99+' : badgeCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 9.5,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-              SizedBox(height: isMobileCard ? 7 : 10),
+              SizedBox(height: isMobileCard ? 5 : 7),
               Text(
-                titleText,
+                title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  fontSize: 14,
+                  fontSize: isMobileCard ? 13 : 14,
                   color: AdminHome.primaryBlue,
                 ),
               ),
-              SizedBox(height: isMobileCard ? 2 : 3),
-              Text(
-                subtitle,
-                maxLines: isMobileCard ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
-                  color: AdminHome.softText,
-                  height: 1.15,
-                ),
-              ),
-              if (visibleTags.isNotEmpty) ...[
-                SizedBox(height: isMobileCard ? 5 : 7),
-                Wrap(
-                  spacing: 5,
-                  runSpacing: 5,
-                  children: visibleTags
-                      .map(
-                        (label) => Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF2F5F8),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: const Color(
-                                0xFF8EA0B2,
-                              ).withValues(alpha: 0.22),
-                            ),
-                          ),
-                          child: Text(
-                            label,
-                            style: const TextStyle(
-                              color: AdminHome.softText,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 9.5,
-                              height: 1,
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
+              if (statusLabels.isNotEmpty) ...[
+                SizedBox(height: isMobileCard ? 4 : 6),
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 100),
+                    child: Wrap(
+                      spacing: isMobileCard ? 4 : 5,
+                      runSpacing: isMobileCard ? 4 : 5,
+                      children: statusLabels
+                          .map((sl) => _StatusLabel(
+                                label: sl.label,
+                                count: sl.count,
+                                color: sl.color,
+                                isMobile: isMobileCard,
+                              ))
+                          .toList(),
+                    ),
+                  ),
                 ),
               ],
             ],
@@ -4399,12 +4272,8 @@ class _CourseFeedbackDashCard extends StatelessWidget {
         final reported = snap.data ?? 0;
         return _DashCard(
           title: 'Course Reviews',
-          subtitle: reported > 0
-              ? '$reported reported feedback items'
-              : 'Moderate learner reviews',
-          tags: [
-            'Reported $reported',
-            reported > 0 ? 'Needs action' : 'All clear',
+          statusLabels: [
+            _StatusLabelData(label: 'Reported', count: reported, color: AdminHome.accentRose),
           ],
           icon: AdminIcons.courseReviews,
           color: AdminHome.accentAmber,

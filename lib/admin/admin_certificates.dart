@@ -152,15 +152,12 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         service: _adminService,
         isPrinting: _printingCertCvn == cert.cvn,
         onDeleted: () {
-          Navigator.pop(context);
           _loadAdminCerts();
         },
         onEdited: () {
-          Navigator.pop(context);
           _loadAdminCerts();
         },
         onPrint: () {
-          Navigator.pop(context);
           _printAdminCert(cert);
         },
       ),
@@ -1072,7 +1069,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
   DateTime? _issueDate;
   String _idType = 'national_id';
   String _cvn = '';
-  String _grade = 'A';
+  String _grade = '';
 
   String? _frontIdUrl;
   String? _backIdUrl;
@@ -1086,9 +1083,9 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
   bool _saving = false;
   bool _hasUnsavedChanges = false;
 
-  List<String> _suggestedNames = [];
-  List<String> _suggestedSublines = [];
-  List<String> _suggestedDescriptions = [];
+  List<AdminCertificateSuggestion> _suggestedNames = [];
+  List<AdminCertificateSuggestion> _suggestedSublines = [];
+  List<AdminCertificateSuggestion> _suggestedDescriptions = [];
   bool _namesLoaded = false;
   bool _sublinesLoaded = false;
   bool _descriptionsLoaded = false;
@@ -1548,6 +1545,11 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                   suggestions: _suggestedNames,
                   validator: (v) =>
                       v?.trim().isEmpty == true ? 'Required' : null,
+                  onRemoveSuggestion: (key) {
+                    widget.service.deleteSuggestedName(key);
+                    setState(() =>
+                        _suggestedNames.removeWhere((s) => s.key == key));
+                  },
                 ),
                 const SizedBox(height: 14),
 
@@ -1571,7 +1573,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'Grade *',
+                            'Grade',
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color: _primaryBlue.withValues(alpha: 0.8),
@@ -1593,6 +1595,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                             value: _grade,
                             isExpanded: true,
                             items: const [
+                              DropdownMenuItem(value: '', child: Text('None')),
                               DropdownMenuItem(value: 'A', child: Text('A - Excellent')),
                               DropdownMenuItem(value: 'B', child: Text('B - Good')),
                               DropdownMenuItem(value: 'C', child: Text('C - Satisfactory')),
@@ -1717,6 +1720,11 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                   label: 'Subline',
                   controller: _sublineC,
                   suggestions: _suggestedSublines,
+                  onRemoveSuggestion: (key) {
+                    widget.service.deleteSuggestedSubline(key);
+                    setState(() =>
+                        _suggestedSublines.removeWhere((s) => s.key == key));
+                  },
                 ),
                 const SizedBox(height: 14),
 
@@ -1725,6 +1733,11 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                   label: 'Description',
                   controller: _descriptionC,
                   suggestions: _suggestedDescriptions,
+                  onRemoveSuggestion: (key) {
+                    widget.service.deleteSuggestedDescription(key);
+                    setState(() =>
+                        _suggestedDescriptions.removeWhere((s) => s.key == key));
+                  },
                 ),
                 const SizedBox(height: 14),
 
@@ -1972,31 +1985,70 @@ class _IdTypeOption extends StatelessWidget {
 class _SuggestionField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
-  final List<String> suggestions;
+  final List<AdminCertificateSuggestion> suggestions;
   final String? Function(String?)? validator;
+  final void Function(String key)? onRemoveSuggestion;
 
   const _SuggestionField({
     required this.label,
     required this.controller,
     required this.suggestions,
     this.validator,
+    this.onRemoveSuggestion,
   });
 
   @override
   Widget build(BuildContext context) {
     return Autocomplete<String>(
       optionsBuilder: (textEditingValue) {
-        if (textEditingValue.text.isEmpty) {
-          return suggestions;
-        }
-        return suggestions.where((s) => s
+        final values = suggestions.map((s) => s.value);
+        if (textEditingValue.text.isEmpty) return values;
+        return values.where((s) => s
             .toLowerCase()
             .contains(textEditingValue.text.toLowerCase()));
       },
       initialValue: TextEditingValue(text: controller.text),
-      onSelected: (value) => controller.text = value,
+      onSelected: (value) {
+        controller.text = value;
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: value.length),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 200),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (_, i) {
+                  final value = options.elementAt(i);
+                  final suggestion = suggestions.where(
+                    (s) => s.value == value,
+                  ).firstOrNull;
+                  return ListTile(
+                    dense: true,
+                    title: Text(value),
+                    onTap: () => onSelected(value),
+                    onLongPress: suggestion?.key != null &&
+                            onRemoveSuggestion != null
+                        ? () {
+                            onRemoveSuggestion!(suggestion!.key!);
+                          }
+                        : null,
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
       fieldViewBuilder: (context, textEditingController, focusNode, onSubmitted) {
-        // Sync controllers
         textEditingController.text = controller.text;
         textEditingController.addListener(() {
           controller.text = textEditingController.text;

@@ -81,14 +81,6 @@ class CertificatePdfService {
     return null;
   }
 
-  Future<pw.MemoryImage?> _loadPngTemplate(String assetPath) async {
-    try {
-      final bytes = await rootBundle.load(assetPath);
-      return pw.MemoryImage(bytes.buffer.asUint8List());
-    } catch (_) {}
-    return null;
-  }
-
   static dynamic _valueByAliases(
     Map<String, dynamic> map,
     List<String> aliases,
@@ -261,10 +253,6 @@ class CertificatePdfService {
     pw.Font? playfairBold;
 
     template = await _loadPdfTemplate('assets/images/digital_cert_exam.pdf');
-    template ??= await _loadPngTemplate(
-      'assets/images/digital_cert_exam.png',
-    );
-    template ??= await _loadPngTemplate('assets/images/DigitalCertificate.png');
     try {
       final bytes = await rootBundle.load(
         'assets/fonts/PlayfairDisplay-Regular.ttf',
@@ -671,15 +659,15 @@ class CertificatePdfService {
 
   Future<Uint8List> generateAdminEflPdfBytes(AdminCertificate cert) async {
     final doc = pw.Document();
-    final template = await _loadPdfTemplate('assets/images/cpd.pdf');
+    final template = await _loadPdfTemplate(
+      cert.grade.isNotEmpty
+          ? 'assets/images/cpdgraded.pdf'
+          : 'assets/images/cpd.pdf',
+    );
 
     const double pageWidth = 596;
     const double pageHeight = 842;
 
-    final bool isPass = ['A', 'B', 'C'].contains(cert.grade.toUpperCase());
-    final PdfColor gradeColor = isPass
-        ? PdfColor.fromInt(0xFFD4AF37)
-        : PdfColor.fromInt(0xFFE74C3C);
     const PdfColor deepBlue = PdfColor.fromInt(0xFF0D1B2A);
 
     String fmtDdMmYyyy(String v) {
@@ -722,31 +710,32 @@ class CertificatePdfService {
                   ),
                 ),
               ),
-              pw.Positioned(
-                left: 112,
-                top: 353,
-                child: pw.SizedBox(
-                  width: 320,
-                  child: pw.Text(
-                    cert.grade.toUpperCase(),
-                    style: pw.TextStyle(
-                      fontSize: 15,
-                      fontWeight: pw.FontWeight.bold,
-                      font: pw.Font.helveticaBold(),
-                      color: gradeColor,
+              if (cert.grade.isNotEmpty)
+                pw.Positioned(
+                  left: 112,
+                  top: 353,
+                  child: pw.SizedBox(
+                    width: 320,
+                    child: pw.Text(
+                      cert.grade.toUpperCase(),
+                      style: pw.TextStyle(
+                        fontSize: 15,
+                        fontWeight: pw.FontWeight.bold,
+                        font: pw.Font.helveticaBold(),
+                        color: deepBlue,
+                      ),
                     ),
                   ),
                 ),
-              ),
               pw.Positioned(
-                left: 64,
-                top: 424.5,
+                left: 66,
+                top: 434.5,
                 child: pw.SizedBox(
                   width: 320,
                   child: pw.Text(
                     cert.certificateName,
                     style: pw.TextStyle(
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: pw.FontWeight.bold,
                       font: pw.Font.helveticaBold(),
                       color: deepBlue,
@@ -756,8 +745,8 @@ class CertificatePdfService {
               ),
               if (cert.subline.isNotEmpty)
                 pw.Positioned(
-                  left: 64,
-                  top: 440.5,
+                  left: 66,
+                  top: 456.5,
                   child: pw.SizedBox(
                     width: 320,
                     child: pw.Text(
@@ -773,12 +762,13 @@ class CertificatePdfService {
                 ),
               if (cert.description.isNotEmpty)
                 pw.Positioned(
-                  left: 61,
-                  top: 453.5,
+                  left: 66,
+                  top: 473.5,
                   child: pw.SizedBox(
                     width: 501,
                     child: pw.Text(
                       cert.description,
+                      textAlign: pw.TextAlign.justify,
                       style: pw.TextStyle(
                         fontSize: 10,
                         font: pw.Font.helvetica(),
@@ -789,7 +779,7 @@ class CertificatePdfService {
                 ),
               pw.Positioned(
                 left: 469,
-                top: 751,
+                top: 757,
                 child: pw.SizedBox(
                   width: 160,
                   child: pw.Text(
@@ -805,7 +795,7 @@ class CertificatePdfService {
               if (cert.cvn.isNotEmpty)
                 pw.Positioned(
                   left: 216,
-                  top: 632,
+                  top: 638,
                   child: pw.SizedBox(
                     width: 160,
                     child: pw.Text(
