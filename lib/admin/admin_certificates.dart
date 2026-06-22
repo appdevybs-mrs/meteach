@@ -59,8 +59,6 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
   String? _printingCertCvn;
   String? _recordedKindFilter; // null = all, 'course', 'milestone'
 
-
-
   @override
   void initState() {
     super.initState();
@@ -132,10 +130,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AdminCertFormSheet(
-        service: _adminService,
-        certificate: cert,
-      ),
+      builder: (_) =>
+          _AdminCertFormSheet(service: _adminService, certificate: cert),
     );
     if (result == true && mounted) {
       await _loadAdminCerts();
@@ -169,9 +165,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Certificate'),
-        content: Text(
-          'Delete certificate for "${cert.fullName}"?',
-        ),
+        content: Text('Delete certificate for "${cert.fullName}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -249,10 +243,16 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
     final Map<String, _UserCertGroup> groups = {};
     for (final entry in _filteredRecordedCertificates) {
       final uid = entry.learnerUid;
-      groups.putIfAbsent(uid, () => _UserCertGroup(
-        learnerUid: uid,
-        fullName: entry.certificate.fullName,
-      )).entries.add(entry);
+      groups
+          .putIfAbsent(
+            uid,
+            () => _UserCertGroup(
+              learnerUid: uid,
+              fullName: entry.certificate.fullName,
+            ),
+          )
+          .entries
+          .add(entry);
     }
     final sorted = groups.values.toList()
       ..sort((a, b) => a.fullName.compareTo(b.fullName));
@@ -386,49 +386,48 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
           child: _loadingAdmin
               ? const Center(child: CircularProgressIndicator())
               : _filteredAdminCerts.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.assignment_outlined,
-                            size: 64,
-                            color: _softText.withValues(alpha: 0.5),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _adminCerts.isEmpty
-                                ? 'No certificates yet'
-                                : 'No certificates match your search',
-                            style:
-                                const TextStyle(color: _softText, fontSize: 16),
-                          ),
-                          if (_adminCerts.isEmpty) ...[
-                            const SizedBox(height: 8),
-                            TextButton.icon(
-                              onPressed: _showAddCertificateForm,
-                              icon: const Icon(Icons.add),
-                              label: const Text('Add your first certificate'),
-                            ),
-                          ],
-                        ],
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.assignment_outlined,
+                        size: 64,
+                        color: _softText.withValues(alpha: 0.5),
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                      itemCount: _filteredAdminCerts.length,
-                      itemBuilder: (context, index) {
-                        final cert = _filteredAdminCerts[index];
-                        return _AdminCertCard(
-                          certificate: cert,
-                          onTap: () => _showViewCertificate(cert),
-                          onEdit: () => _showEditCertificateForm(cert),
-                          onDelete: () => _deleteCertificate(cert),
-                          onPrint: () => _printAdminCert(cert),
-                          isPrinting: _printingCertCvn == cert.cvn,
-                        );
-                      },
-                    ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _adminCerts.isEmpty
+                            ? 'No certificates yet'
+                            : 'No certificates match your search',
+                        style: const TextStyle(color: _softText, fontSize: 16),
+                      ),
+                      if (_adminCerts.isEmpty) ...[
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: _showAddCertificateForm,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add your first certificate'),
+                        ),
+                      ],
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                  itemCount: _filteredAdminCerts.length,
+                  itemBuilder: (context, index) {
+                    final cert = _filteredAdminCerts[index];
+                    return _AdminCertCard(
+                      certificate: cert,
+                      onTap: () => _showViewCertificate(cert),
+                      onEdit: () => _showEditCertificateForm(cert),
+                      onDelete: () => _deleteCertificate(cert),
+                      onPrint: () => _printAdminCert(cert),
+                      isPrinting: _printingCertCvn == cert.cvn,
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -541,7 +540,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         ],
       ),
     );
-}
+  }
 
   Widget _buildRecordedCertificatesList() {
     if (_loadingRecorded) {
@@ -797,8 +796,8 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
         instructorName: examCourse == 'exam'
             ? null
             : (instructorC.text.trim().isEmpty
-                    ? 'Seddik. B'
-                    : instructorC.text.trim()),
+                  ? 'Seddik. B'
+                  : instructorC.text.trim()),
         examCourse: examCourse,
         trainingDate: trainingDate,
         expirationDate: expirationDate,
@@ -861,8 +860,7 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                 TextFormField(
                   readOnly: true,
                   controller: TextEditingController(text: trainingDate),
-                  decoration:
-                      const InputDecoration(labelText: 'Training Date'),
+                  decoration: const InputDecoration(labelText: 'Training Date'),
                   onTap: () async {
                     final d = await showDatePicker(
                       context: ctx,
@@ -897,9 +895,9 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                       durationYears = v;
                       final t =
                           DateTime.tryParse(trainingDate) ?? DateTime.now();
-                      expirationDate = DateFormat('yyyy-MM-dd').format(
-                        t.add(Duration(days: durationYears * 365)),
-                      );
+                      expirationDate = DateFormat(
+                        'yyyy-MM-dd',
+                      ).format(t.add(Duration(days: durationYears * 365)));
                     });
                   },
                 ),
@@ -907,8 +905,9 @@ class _AdminCertificatesScreenState extends State<AdminCertificatesScreen> {
                 TextFormField(
                   readOnly: true,
                   controller: TextEditingController(text: expirationDate),
-                  decoration:
-                      const InputDecoration(labelText: 'Expiration Date'),
+                  decoration: const InputDecoration(
+                    labelText: 'Expiration Date',
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -1096,8 +1095,11 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
   void initState() {
     super.initState();
     _allControllers.addAll([
-      _fullNameC, _nationalIdC, _certNameC,
-      _sublineC, _descriptionC,
+      _fullNameC,
+      _nationalIdC,
+      _certNameC,
+      _sublineC,
+      _descriptionC,
     ]);
     for (final c in _allControllers) {
       c.addListener(_markUnsaved);
@@ -1173,13 +1175,13 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
     final setUploading = isFront
         ? (v) => _frontUploading = v
         : isBack
-            ? (v) => _backUploading = v
-            : (v) => _passportUploading = v;
+        ? (v) => _backUploading = v
+        : (v) => _passportUploading = v;
     final setUrl = isFront
         ? (String? v) => _frontIdUrl = v
         : isBack
-            ? (String? v) => _backIdUrl = v
-            : (String? v) => _passportUrl = v;
+        ? (String? v) => _backIdUrl = v
+        : (String? v) => _passportUrl = v;
 
     setState(() => setUploading(true));
 
@@ -1202,11 +1204,7 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
     } catch (e) {
       setState(() => setUploading(false));
       if (mounted) {
-        AppToast.show(
-          context,
-          'Upload failed: $e',
-          type: AppToastType.error,
-        );
+        AppToast.show(context, 'Upload failed: $e', type: AppToastType.error);
       }
     }
   }
@@ -1215,8 +1213,8 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
     final uploading = isFront
         ? _frontUploading
         : isBack
-            ? _backUploading
-            : _passportUploading;
+        ? _backUploading
+        : _passportUploading;
     if (uploading) return;
 
     final result = await FilePicker.platform.pickFiles(
@@ -1233,8 +1231,8 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
     final existingUrl = isFront
         ? _frontIdUrl
         : isBack
-            ? _backIdUrl
-            : _passportUrl;
+        ? _backIdUrl
+        : _passportUrl;
 
     await _uploadFile(
       file: file,
@@ -1248,13 +1246,19 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_dateOfBirth == null) {
-      AppToast.show(context, 'Date of birth is required',
-          type: AppToastType.error);
+      AppToast.show(
+        context,
+        'Date of birth is required',
+        type: AppToastType.error,
+      );
       return;
     }
     if (_issueDate == null) {
-      AppToast.show(context, 'Issue date is required',
-          type: AppToastType.error);
+      AppToast.show(
+        context,
+        'Issue date is required',
+        type: AppToastType.error,
+      );
       return;
     }
 
@@ -1331,7 +1335,8 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final anyUploading = _frontUploading || _backUploading || _passportUploading;
+    final anyUploading =
+        _frontUploading || _backUploading || _passportUploading;
     return Stack(
       children: [
         Container(
@@ -1376,444 +1381,494 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                   left: 20,
                   right: 20,
                   top: 20,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 20,
+                  bottom:
+                      MediaQuery.of(context).viewInsets.bottom +
+                      MediaQuery.of(context).padding.bottom +
+                      20,
                 ),
                 child: Form(
                   key: _formKey,
                   child: ListView(
                     controller: scrollController,
                     children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: _uiBorder,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _isEditing ? 'Edit Certificate' : 'Add Certificate',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: _primaryBlue,
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Full Name
-                TextFormField(
-                  controller: _fullNameC,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Full Name *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      v?.trim().isEmpty == true ? 'Required' : null,
-                ),
-                const SizedBox(height: 14),
-
-                // Date of Birth
-                InkWell(
-                  onTap: _pickDateOfBirth,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Date of Birth *',
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.calendar_today),
-                    ),
-                    child: Text(
-                      _dateOfBirth != null
-                          ? DateFormat('yyyy-MM-dd').format(_dateOfBirth!)
-                          : 'Select date',
-                      style: TextStyle(
-                        color: _dateOfBirth != null
-                            ? Colors.black87
-                            : _softText,
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: _uiBorder,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // National ID
-                TextFormField(
-                  controller: _nationalIdC,
-                  decoration: const InputDecoration(
-                    labelText: 'National ID Number *',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      v?.trim().isEmpty == true ? 'Required' : null,
-                ),
-                const SizedBox(height: 14),
-
-                // ID Type Toggle
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _appBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _uiBorder),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'ID Document Type',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
+                      const SizedBox(height: 16),
+                      Text(
+                        _isEditing ? 'Edit Certificate' : 'Add Certificate',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
                           color: _primaryBlue,
-                          fontSize: 13,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _IdTypeOption(
-                              selected: _idType == 'national_id',
-                              label: 'National ID\n(Front + Back)',
-                              icon: Icons.badge_outlined,
-                              onTap: () =>
-                                  setState(() => _idType = 'national_id'),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _IdTypeOption(
-                              selected: _idType == 'passport',
-                              label: 'Passport\n(Single)',
-                              icon: Icons.menu_book_outlined,
-                              onTap: () =>
-                                  setState(() => _idType = 'passport'),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 24),
+
+                      // Full Name
+                      TextFormField(
+                        controller: _fullNameC,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Full Name *',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (v) =>
+                            v?.trim().isEmpty == true ? 'Required' : null,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
 
-                      // File pickers based on type
-                      if (_idType == 'national_id') ...[
-                        _buildFilePickerTile(
-                          label: 'Front ID',
-                          fileName: _frontIdUrl != null
-                              ? 'Uploaded'
-                              : (_isEditing && widget.certificate!.frontIdUrl != null
-                                  ? 'Uploaded'
-                                  : null),
-                          onPick: () => _pickFile(isFront: true, isBack: false),
-                          uploading: _frontUploading,
-                        ),
-                        const SizedBox(height: 8),
-                        _buildFilePickerTile(
-                          label: 'Back ID',
-                          fileName: _backIdUrl != null
-                              ? 'Uploaded'
-                              : (_isEditing && widget.certificate!.backIdUrl != null
-                                  ? 'Uploaded'
-                                  : null),
-                          onPick: () => _pickFile(isFront: false, isBack: true),
-                          uploading: _backUploading,
-                        ),
-                      ] else ...[
-                        _buildFilePickerTile(
-                          label: 'Passport',
-                          fileName: _passportUrl != null
-                              ? 'Uploaded'
-                              : (_isEditing && widget.certificate!.passportUrl != null
-                                  ? 'Uploaded'
-                                  : null),
-                          onPick: () =>
-                              _pickFile(isFront: false, isBack: false),
-                          uploading: _passportUploading,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // Certificate Name
-                _SuggestionField(
-                  label: 'Certificate Name *',
-                  controller: _certNameC,
-                  suggestions: _suggestedNames,
-                  validator: (v) =>
-                      v?.trim().isEmpty == true ? 'Required' : null,
-                  onRemoveSuggestion: (key) {
-                    widget.service.deleteSuggestedName(key);
-                    setState(() =>
-                        _suggestedNames.removeWhere((s) => s.key == key));
-                  },
-                ),
-                const SizedBox(height: 14),
-
-                // Grade
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _appBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _uiBorder),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.grade,
-                            size: 18,
-                            color: _primaryBlue.withValues(alpha: 0.7),
+                      // Date of Birth
+                      InkWell(
+                        onTap: _pickDateOfBirth,
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Date of Birth *',
+                            border: OutlineInputBorder(),
+                            suffixIcon: Icon(Icons.calendar_today),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Grade',
+                          child: Text(
+                            _dateOfBirth != null
+                                ? DateFormat('yyyy-MM-dd').format(_dateOfBirth!)
+                                : 'Select date',
                             style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: _primaryBlue.withValues(alpha: 0.8),
-                              fontSize: 13,
+                              color: _dateOfBirth != null
+                                  ? Colors.black87
+                                  : _softText,
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 14),
+
+                      // National ID
+                      TextFormField(
+                        controller: _nationalIdC,
+                        decoration: const InputDecoration(
+                          labelText: 'National ID Number *',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (v) =>
+                            v?.trim().isEmpty == true ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 14),
+
+                      // ID Type Toggle
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
+                          color: _appBg,
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: _uiBorder),
                         ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _grade,
-                            isExpanded: true,
-                            items: const [
-                              DropdownMenuItem(value: '', child: Text('None')),
-                              DropdownMenuItem(value: 'A', child: Text('A - Excellent')),
-                              DropdownMenuItem(value: 'B', child: Text('B - Good')),
-                              DropdownMenuItem(value: 'C', child: Text('C - Satisfactory')),
-                              DropdownMenuItem(value: 'F', child: Text('F - Fail')),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'ID Document Type',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: _primaryBlue,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _IdTypeOption(
+                                    selected: _idType == 'national_id',
+                                    label: 'National ID\n(Front + Back)',
+                                    icon: Icons.badge_outlined,
+                                    onTap: () =>
+                                        setState(() => _idType = 'national_id'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _IdTypeOption(
+                                    selected: _idType == 'passport',
+                                    label: 'Passport\n(Single)',
+                                    icon: Icons.menu_book_outlined,
+                                    onTap: () =>
+                                        setState(() => _idType = 'passport'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // File pickers based on type
+                            if (_idType == 'national_id') ...[
+                              _buildFilePickerTile(
+                                label: 'Front ID',
+                                fileName: _frontIdUrl != null
+                                    ? 'Uploaded'
+                                    : (_isEditing &&
+                                              widget.certificate!.frontIdUrl !=
+                                                  null
+                                          ? 'Uploaded'
+                                          : null),
+                                onPick: () =>
+                                    _pickFile(isFront: true, isBack: false),
+                                uploading: _frontUploading,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildFilePickerTile(
+                                label: 'Back ID',
+                                fileName: _backIdUrl != null
+                                    ? 'Uploaded'
+                                    : (_isEditing &&
+                                              widget.certificate!.backIdUrl !=
+                                                  null
+                                          ? 'Uploaded'
+                                          : null),
+                                onPick: () =>
+                                    _pickFile(isFront: false, isBack: true),
+                                uploading: _backUploading,
+                              ),
+                            ] else ...[
+                              _buildFilePickerTile(
+                                label: 'Passport',
+                                fileName: _passportUrl != null
+                                    ? 'Uploaded'
+                                    : (_isEditing &&
+                                              widget.certificate!.passportUrl !=
+                                                  null
+                                          ? 'Uploaded'
+                                          : null),
+                                onPick: () =>
+                                    _pickFile(isFront: false, isBack: false),
+                                uploading: _passportUploading,
+                              ),
                             ],
-                            onChanged: (v) {
-                              if (v != null) setState(() => _grade = v);
-                              _markUnsaved();
-                            },
-                          ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
+                      const SizedBox(height: 14),
 
-                // CVN
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _appBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _uiBorder),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.tag, size: 18, color: _primaryBlue),
-                          const SizedBox(width: 6),
-                          const Text(
-                            'Certificate Verification Number (CVN)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: _primaryBlue,
-                              fontSize: 13,
+                      // Certificate Name
+                      _SuggestionField(
+                        label: 'Certificate Name *',
+                        controller: _certNameC,
+                        suggestions: _suggestedNames,
+                        validator: (v) =>
+                            v?.trim().isEmpty == true ? 'Required' : null,
+                        onRemoveSuggestion: (key) {
+                          widget.service.deleteSuggestedName(key);
+                          setState(
+                            () => _suggestedNames.removeWhere(
+                              (s) => s.key == key,
                             ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
+                      const SizedBox(height: 14),
+
+                      // Grade
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _appBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _uiBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.grade,
+                                  size: 18,
+                                  color: _primaryBlue.withValues(alpha: 0.7),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Grade',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: _primaryBlue.withValues(alpha: 0.8),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
-                                vertical: 12,
                               ),
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: _cvn.isNotEmpty
-                                      ? Colors.green
-                                      : _uiBorder,
-                                ),
+                                border: Border.all(color: _uiBorder),
                               ),
-                              child: Text(
-                                _cvn.isNotEmpty ? _cvn : 'Not generated',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 15,
-                                  color: _cvn.isNotEmpty
-                                      ? _primaryBlue
-                                      : _softText,
-                                  letterSpacing: 1.2,
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _grade,
+                                  isExpanded: true,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: '',
+                                      child: Text('None'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'A',
+                                      child: Text('A - Excellent'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'B',
+                                      child: Text('B - Good'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'C',
+                                      child: Text('C - Satisfactory'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'F',
+                                      child: Text('F - Fail'),
+                                    ),
+                                  ],
+                                  onChanged: (v) {
+                                    if (v != null) setState(() => _grade = v);
+                                    _markUnsaved();
+                                  },
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.tonalIcon(
-                            onPressed: _generateCvn,
-                            icon: const Icon(Icons.auto_fix_high, size: 18),
-                            label: const Text('Generate'),
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size(0, 44),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      if (_cvn.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        GestureDetector(
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: _cvn));
-                            AppToast.show(
-                              context,
-                              'CVN copied',
-                              type: AppToastType.success,
-                            );
-                          },
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.copy,
-                                size: 14,
-                                color: _primaryBlue.withValues(alpha: 0.6),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Tap to copy',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: _primaryBlue.withValues(alpha: 0.6),
+                      const SizedBox(height: 14),
+
+                      // CVN
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _appBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _uiBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.tag,
+                                  size: 18,
+                                  color: _primaryBlue,
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  'Certificate Verification Number (CVN)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: _primaryBlue,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: _cvn.isNotEmpty
+                                            ? Colors.green
+                                            : _uiBorder,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _cvn.isNotEmpty ? _cvn : 'Not generated',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 15,
+                                        color: _cvn.isNotEmpty
+                                            ? _primaryBlue
+                                            : _softText,
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton.tonalIcon(
+                                  onPressed: _generateCvn,
+                                  icon: const Icon(
+                                    Icons.auto_fix_high,
+                                    size: 18,
+                                  ),
+                                  label: const Text('Generate'),
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(0, 44),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_cvn.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              GestureDetector(
+                                onTap: () {
+                                  Clipboard.setData(ClipboardData(text: _cvn));
+                                  AppToast.show(
+                                    context,
+                                    'CVN copied',
+                                    type: AppToastType.success,
+                                  );
+                                },
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.copy,
+                                      size: 14,
+                                      color: _primaryBlue.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Tap to copy',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: _primaryBlue.withValues(
+                                          alpha: 0.6,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Subline
+                      _SuggestionField(
+                        label: 'Subline',
+                        controller: _sublineC,
+                        suggestions: _suggestedSublines,
+                        onRemoveSuggestion: (key) {
+                          widget.service.deleteSuggestedSubline(key);
+                          setState(
+                            () => _suggestedSublines.removeWhere(
+                              (s) => s.key == key,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Description
+                      _SuggestionField(
+                        label: 'Description',
+                        controller: _descriptionC,
+                        suggestions: _suggestedDescriptions,
+                        onRemoveSuggestion: (key) {
+                          widget.service.deleteSuggestedDescription(key);
+                          setState(
+                            () => _suggestedDescriptions.removeWhere(
+                              (s) => s.key == key,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Issue Date
+                      InkWell(
+                        onTap: _pickIssueDate,
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Issue Date *',
+                            border: OutlineInputBorder(),
+                            suffixIcon: Icon(Icons.calendar_today),
+                          ),
+                          child: Text(
+                            _issueDate != null
+                                ? DateFormat('yyyy-MM-dd').format(_issueDate!)
+                                : 'Select date',
+                            style: TextStyle(
+                              color: _issueDate != null
+                                  ? Colors.black87
+                                  : _softText,
+                            ),
                           ),
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Save Button                // Save Button
+                      FilledButton(
+                        onPressed: (_saving || anyUploading) ? null : _save,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _actionOrange,
+                          minimumSize: const Size(double.infinity, 50),
+                        ),
+                        child: (_saving || anyUploading)
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                _isEditing
+                                    ? 'Update Certificate'
+                                    : 'Create Certificate',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ), // Text
+                      ),
+                      const SizedBox(height: 12),
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
-
-                // Subline
-                _SuggestionField(
-                  label: 'Subline',
-                  controller: _sublineC,
-                  suggestions: _suggestedSublines,
-                  onRemoveSuggestion: (key) {
-                    widget.service.deleteSuggestedSubline(key);
-                    setState(() =>
-                        _suggestedSublines.removeWhere((s) => s.key == key));
-                  },
-                ),
-                const SizedBox(height: 14),
-
-                // Description
-                _SuggestionField(
-                  label: 'Description',
-                  controller: _descriptionC,
-                  suggestions: _suggestedDescriptions,
-                  onRemoveSuggestion: (key) {
-                    widget.service.deleteSuggestedDescription(key);
-                    setState(() =>
-                        _suggestedDescriptions.removeWhere((s) => s.key == key));
-                  },
-                ),
-                const SizedBox(height: 14),
-
-                // Issue Date
-                InkWell(
-                  onTap: _pickIssueDate,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Issue Date *',
-                      border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.calendar_today),
-                    ),
-                    child: Text(
-                      _issueDate != null
-                          ? DateFormat('yyyy-MM-dd').format(_issueDate!)
-                          : 'Select date',
-                      style: TextStyle(
-                        color: _issueDate != null ? Colors.black87 : _softText,
-                      ),
-                    ),
-                  ),
-                ),
-const SizedBox(height: 24),
-
-                // Save Button                // Save Button
-                FilledButton(
-                  onPressed: (_saving || anyUploading) ? null : _save,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _actionOrange,
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  child: (_saving || anyUploading)
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Text(
-                          _isEditing
-                              ? 'Update Certificate'
-                              : 'Create Certificate',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ), // Text
-                ),
-                const SizedBox(height: 12),
-              ],
+              ),
             ),
           ),
         ),
-      ),
-      ),
-      ),
-      if (_saving)
-        Container(
-          color: Colors.black54,
-          child: const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: Colors.white),
-                SizedBox(height: 16),
-                Text(
-                  'Saving certificate...',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
-                ),
-              ],
+        if (_saving)
+          Container(
+            color: Colors.black54,
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Colors.white),
+                  SizedBox(height: 16),
+                  Text(
+                    'Saving certificate...',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-    ],
+      ],
     );
   }
 
@@ -1842,14 +1897,14 @@ const SizedBox(height: 24),
                   uploading
                       ? Icons.hourglass_top
                       : fileName != null
-                          ? Icons.check_circle_outline
-                          : Icons.image_outlined,
+                      ? Icons.check_circle_outline
+                      : Icons.image_outlined,
                   size: 20,
                   color: uploading
                       ? Colors.orange
                       : fileName != null
-                          ? Colors.green
-                          : _softText,
+                      ? Colors.green
+                      : _softText,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1857,15 +1912,16 @@ const SizedBox(height: 24),
                     uploading
                         ? 'Uploading $label...'
                         : fileName != null
-                            ? '$label: $fileName'
-                            : 'Tap to pick $label',
+                        ? '$label: $fileName'
+                        : 'Tap to pick $label',
                     style: TextStyle(
                       color: fileName != null ? Colors.black87 : _softText,
                       fontSize: 13,
                     ),
                   ),
                 ),
-                if (!uploading) const Icon(Icons.upload_file, size: 18, color: _softText),
+                if (!uploading)
+                  const Icon(Icons.upload_file, size: 18, color: _softText),
               ],
             ),
           ),
@@ -1908,11 +1964,17 @@ const SizedBox(height: 24),
   void _generateCvn() {
     final name = _certNameC.text.trim();
     if (name.isEmpty) {
-      AppToast.show(context, 'Enter certificate name first',
-          type: AppToastType.error);
+      AppToast.show(
+        context,
+        'Enter certificate name first',
+        type: AppToastType.error,
+      );
       return;
     }
-    final words = name.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final words = name
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
     if (words.isEmpty) return;
     final takeWords = words.take(3).toList();
     final initials = takeWords.map((w) => w[0].toUpperCase()).join();
@@ -1949,9 +2011,7 @@ class _IdTypeOption extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? _primaryBlue.withValues(alpha: 0.1)
-              : Colors.white,
+          color: selected ? _primaryBlue.withValues(alpha: 0.1) : Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: selected ? _primaryBlue : _uiBorder,
@@ -1960,11 +2020,7 @@ class _IdTypeOption extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Icon(
-              icon,
-              color: selected ? _primaryBlue : _softText,
-              size: 24,
-            ),
+            Icon(icon, color: selected ? _primaryBlue : _softText, size: 24),
             const SizedBox(height: 4),
             Text(
               label,
@@ -2003,9 +2059,9 @@ class _SuggestionField extends StatelessWidget {
       optionsBuilder: (textEditingValue) {
         final values = suggestions.map((s) => s.value);
         if (textEditingValue.text.isEmpty) return values;
-        return values.where((s) => s
-            .toLowerCase()
-            .contains(textEditingValue.text.toLowerCase()));
+        return values.where(
+          (s) => s.toLowerCase().contains(textEditingValue.text.toLowerCase()),
+        );
       },
       initialValue: TextEditingValue(text: controller.text),
       onSelected: (value) {
@@ -2028,18 +2084,18 @@ class _SuggestionField extends StatelessWidget {
                 itemCount: options.length,
                 itemBuilder: (_, i) {
                   final value = options.elementAt(i);
-                  final suggestion = suggestions.where(
-                    (s) => s.value == value,
-                  ).firstOrNull;
+                  final suggestion = suggestions
+                      .where((s) => s.value == value)
+                      .firstOrNull;
                   return ListTile(
                     dense: true,
                     title: Text(value),
                     onTap: () {
-                            onSelected(value);
-                            FocusScope.of(context).unfocus();
-                          },
-                    onLongPress: suggestion?.key != null &&
-                            onRemoveSuggestion != null
+                      onSelected(value);
+                      FocusScope.of(context).unfocus();
+                    },
+                    onLongPress:
+                        suggestion?.key != null && onRemoveSuggestion != null
                         ? () {
                             onRemoveSuggestion!(suggestion!.key!);
                           }
@@ -2051,22 +2107,23 @@ class _SuggestionField extends StatelessWidget {
           ),
         );
       },
-      fieldViewBuilder: (context, textEditingController, focusNode, onSubmitted) {
-        textEditingController.text = controller.text;
-        textEditingController.addListener(() {
-          controller.text = textEditingController.text;
-        });
-        return TextFormField(
-          controller: textEditingController,
-          focusNode: focusNode,
-          decoration: InputDecoration(
-            labelText: label,
-            border: const OutlineInputBorder(),
-          ),
-          validator: validator,
-          onFieldSubmitted: (_) => onSubmitted(),
-        );
-      },
+      fieldViewBuilder:
+          (context, textEditingController, focusNode, onSubmitted) {
+            textEditingController.text = controller.text;
+            textEditingController.addListener(() {
+              controller.text = textEditingController.text;
+            });
+            return TextFormField(
+              controller: textEditingController,
+              focusNode: focusNode,
+              decoration: InputDecoration(
+                labelText: label,
+                border: const OutlineInputBorder(),
+              ),
+              validator: validator,
+              onFieldSubmitted: (_) => onSubmitted(),
+            );
+          },
     );
   }
 }
@@ -2115,8 +2172,10 @@ class _AdminCertCard extends StatelessWidget {
               ),
               ListTile(
                 leading: Icon(Icons.delete_outline, color: Colors.red[700]),
-                title: Text('Delete Certificate',
-                    style: TextStyle(color: Colors.red[700])),
+                title: Text(
+                  'Delete Certificate',
+                  style: TextStyle(color: Colors.red[700]),
+                ),
                 subtitle: const Text('Remove this certificate permanently'),
                 onTap: () {
                   Navigator.pop(context);
@@ -2222,7 +2281,9 @@ class _AdminCertCard extends StatelessWidget {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
-                                      color: _primaryBlue.withValues(alpha: 0.8),
+                                      color: _primaryBlue.withValues(
+                                        alpha: 0.8,
+                                      ),
                                       letterSpacing: 0.8,
                                     ),
                                   ),
@@ -2282,10 +2343,7 @@ class _MiniChip extends StatelessWidget {
         children: [
           Icon(icon, size: 12, color: _softText),
           const SizedBox(width: 3),
-          Text(
-            label,
-            style: const TextStyle(color: _softText, fontSize: 11),
-          ),
+          Text(label, style: const TextStyle(color: _softText, fontSize: 11)),
         ],
       ),
     );
@@ -2444,10 +2502,15 @@ class _AdminCertViewSheet extends StatelessWidget {
                       child: CircleAvatar(
                         radius: 48,
                         backgroundColor: _appBg,
-                        backgroundImage:
-                            picUrl.isNotEmpty ? NetworkImage(picUrl) : null,
+                        backgroundImage: picUrl.isNotEmpty
+                            ? NetworkImage(picUrl)
+                            : null,
                         child: picUrl.isEmpty
-                            ? const Icon(Icons.person, size: 48, color: _softText)
+                            ? const Icon(
+                                Icons.person,
+                                size: 48,
+                                color: _softText,
+                              )
                             : null,
                       ),
                     ),
@@ -2543,7 +2606,9 @@ class _AdminCertViewSheet extends StatelessWidget {
                     _detailRow(
                       Icons.assignment_ind_outlined,
                       'ID Type',
-                      certificate.idType == 'passport' ? 'Passport' : 'National ID',
+                      certificate.idType == 'passport'
+                          ? 'Passport'
+                          : 'National ID',
                     ),
                     if (certificate.description.isNotEmpty) ...[
                       const Divider(height: 20),
@@ -2637,7 +2702,9 @@ class _AdminCertViewSheet extends StatelessWidget {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.print, size: 18),
                         label: Text(isPrinting ? 'Printing...' : 'Print'),
@@ -2671,7 +2738,8 @@ class _AdminCertViewSheet extends StatelessWidget {
                               ),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
                                   child: const Text('Cancel'),
                                 ),
                                 FilledButton(
@@ -2757,11 +2825,7 @@ class _AdminCertViewSheet extends StatelessWidget {
     );
   }
 
-  Widget _docThumbnail(
-    BuildContext context,
-    String label,
-    String url,
-  ) {
+  Widget _docThumbnail(BuildContext context, String label, String url) {
     return GestureDetector(
       onTap: () => _showImagePreview(context, label, url),
       child: Container(
@@ -2770,20 +2834,14 @@ class _AdminCertViewSheet extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: _uiBorder),
-          image: DecorationImage(
-            image: NetworkImage(url),
-            fit: BoxFit.cover,
-          ),
+          image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
         ),
         foregroundDecoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.transparent,
-              Colors.black.withValues(alpha: 0.5),
-            ],
+            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.5)],
           ),
         ),
         child: Align(
@@ -2804,11 +2862,7 @@ class _AdminCertViewSheet extends StatelessWidget {
     );
   }
 
-  void _showImagePreview(
-    BuildContext context,
-    String label,
-    String url,
-  ) {
+  void _showImagePreview(BuildContext context, String label, String url) {
     showDialog(
       context: context,
       builder: (_) => Dialog(

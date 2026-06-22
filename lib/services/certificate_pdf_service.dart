@@ -234,7 +234,6 @@ class CertificatePdfService {
                   ),
                 ),
               ),
-
             ],
           );
         },
@@ -406,11 +405,11 @@ class CertificatePdfService {
         : DateTime.now();
 
     // Bottom-origin Y → top-origin: top = pageHeight - y
-    const double fullNameY = 270;     // bottom 572
-    const double courseTitleY = 472.5;  // bottom 369.5 (0.5px up)
-    const double moduleLabelY = 499.5;  // bottom 342.5 (0.5px up)
-    const double cvnY = 640;          // bottom 202 (8px up)
-    const double timestampY = 751;    // bottom 91 (16px up)
+    const double fullNameY = 270; // bottom 572
+    const double courseTitleY = 472.5; // bottom 369.5 (0.5px up)
+    const double moduleLabelY = 499.5; // bottom 342.5 (0.5px up)
+    const double cvnY = 640; // bottom 202 (8px up)
+    const double timestampY = 751; // bottom 91 (16px up)
 
     doc.addPage(
       pw.Page(
@@ -675,7 +674,11 @@ class CertificatePdfService {
       try {
         final parts = v.split('-');
         if (parts.length != 3) return v;
-        final d = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+        final d = DateTime(
+          int.parse(parts[0]),
+          int.parse(parts[1]),
+          int.parse(parts[2]),
+        );
         String two(int n) => n.toString().padLeft(2, '0');
         return '${two(d.day)}-${two(d.month)}-${d.year}';
       } catch (_) {
@@ -728,8 +731,8 @@ class CertificatePdfService {
                   ),
                 ),
               pw.Positioned(
-                left: 66,
-                top: 434.5,
+                left: 63,
+                top: 449,
                 child: pw.SizedBox(
                   width: 320,
                   child: pw.Text(
@@ -745,8 +748,8 @@ class CertificatePdfService {
               ),
               if (cert.subline.isNotEmpty)
                 pw.Positioned(
-                  left: 66,
-                  top: 456.5,
+                  left: 63,
+                  top: 471,
                   child: pw.SizedBox(
                     width: 320,
                     child: pw.Text(
@@ -762,8 +765,8 @@ class CertificatePdfService {
                 ),
               if (cert.description.isNotEmpty)
                 pw.Positioned(
-                  left: 66,
-                  top: 473.5,
+                  left: 63,
+                  top: 502,
                   child: pw.SizedBox(
                     width: 501,
                     child: pw.Text(
@@ -779,7 +782,7 @@ class CertificatePdfService {
                 ),
               pw.Positioned(
                 left: 469,
-                top: 757,
+                top: 780,
                 child: pw.SizedBox(
                   width: 160,
                   child: pw.Text(
