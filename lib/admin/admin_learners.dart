@@ -2817,6 +2817,74 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         });
       }
 
+      // Auto-assign course from subscription prefill
+      final prefill = widget.prefill;
+      if (isCreate && prefill != null && prefill.courseId.trim().isNotEmpty) {
+        final courseSnap = await _db.ref('courses/${prefill.courseId}').get();
+        if (courseSnap.value is Map) {
+          final cMap = (courseSnap.value as Map).map(
+            (k, v) => MapEntry(k.toString(), v),
+          );
+          final code = (cMap['course_code'] ?? '').toString().trim();
+          final title = (cMap['title'] ?? cMap['name'] ?? '').toString().trim();
+          final category = (cMap['category'] ?? '').toString().trim();
+          final variantKey = prefill.variantKey.trim().isNotEmpty
+              ? prefill.variantKey.trim()
+              : 'inclass';
+
+          final courseData = <String, dynamic>{
+            'id': prefill.courseId,
+            'course_code': code,
+            'title': title,
+            'category': category,
+            'assignedAt': ServerValue.timestamp,
+            'billingMode': 'paid',
+            'variantKey': variantKey,
+            'variantLabel': prefill.variantLabel.trim().isNotEmpty
+                ? prefill.variantLabel.trim()
+                : 'In-Class',
+          };
+
+          if (variantKey == 'private') {
+            courseData['studyMode'] = prefill.studyMode.trim().isNotEmpty
+                ? prefill.studyMode.trim()
+                : 'online';
+            courseData['studyModeLabel'] =
+                prefill.studyModeLabel.trim().isNotEmpty
+                ? prefill.studyModeLabel.trim()
+                : 'Online';
+          }
+
+          if (prefill.sourceSubscriptionId.trim().isNotEmpty) {
+            courseData['sourceSubscriptionId'] = prefill.sourceSubscriptionId
+                .trim();
+          }
+
+          final enrollmentPromo = <String, dynamic>{};
+          if (prefill.promoCode.trim().isNotEmpty) {
+            enrollmentPromo['promoCode'] = prefill.promoCode.trim();
+            enrollmentPromo['promoType'] = prefill.promoType.trim();
+            if (prefill.promoValue != null) {
+              enrollmentPromo['promoValue'] = prefill.promoValue;
+            }
+            if (prefill.discountAmount != null) {
+              enrollmentPromo['discountAmount'] = prefill.discountAmount;
+            }
+            if (prefill.originalFee != null) {
+              enrollmentPromo['originalFee'] = prefill.originalFee;
+            }
+            if (prefill.discountedFee != null) {
+              enrollmentPromo['discountedFee'] = prefill.discountedFee;
+            }
+          }
+          if (enrollmentPromo.isNotEmpty) {
+            courseData['enrollmentPromo'] = enrollmentPromo;
+          }
+
+          await _usersRef.child('$uid/courses/course_1').update(courseData);
+        }
+      }
+
       if (!mounted) return;
       Navigator.of(context).pop(learner);
     } on FirebaseAuthException catch (e) {
@@ -5798,6 +5866,10 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                                 ))
                                                   _miniPill(
                                                     'Exp: ${expiresAt.isEmpty ? '-' : expiresAt}',
+                                                  ),
+                                                if (p['promo'] is Map)
+                                                  _miniPill(
+                                                    'Promo: ${(p['promo'] as Map)['promoCode'] ?? ''}',
                                                   ),
                                               ],
                                             ),

@@ -2131,6 +2131,13 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                             : AdminPaymentsScreen.appBg
                                                   .withValues(alpha: 0.7);
 
+                                        final promoCode = (p['promo'] is Map)
+                                            ? ((p['promo']
+                                                          as Map)['promoCode'] ??
+                                                      '')
+                                                  .toString()
+                                            : '';
+
                                         return InkWell(
                                           onTap: () async =>
                                               _openEditPaymentDialog(p),
@@ -2188,8 +2195,14 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                                                   flex: 2,
                                                 ),
                                                 _cell(
+                                                  promoCode.isEmpty
+                                                      ? '—'
+                                                      : promoCode,
+                                                  flex: 1,
+                                                ),
+                                                _cell(
                                                   notes.isEmpty ? '—' : notes,
-                                                  flex: 4,
+                                                  flex: 3,
                                                 ),
                                                 SizedBox(
                                                   width: 40,
@@ -2351,6 +2364,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       final baseRowBg = (i % 2 == 0)
           ? Colors.white
           : AdminPaymentsScreen.appBg.withValues(alpha: 0.7);
+      final promoCode = (p['promo'] is Map)
+          ? ((p['promo'] as Map)['promoCode'] ?? '').toString()
+          : '';
 
       return InkWell(
         onTap: () async => _openEditPaymentDialog(p),
@@ -2371,7 +2387,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     : (expiresAt.isNotEmpty ? expiresAt : '—'),
                 132,
               ),
-              rowCell(notes.isEmpty ? '—' : notes, 260),
+              rowCell(promoCode.isEmpty ? '—' : promoCode, 80),
+              rowCell(notes.isEmpty ? '—' : notes, 180),
               SizedBox(
                 width: 40,
                 child: Align(
@@ -2546,6 +2563,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
     Map<String, dynamic> pickedLearner = {};
     Map<String, dynamic> pickedCourse = {};
+    Map<String, dynamic>? enrollmentPromo;
 
     String? selectedTeacherUid;
     String? selectedTeacherName;
@@ -2574,6 +2592,17 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         pickedVariantKey = study['variantKey'] ?? '';
         pickedStudyMode = study['studyMode'] ?? '';
         pickedStudyModeLabel = study['studyModeLabel'] ?? '';
+
+        final promoSnap = await _usersRef
+            .child(pickedUid!)
+            .child('courses')
+            .child(pickedCourseKey!)
+            .child('enrollmentPromo')
+            .get();
+        final promoVal = promoSnap.value;
+        enrollmentPromo = promoVal is Map
+            ? (promoVal as Map).map((k, v) => MapEntry(k.toString(), v))
+            : null;
       }
 
       final totalSessions = _parseTotalSessions(
@@ -2890,6 +2919,83 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       const SizedBox(height: 12),
                     ],
 
+                    if (enrollmentPromo != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.green.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.discount_rounded,
+                                  size: 18,
+                                  color: Colors.green.shade700,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Enrollment promo applied',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                    color: Colors.green.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Code: ${enrollmentPromo!['promoCode'] ?? ''}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            Text(
+                              'Type: ${enrollmentPromo!['promoType'] ?? ''}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            if (enrollmentPromo!['originalFee'] != null)
+                              Text(
+                                'Original: ${enrollmentPromo!['originalFee']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            if (enrollmentPromo!['discountedFee'] != null)
+                              Text(
+                                'Discounted: ${enrollmentPromo!['discountedFee']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            if (enrollmentPromo!['discountAmount'] != null)
+                              Text(
+                                'Discount: -${enrollmentPromo!['discountAmount']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              icon: const Icon(
+                                Icons.attach_money_rounded,
+                                size: 16,
+                              ),
+                              label: const Text('Use discounted fee'),
+                              onPressed: () {
+                                final fee = enrollmentPromo!['discountedFee'];
+                                if (fee is num) {
+                                  amountC.text = fee.toInt().toString();
+                                  setD(() {});
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     if (usesTeacher) ...[
                       _TeacherDropdownFromUsers(
                         usersRef: _usersRef,
@@ -3181,6 +3287,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                             'periodLabel': activePeriod.displayLabel,
                             'periodStartDate': activePeriod.startDate,
                             'periodStartAtMs': activePeriod.startAtMs,
+                            'promo': enrollmentPromo,
                           });
 
                           String postWarning = '';
@@ -3496,6 +3603,39 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                       maxLines: 2,
                       decoration: const InputDecoration(labelText: 'Notes'),
                     ),
+                    if (p['promo'] is Map) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: Colors.green.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.discount_rounded,
+                              size: 16,
+                              color: Colors.green.shade700,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Promo: ${(p['promo'] as Map)['promoCode'] ?? ''}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -3878,7 +4018,8 @@ class _TableHeaderRow extends StatelessWidget {
         h('Teacher', flex: 3),
         h('Class', flex: 3),
         h('Start/Expire', flex: 2),
-        h('Notes', flex: 4),
+        h('Promo', flex: 1),
+        h('Notes', flex: 3),
         const SizedBox(width: 40),
       ],
     );
