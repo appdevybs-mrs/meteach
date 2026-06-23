@@ -843,8 +843,7 @@ class _LearnersListState extends State<_LearnersList>
     }
     final confirmed = await _confirm(
       title: 'Send SMS',
-      message:
-          'Send SMS to ${learner.fullName} at $phone?',
+      message: 'Send SMS to ${learner.fullName} at $phone?',
       confirmText: 'Send',
     );
     if (!confirmed || !mounted) return;
@@ -872,8 +871,7 @@ class _LearnersListState extends State<_LearnersList>
       MaterialPageRoute(
         builder: (_) => AdminLearnerMailTopicsScreen(
           learnerUid: uid,
-          learnerName:
-              learner.fullName.isEmpty ? 'Learner' : learner.fullName,
+          learnerName: learner.fullName.isEmpty ? 'Learner' : learner.fullName,
         ),
       ),
     );
@@ -907,10 +905,7 @@ class _LearnersListState extends State<_LearnersList>
     }
 
     return Padding(
-      padding: EdgeInsets.only(
-        left: dense ? 43.0 : 52.0,
-        bottom: 4,
-      ),
+      padding: EdgeInsets.only(left: dense ? 43.0 : 52.0, bottom: 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1091,7 +1086,8 @@ class _LearnersListState extends State<_LearnersList>
       final userVal = userSnap.value;
       if (userVal is Map) {
         final userMap = userVal.map((k, vv) => MapEntry(k.toString(), vv));
-        final examMode = userMap['examMode'] == true ||
+        final examMode =
+            userMap['examMode'] == true ||
             userMap['examMode']?.toString() == 'true';
         if (examMode) {
           if (!mounted) return;
@@ -1903,7 +1899,9 @@ class _LearnersListState extends State<_LearnersList>
                         case _PayFlag.exam:
                           avatarBg = Colors.purple;
                           avatarFg = Colors.white;
-                          rowBorderColor = Colors.purple.withValues(alpha: 0.45);
+                          rowBorderColor = Colors.purple.withValues(
+                            alpha: 0.45,
+                          );
                           rowBgColor = Colors.purple.withValues(alpha: 0.03);
                           break;
                         case _PayFlag.ok:
@@ -2176,7 +2174,8 @@ class _LearnersListState extends State<_LearnersList>
                                               _payFlagCache.remove(row.uid);
                                             }
                                           });
-                                          if (!enabled) _loadPayFlagForUid(row.uid);
+                                          if (!enabled)
+                                            _loadPayFlagForUid(row.uid);
                                         },
                                       ),
                                     )
@@ -2895,23 +2894,17 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     }
   }
 
-  Future<void> _callUpdateEmailServer(
-      String targetUid, String newEmail) async {
+  Future<void> _callUpdateEmailServer(String targetUid, String newEmail) async {
     final uri = await BackendApi.withAuthQuery(
       BackendApi.uri('update_auth_user_email_secure.php'),
     );
-    final headers = {
-      ...await BackendApi.authHeaders(json: true),
-    };
+    final headers = {...await BackendApi.authHeaders(json: true)};
 
     final response = await http
         .post(
           uri,
           headers: headers,
-          body: jsonEncode({
-            'targetUid': targetUid,
-            'newEmail': newEmail,
-          }),
+          body: jsonEncode({'targetUid': targetUid, 'newEmail': newEmail}),
         )
         .timeout(const Duration(seconds: 18));
 
@@ -3621,8 +3614,7 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   Future<void> _loadExamMode() async {
     try {
-      final snap =
-          await widget.db.ref('users/${widget.uid}/examMode').get();
+      final snap = await widget.db.ref('users/${widget.uid}/examMode').get();
       if (!mounted) return;
       setState(() {
         _examMode = snap.value == true || snap.value?.toString() == 'true';
@@ -3636,7 +3628,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
 
   Future<void> _toggleExamMode() async {
     final newVal = !_examMode;
-    final ok = await showDialog<bool>(
+    final ok =
+        await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
             title: Text(newVal ? 'Turn Exam Mode ON?' : 'Turn Exam Mode OFF?'),
@@ -3803,8 +3796,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     try {
       final snap = await widget.db.ref('classes/$classId').get();
       if (snap.exists && snap.value is Map) {
-        final classData =
-            Map<String, dynamic>.from(snap.value as Map).cast<String, dynamic>();
+        final classData = Map<String, dynamic>.from(
+          snap.value as Map,
+        ).cast<String, dynamic>();
 
         classData['class_id'] = (classData['class_id'] ?? classId).toString();
         if ((classData['course_id'] ?? '').toString().trim().isEmpty &&
@@ -4594,41 +4588,45 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       children: [
         Align(
           alignment: Alignment.centerLeft,
-          child: FilledButton.tonalIcon(
-            onPressed: _openAssignCoursesDialog,
-            icon: const Icon(Icons.school_rounded),
-            label: const Text('Assign courses'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: _examLoading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : FilledButton.tonalIcon(
-                  onPressed: _toggleExamMode,
-                  icon: Icon(
-                    _examMode
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                    color: _examMode ? Colors.purple : Colors.grey,
-                  ),
-                  label: Text(
-                    _examMode ? 'Exam: ON' : 'Exam: OFF',
-                    style: TextStyle(
-                      color: _examMode ? Colors.purple : Colors.grey,
-                      fontWeight: FontWeight.w700,
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: _openAssignCoursesDialog,
+                icon: const Icon(Icons.school_rounded),
+                label: const Text('Assign courses'),
+              ),
+              _examLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : FilledButton.tonalIcon(
+                      onPressed: _toggleExamMode,
+                      icon: Icon(
+                        _examMode
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        color: _examMode ? Colors.purple : Colors.grey,
+                      ),
+                      label: Text(
+                        _examMode ? 'Exam: ON' : 'Exam: OFF',
+                        style: TextStyle(
+                          color: _examMode ? Colors.purple : Colors.grey,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _examMode
+                            ? Colors.purple.withValues(alpha: 0.1)
+                            : null,
+                      ),
                     ),
-                  ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor:
-                        _examMode ? Colors.purple.withValues(alpha: 0.1) : null,
-                  ),
-                ),
+            ],
+          ),
         ),
         const SizedBox(height: 8),
         TabBar(
@@ -6552,8 +6550,9 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 width: 32,
                                 height: 32,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF98D28)
-                                      .withValues(alpha: 0.14),
+                                  color: const Color(
+                                    0xFFF98D28,
+                                  ).withValues(alpha: 0.14),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -6772,10 +6771,30 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                             spacing: 6,
                             runSpacing: 4,
                             children: [
-                              _metricChip(Icons.star_border_rounded, 'Behavior', behaviorAvg, 5),
-                              _metricChip(Icons.trending_up_rounded, 'Progress', progressAvg, 5),
-                              _metricChip(Icons.assignment_rounded, 'HW', hwAvg, 100),
-                              _metricChip(Icons.replay_rounded, 'Redo', hwRedo, null),
+                              _metricChip(
+                                Icons.star_border_rounded,
+                                'Behavior',
+                                behaviorAvg,
+                                5,
+                              ),
+                              _metricChip(
+                                Icons.trending_up_rounded,
+                                'Progress',
+                                progressAvg,
+                                5,
+                              ),
+                              _metricChip(
+                                Icons.assignment_rounded,
+                                'HW',
+                                hwAvg,
+                                100,
+                              ),
+                              _metricChip(
+                                Icons.replay_rounded,
+                                'Redo',
+                                hwRedo,
+                                null,
+                              ),
                             ],
                           ),
                           const SizedBox(height: 10),
@@ -6790,7 +6809,8 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                               decoration: BoxDecoration(
                                 border: Border(
                                   left: BorderSide(
-                                    color: AdminLearnersScreen.primaryBlue.withValues(alpha: 0.25),
+                                    color: AdminLearnersScreen.primaryBlue
+                                        .withValues(alpha: 0.25),
                                     width: 3,
                                   ),
                                 ),
@@ -6811,7 +6831,11 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                           Row(
                             children: [
                               if (byName.isNotEmpty) ...[
-                                Icon(Icons.person_rounded, size: 14, color: Colors.black.withValues(alpha: 0.4)),
+                                Icon(
+                                  Icons.person_rounded,
+                                  size: 14,
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                ),
                                 const SizedBox(width: 3),
                                 Text(
                                   byName,
@@ -6824,23 +6848,39 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                                 const SizedBox(width: 12),
                               ],
                               if (createdAt.isNotEmpty) ...[
-                                Icon(Icons.calendar_today_rounded, size: 12, color: Colors.black.withValues(alpha: 0.4)),
+                                Icon(
+                                  Icons.calendar_today_rounded,
+                                  size: 12,
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                ),
                                 const SizedBox(width: 3),
                                 Text(
                                   createdAt,
-                                  style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.5)),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                               ],
                               if (reportId.isNotEmpty) ...[
-                                Icon(Icons.tag_rounded, size: 14, color: Colors.black.withValues(alpha: 0.4)),
+                                Icon(
+                                  Icons.tag_rounded,
+                                  size: 14,
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                ),
                                 const SizedBox(width: 3),
                                 Flexible(
                                   child: Text(
                                     '#$reportId',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 11, color: Colors.black.withValues(alpha: 0.4)),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.black.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -6853,14 +6893,22 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
                               child: TextButton.icon(
                                 style: TextButton.styleFrom(
                                   visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  backgroundColor: AdminLearnersScreen.primaryBlue.withValues(alpha: 0.08),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  backgroundColor: AdminLearnersScreen
+                                      .primaryBlue
+                                      .withValues(alpha: 0.08),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
                                 onPressed: () => _openDiagramViewer(items, i),
-                                icon: const Icon(Icons.bar_chart_rounded, size: 16),
+                                icon: const Icon(
+                                  Icons.bar_chart_rounded,
+                                  size: 16,
+                                ),
                                 label: const Text('View Report Card'),
                               ),
                             ),
@@ -6878,18 +6926,28 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     );
   }
 
-  void _openDiagramViewer(List<Map<String, dynamic>> allItems, int currentIndex) {
+  void _openDiagramViewer(
+    List<Map<String, dynamic>> allItems,
+    int currentIndex,
+  ) {
     final diagramItems = <Map<String, String>>[];
     for (final item in allItems) {
       final url = (item['diagramUrl'] ?? '').toString().trim();
       if (url.isEmpty) continue;
       final title = (item['courseTitle'] ?? '').toString().trim();
       final date = _fmtDateMs(_asInt(item['createdAt']));
-      diagramItems.add({'url': url, 'label': [if (title.isNotEmpty) title, if (date.isNotEmpty) date].join(' — ')});
+      diagramItems.add({
+        'url': url,
+        'label': [
+          if (title.isNotEmpty) title,
+          if (date.isNotEmpty) date,
+        ].join(' — '),
+      });
     }
     if (diagramItems.isEmpty) return;
 
-    final currentReportId = (allItems[currentIndex]['reportId'] ?? '').toString();
+    final currentReportId = (allItems[currentIndex]['reportId'] ?? '')
+        .toString();
     final startIdx = diagramItems.indexWhere((d) {
       final idx = allItems.indexWhere((item) {
         final rid = (item['reportId'] ?? '').toString();

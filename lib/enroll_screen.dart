@@ -176,6 +176,7 @@ class EnrollDeliveryOption {
     required this.accessMode,
     required this.accessDurationMonths,
     required this.enabled,
+    this.promoCodes = const {},
   });
 
   /// Canonical keys used internally:
@@ -192,6 +193,7 @@ class EnrollDeliveryOption {
   final String accessMode; // lifetime / duration
   final int? accessDurationMonths;
   final bool enabled;
+  final Map<String, PromoCode> promoCodes;
 
   bool get isSelectable => enabled && (fee ?? 0) > 0;
   bool get requiresStudyMode => normalizeDeliveryKey(key) == 'private';
@@ -209,6 +211,7 @@ class EnrollDeliveryOption {
       accessMode: accessMode.trim().isEmpty ? 'lifetime' : accessMode.trim(),
       accessDurationMonths: accessDurationMonths,
       enabled: enabled,
+      promoCodes: promoCodes,
     );
   }
 
@@ -299,6 +302,81 @@ class EnrollDeliveryOption {
   }
 }
 
+class PromoCode {
+  const PromoCode({
+    required this.code,
+    required this.type,
+    required this.value,
+    required this.enabled,
+  });
+
+  final String code;
+  final String type;
+  final double value;
+  final bool enabled;
+
+  static String normalize(String raw) => raw.trim().toUpperCase();
+
+  factory PromoCode.fromMap(String fallbackCode, dynamic raw) {
+    if (raw is! Map) {
+      return PromoCode(
+        code: normalize(fallbackCode),
+        type: 'percent',
+        value: 0,
+        enabled: false,
+      );
+    }
+
+    final m = Map<String, dynamic>.from(raw);
+    final rawType = (m['type'] ?? m['discountType'] ?? 'percent')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final rawValue = m['value'] ?? m['discountValue'];
+    final value = rawValue is num
+        ? rawValue.toDouble()
+        : double.tryParse((rawValue ?? '').toString().trim()) ?? 0;
+
+    return PromoCode(
+      code: normalize((m['code'] ?? fallbackCode).toString()),
+      type: rawType == 'fixed' ? 'fixed' : 'percent',
+      value: value,
+      enabled: m['enabled'] != false,
+    );
+  }
+
+  static Map<String, PromoCode> parseMap(dynamic raw) {
+    if (raw is! Map) return const {};
+    final out = <String, PromoCode>{};
+    raw.forEach((key, value) {
+      final code = normalize(key.toString());
+      if (code.isEmpty) return;
+      out[code] = PromoCode.fromMap(code, value);
+    });
+    return out;
+  }
+
+  double discountFor(double price) {
+    if (!enabled || price <= 0 || value <= 0) return 0;
+    final discount = type == 'fixed' ? value : price * (value / 100);
+    return discount.clamp(0, price).toDouble();
+  }
+}
+
+class AppliedPromo {
+  const AppliedPromo({
+    required this.promo,
+    required this.originalFee,
+    required this.discountAmount,
+  });
+
+  final PromoCode promo;
+  final double originalFee;
+  final double discountAmount;
+
+  double get finalFee => (originalFee - discountAmount).clamp(0, originalFee);
+}
+
 class EnrollScreen extends StatefulWidget {
   const EnrollScreen({
     super.key,
@@ -322,9 +400,13 @@ class _EnrollScreenState extends State<EnrollScreen> {
   final phoneC = TextEditingController();
   final dobC = TextEditingController();
   final emailC = TextEditingController();
+  final promoC = TextEditingController();
   String? _gender;
 
   bool saving = false;
+  AppliedPromo? _appliedPromo;
+  String? _promoMessage;
+  bool _promoError = false;
   late final List<EnrollDeliveryOption> deliveryOptions;
   String? selectedDeliveryKey;
   late final PageController _deliveryPageController;
@@ -411,7 +493,70 @@ class _EnrollScreenState extends State<EnrollScreen> {
     phoneC.dispose();
     dobC.dispose();
     emailC.dispose();
+    promoC.dispose();
     super.dispose();
+  }
+
+  void _clearPromo() {
+    promoC.clear();
+    _appliedPromo = null;
+    _promoMessage = null;
+    _promoError = false;
+  }
+
+  void _confirmPromo() {
+    final selected = _selectedOption;
+    final baseFee = selected?.fee ?? 0;
+    final code = PromoCode.normalize(promoC.text);
+
+    if (selected == null || baseFee <= 0) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Choose a priced study type first.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    if (code.isEmpty) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Enter a promo code first.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    final promo = selected.promoCodes[code];
+    final discount = promo?.discountFor(baseFee) ?? 0;
+    if (promo == null || !promo.enabled || discount <= 0) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Promo code is not valid for this study type.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    setState(() {
+      promoC.text = code;
+      _appliedPromo = AppliedPromo(
+        promo: promo,
+        originalFee: baseFee,
+        discountAmount: discount,
+      );
+      _promoMessage = 'Promo code applied.';
+      _promoError = false;
+    });
+  }
+
+  double _effectiveFee(EnrollDeliveryOption option) {
+    final applied = _appliedPromo;
+    if (applied != null &&
+        applied.promo.code == PromoCode.normalize(promoC.text)) {
+      return applied.finalFee;
+    }
+    return option.fee ?? 0;
   }
 
   Future<void> _pickDob() async {
@@ -524,6 +669,8 @@ class _EnrollScreenState extends State<EnrollScreen> {
       final studyModeText = selected.requiresStudyMode
           ? studyModeLabel(_privateStudyMode)
           : '';
+      final appliedPromo = _appliedPromo;
+      final selectedFee = _effectiveFee(selected);
 
       await ref.set({
         'courseId': widget.courseId,
@@ -544,7 +691,13 @@ class _EnrollScreenState extends State<EnrollScreen> {
         'deliveryLabel': selected.label,
         'studyMode': studyMode,
         'studyModeLabel': studyModeText,
-        'selectedFee': selected.fee,
+        'selectedFee': selectedFee,
+        'originalFee': selected.fee,
+        'discountedFee': selectedFee,
+        'promoCode': appliedPromo?.promo.code,
+        'promoType': appliedPromo?.promo.type,
+        'promoValue': appliedPromo?.promo.value,
+        'discountAmount': appliedPromo?.discountAmount,
         'accessMode': selected.accessMode,
         'accessDurationMonths': selected.accessDurationMonths,
         'accessLabel': _accessSummary(selected),
@@ -731,7 +884,102 @@ class _EnrollScreenState extends State<EnrollScreen> {
     setState(() {
       _currentDeliveryIndex = index;
       selectedDeliveryKey = option.key;
+      _clearPromo();
     });
+  }
+
+  String _moneyLabel(double value) => '${value.toStringAsFixed(0)} DA';
+
+  Widget _promoCodeBlock(EnrollDeliveryOption option) {
+    final applied = _appliedPromo;
+    final hasApplied = applied != null && !_promoError;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Brand.uiBorder.withValues(alpha: 0.9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: promoC,
+                  enabled: !saving,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: _inputDeco(
+                    label: 'Promo code | كود الخصم',
+                    icon: Icons.local_offer_rounded,
+                    hint: 'CODE9',
+                  ),
+                  onChanged: (_) {
+                    if (_appliedPromo == null && _promoMessage == null) return;
+                    setState(() {
+                      _appliedPromo = null;
+                      _promoMessage = null;
+                      _promoError = false;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: saving ? null : _confirmPromo,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Brand.primaryBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'Confirm',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          if (_promoMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _promoMessage!,
+              style: TextStyle(
+                color: _promoError ? Colors.redAccent : const Color(0xFF059669),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+          if (hasApplied) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _PromoPricePill(
+                  icon: Icons.payments_rounded,
+                  label: 'Original ${_moneyLabel(applied.originalFee)}',
+                ),
+                _PromoPricePill(
+                  icon: Icons.discount_rounded,
+                  label: 'Discount -${_moneyLabel(applied.discountAmount)}',
+                ),
+                _PromoPricePill(
+                  icon: Icons.check_circle_rounded,
+                  label: 'Total ${_moneyLabel(_effectiveFee(option))}',
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -831,6 +1079,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                     _currentDeliveryIndex = index;
                                     selectedDeliveryKey =
                                         deliveryOptions[index].key;
+                                    _clearPromo();
                                   });
                                 },
                               ),
@@ -846,7 +1095,10 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                   studyMode: showPrivateMode
                                       ? _privateStudyMode
                                       : '',
+                                  effectiveFee: _effectiveFee(selected),
                                 ),
+                              if (selected != null) const SizedBox(height: 12),
+                              if (selected != null) _promoCodeBlock(selected),
                               if (selected != null) const SizedBox(height: 12),
                               if (selected != null)
                                 _DeliveryExplanation(option: selected),
@@ -1480,10 +1732,15 @@ class _StudyModeSelector extends StatelessWidget {
 }
 
 class _SelectedOptionSummary extends StatelessWidget {
-  const _SelectedOptionSummary({required this.option, required this.studyMode});
+  const _SelectedOptionSummary({
+    required this.option,
+    required this.studyMode,
+    required this.effectiveFee,
+  });
 
   final EnrollDeliveryOption option;
   final String studyMode;
+  final double effectiveFee;
 
   @override
   Widget build(BuildContext context) {
@@ -1559,7 +1816,9 @@ class _SelectedOptionSummary extends StatelessWidget {
                 ],
                 const SizedBox(height: 4),
                 Text(
-                  option.feeLabel(),
+                  effectiveFee == (option.fee ?? 0)
+                      ? option.feeLabel()
+                      : '${effectiveFee.toStringAsFixed(0)} DA',
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     color: Brand.actionOrange,
@@ -1575,6 +1834,40 @@ class _SelectedOptionSummary extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PromoPricePill extends StatelessWidget {
+  const _PromoPricePill({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Brand.appBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Brand.uiBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Brand.primaryBlue),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Brand.primaryBlue,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
             ),
           ),
         ],

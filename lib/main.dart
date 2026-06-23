@@ -3296,8 +3296,10 @@ class _PublicGalleryViewerScreenState
     for (final offset in [-2, -1, 0, 1, 2]) {
       final i = index + offset;
       if (i < 0 || i >= widget.items.length) continue;
-      final type =
-          (widget.items[i]['type'] ?? '').toString().trim().toLowerCase();
+      final type = (widget.items[i]['type'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
       if (type == 'video') continue;
       final url = (widget.items[i]['url'] ?? '').toString().trim();
       if (url.isNotEmpty) {
@@ -3733,6 +3735,7 @@ class _CourseLite {
         fee: fee,
         accessMode: accessMode,
         accessDurationMonths: durationMonths,
+        promoCodes: PromoCode.parseMap(m['promo_codes']),
       );
     });
 
@@ -3759,6 +3762,7 @@ class _CourseLite {
               accessMode: cfg.accessMode,
               accessDurationMonths: cfg.accessDurationMonths,
               enabled: cfg.enabled,
+              promoCodes: cfg.promoCodes,
             ),
           );
           break;
@@ -3773,6 +3777,7 @@ class _CourseLite {
               accessMode: cfg.accessMode,
               accessDurationMonths: cfg.accessDurationMonths,
               enabled: cfg.enabled,
+              promoCodes: cfg.promoCodes,
             ),
           );
           break;
@@ -3787,6 +3792,7 @@ class _CourseLite {
               accessMode: cfg.accessMode,
               accessDurationMonths: cfg.accessDurationMonths,
               enabled: cfg.enabled,
+              promoCodes: cfg.promoCodes,
             ),
           );
           break;
@@ -3801,6 +3807,7 @@ class _CourseLite {
               accessMode: cfg.accessMode,
               accessDurationMonths: cfg.accessDurationMonths,
               enabled: cfg.enabled,
+              promoCodes: cfg.promoCodes,
             ),
           );
           break;
@@ -3932,6 +3939,7 @@ class _DeliveryConfigLite {
     required this.fee,
     required this.accessMode,
     required this.accessDurationMonths,
+    required this.promoCodes,
   });
 
   final String key;
@@ -3939,6 +3947,7 @@ class _DeliveryConfigLite {
   final double? fee;
   final String accessMode;
   final int? accessDurationMonths;
+  final Map<String, PromoCode> promoCodes;
 }
 
 class _InstructorLite {
@@ -4677,6 +4686,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
   final phoneC = TextEditingController();
   final dobC = TextEditingController();
   final emailC = TextEditingController();
+  final promoC = TextEditingController();
 
   late final List<EnrollDeliveryOption> deliveryOptions;
   late final PageController _deliveryPageController;
@@ -4685,6 +4695,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
   String? _gender;
   String _privateStudyMode = 'online';
   bool saving = false;
+  AppliedPromo? _appliedPromo;
+  String? _promoMessage;
+  bool _promoError = false;
 
   _CourseLite get course => widget.course;
 
@@ -4726,7 +4739,70 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     phoneC.dispose();
     dobC.dispose();
     emailC.dispose();
+    promoC.dispose();
     super.dispose();
+  }
+
+  void _clearPromo() {
+    promoC.clear();
+    _appliedPromo = null;
+    _promoMessage = null;
+    _promoError = false;
+  }
+
+  void _confirmPromo() {
+    final selected = _selectedOption;
+    final baseFee = selected?.fee ?? 0;
+    final code = PromoCode.normalize(promoC.text);
+
+    if (selected == null || baseFee <= 0) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Choose a priced study type first.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    if (code.isEmpty) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Enter a promo code first.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    final promo = selected.promoCodes[code];
+    final discount = promo?.discountFor(baseFee) ?? 0;
+    if (promo == null || !promo.enabled || discount <= 0) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Promo code is not valid for this study type.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    setState(() {
+      promoC.text = code;
+      _appliedPromo = AppliedPromo(
+        promo: promo,
+        originalFee: baseFee,
+        discountAmount: discount,
+      );
+      _promoMessage = 'Promo code applied.';
+      _promoError = false;
+    });
+  }
+
+  double _effectiveFee(EnrollDeliveryOption option) {
+    final applied = _appliedPromo;
+    if (applied != null &&
+        applied.promo.code == PromoCode.normalize(promoC.text)) {
+      return applied.finalFee;
+    }
+    return option.fee ?? 0;
   }
 
   List<EnrollDeliveryOption> _dedupeNormalizedOptions(
@@ -4863,6 +4939,8 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
       final studyModeText = selected.requiresStudyMode
           ? studyModeLabel(_privateStudyMode)
           : '';
+      final appliedPromo = _appliedPromo;
+      final selectedFee = _effectiveFee(selected);
 
       await ref.set({
         'courseId': course.id,
@@ -4879,7 +4957,13 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
         'deliveryLabel': selected.label,
         'studyMode': studyMode,
         'studyModeLabel': studyModeText,
-        'selectedFee': selected.fee,
+        'selectedFee': selectedFee,
+        'originalFee': selected.fee,
+        'discountedFee': selectedFee,
+        'promoCode': appliedPromo?.promo.code,
+        'promoType': appliedPromo?.promo.type,
+        'promoValue': appliedPromo?.promo.value,
+        'discountAmount': appliedPromo?.discountAmount,
         'accessMode': selected.accessMode,
         'accessDurationMonths': selected.accessDurationMonths,
         'accessLabel': _accessSummary(selected),
@@ -5281,6 +5365,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
               setState(() {
                 _currentDeliveryIndex = index;
                 selectedDeliveryKey = option.key;
+                _clearPromo();
               });
               _deliveryPageController.animateToPage(
                 index,
@@ -5528,7 +5613,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                   border: Border.all(color: tone.withValues(alpha: 0.24)),
                 ),
                 child: Text(
-                  option.feeLabel(),
+                  _appliedPromo == null
+                      ? option.feeLabel()
+                      : _moneyLabel(_effectiveFee(option)),
                   style: TextStyle(color: tone, fontWeight: FontWeight.w900),
                 ),
               ),
@@ -5643,6 +5730,100 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     );
   }
 
+  String _moneyLabel(double value) => '${value.toStringAsFixed(0)} DA';
+
+  Widget _promoCodeBlock(EnrollDeliveryOption option) {
+    final applied = _appliedPromo;
+    final hasApplied = applied != null && !_promoError;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Brand.uiBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: promoC,
+                  enabled: !saving,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: _inputDeco(
+                    label: 'Promo code | كود الخصم',
+                    icon: Icons.local_offer_rounded,
+                    hint: 'CODE9',
+                  ),
+                  onChanged: (_) {
+                    if (_appliedPromo == null && _promoMessage == null) return;
+                    setState(() {
+                      _appliedPromo = null;
+                      _promoMessage = null;
+                      _promoError = false;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: saving ? null : _confirmPromo,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Brand.primaryBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'Confirm',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          if (_promoMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _promoMessage!,
+              style: TextStyle(
+                color: _promoError ? Colors.redAccent : const Color(0xFF059669),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+          if (hasApplied) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _PrettyChip(
+                  label: 'Original ${_moneyLabel(applied.originalFee)}',
+                  icon: Icons.payments_rounded,
+                ),
+                _PrettyChip(
+                  label: 'Discount -${_moneyLabel(applied.discountAmount)}',
+                  icon: Icons.discount_rounded,
+                ),
+                _PrettyChip(
+                  label: 'Total ${_moneyLabel(_effectiveFee(option))}',
+                  icon: Icons.check_circle_rounded,
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final selected = _selectedOption;
@@ -5741,6 +5922,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                           _currentDeliveryIndex = index;
                                           selectedDeliveryKey =
                                               deliveryOptions[index].key;
+                                          _clearPromo();
                                         });
                                       },
                                 itemBuilder: (_, i) => _deliveryCard(
@@ -5773,8 +5955,11 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                               }),
                             ),
                             const SizedBox(height: 12),
-                            if (selected != null)
+                            if (selected != null) ...[
                               _selectedDeliverySummary(selected),
+                              const SizedBox(height: 10),
+                              _promoCodeBlock(selected),
+                            ],
                           ],
                         ],
                       ),

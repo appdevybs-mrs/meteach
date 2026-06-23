@@ -3376,40 +3376,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Title + stats inline
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                course == null
-                                    ? 'All booked sessions'
-                                    : '${course.title}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: primaryBlue,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                            _StatPill(
-                              label: 'Rows',
-                              value: '${filtered.length}',
-                              icon: Icons.table_rows_rounded,
-                            ),
-                            const SizedBox(width: 4),
-                            _StatPill(
-                              label: 'Lrnrs',
-                              value: '$totalLearners',
-                              icon: Icons.people_alt_rounded,
-                            ),
-                            const SizedBox(width: 4),
-                            _StatPill(
-                              label: 'Up',
-                              value: '$futureCount',
-                              icon: Icons.schedule_rounded,
-                            ),
-                          ],
-                        ),
+
                         // Level chips
                         _buildCompactSelectors(),
                         const SizedBox(height: 6),
@@ -3623,7 +3590,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                   ),
                   const SizedBox(height: 8),
                   _Card(
-                    title: 'All bookings',
                     child: loadingBookings
                         ? const Padding(
                             padding: EdgeInsets.symmetric(vertical: 24),
@@ -3643,14 +3609,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  '${filtered.length} row${filtered.length == 1 ? '' : 's'}',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    color: primaryBlue,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
+
                                 Container(
                                   decoration: BoxDecoration(
                                     color: Colors.white,
@@ -3677,7 +3636,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                   child: TabBarView(
                                     children: [
                                       _buildBookingsPane(
-                                        items: past,
+                                        items: past.reversed.toList(),
                                         webDesktop: webDesktop,
                                         emptyText:
                                             'No past bookings in this selection.',
@@ -3941,7 +3900,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return _buildWebFrozenBookingsTable(items);
     }
 
+    final safeBottom = MediaQuery.of(context).viewPadding.bottom;
     return SingleChildScrollView(
+      padding: EdgeInsets.only(bottom: safeBottom + 16),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: SingleChildScrollView(
@@ -4362,9 +4323,9 @@ class _CourseSyllabus {
 // ========================= Small UI Widgets =========================
 
 class _Card extends StatelessWidget {
-  const _Card({required this.title, required this.child});
+  const _Card({this.title, required this.child});
 
-  final String title;
+  final String? title;
   final Widget child;
 
   static const primaryBlue = Color(0xFF1A2B48);
@@ -4382,15 +4343,17 @@ class _Card extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: primaryBlue,
-              fontSize: 13,
+          if (title != null) ...[
+            Text(
+              title!,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+                fontSize: 13,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+          ],
           child,
         ],
       ),

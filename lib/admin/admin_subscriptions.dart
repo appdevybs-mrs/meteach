@@ -14,7 +14,8 @@ const List<String> _genderOptions = ['Male', 'Female'];
 // - Supports new enrollment fields:
 //   fullName, phone, courseId, courseTitle, createdAt,
 //   deliveryKey, deliveryLabel, studyMode, studyModeLabel,
-//   selectedFee, accessMode, accessDurationMonths, accessLabel,
+//   selectedFee, originalFee, discountedFee, promoCode, discountAmount,
+//   accessMode, accessDurationMonths, accessLabel,
 //   dob/dateOfBirth, email, additionalInfo
 // - Still supports old data:
 //   firstName + lastName
@@ -23,8 +24,16 @@ const List<String> _genderOptions = ['Male', 'Female'];
 // - "Create Learner" splits fullName into first/last
 // =======================================================
 
-class AdminSubscriptionsScreen extends StatelessWidget {
+class AdminSubscriptionsScreen extends StatefulWidget {
   const AdminSubscriptionsScreen({super.key});
+
+  @override
+  State<AdminSubscriptionsScreen> createState() =>
+      _AdminSubscriptionsScreenState();
+}
+
+class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
+  String _promoFilter = '';
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
@@ -73,37 +82,74 @@ class AdminSubscriptionsScreen extends StatelessWidget {
             }
 
             final v = snap.data?.snapshot.value;
-            final items = parseSubscriptions(v);
+            final allItems = parseSubscriptions(v);
+            final summaries = _promoSummaries(allItems);
+            final items = _filterByPromo(allItems, _promoFilter);
 
-            if (items.isEmpty) {
+            if (allItems.isEmpty) {
               return const Center(child: Text('No subscriptions yet.'));
             }
 
             final webWide = isWebDesktop(context, minWidth: 1100);
 
             if (webWide) {
-              return GridView.builder(
+              return Padding(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 3.4,
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _promoUsageCard(
+                        summaries: summaries,
+                        totalCount: allItems.length,
+                        filteredCount: items.length,
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 10)),
+                    if (items.isEmpty)
+                      const SliverToBoxAdapter(
+                        child: Center(
+                          child: Text('No subscriptions match this filter.'),
+                        ),
+                      )
+                    else
+                      SliverGrid(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                              childAspectRatio: 3.4,
+                            ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) =>
+                              _buildSubscriptionTile(context, items[i]),
+                          childCount: items.length,
+                        ),
+                      ),
+                  ],
                 ),
-                itemCount: items.length,
-                itemBuilder: (context, i) {
-                  final s = items[i];
-                  return _buildSubscriptionTile(context, s);
-                },
               );
             }
 
             return ListView.separated(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-              itemCount: items.length,
+              itemCount: items.isEmpty ? 2 : items.length + 1,
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, i) {
-                final s = items[i];
+                if (i == 0) {
+                  return _promoUsageCard(
+                    summaries: summaries,
+                    totalCount: allItems.length,
+                    filteredCount: items.length,
+                  );
+                }
+                final itemIndex = i - 1;
+                if (items.isEmpty) {
+                  return const Center(
+                    child: Text('No subscriptions match this filter.'),
+                  );
+                }
+                final s = items[itemIndex];
                 return _buildSubscriptionTile(context, s);
               },
             );
@@ -112,6 +158,154 @@ class AdminSubscriptionsScreen extends StatelessWidget {
       ),
     );
   }
+
+  List<SubscriptionItem> _filterByPromo(
+    List<SubscriptionItem> items,
+    String filter,
+  ) {
+    if (filter.isEmpty) return items;
+    if (filter == '__with_promo__') {
+      return items.where((s) => s.promoCode.trim().isNotEmpty).toList();
+    }
+    return items.where((s) => s.promoCode == filter).toList();
+  }
+
+  List<_PromoUsageSummary> _promoSummaries(List<SubscriptionItem> items) {
+    final byCode = <String, _PromoUsageSummary>{};
+    for (final item in items) {
+      final code = item.promoCode.trim();
+      if (code.isEmpty) continue;
+      final existing = byCode[code] ?? _PromoUsageSummary(code: code);
+      existing.count += 1;
+      existing.totalFinalFee +=
+          item.discountedFee ?? item.selectedFee ?? item.originalFee ?? 0;
+      existing.totalDiscount += item.discountAmount ?? 0;
+      byCode[code] = existing;
+    }
+
+    final out = byCode.values.toList();
+    out.sort((a, b) {
+      final byCount = b.count.compareTo(a.count);
+      if (byCount != 0) return byCount;
+      return a.code.compareTo(b.code);
+    });
+    return out;
+  }
+
+  Widget _promoUsageCard({
+    required List<_PromoUsageSummary> summaries,
+    required int totalCount,
+    required int filteredCount,
+  }) {
+    final withPromoCount = summaries.fold<int>(0, (sum, s) => sum + s.count);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: uiBorder),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Promo usage',
+                  style: TextStyle(
+                    color: primaryBlue,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              Text(
+                '$filteredCount / $totalCount shown',
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.62),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _filterChip('All', ''),
+              _filterChip('With promo ($withPromoCount)', '__with_promo__'),
+              for (final summary in summaries)
+                _filterChip('${summary.code} (${summary.count})', summary.code),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (summaries.isEmpty)
+            Text(
+              'No promo codes have been used yet.',
+              style: TextStyle(
+                color: Colors.black.withValues(alpha: 0.65),
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowHeight: 36,
+                dataRowMinHeight: 38,
+                dataRowMaxHeight: 44,
+                columns: const [
+                  DataColumn(label: Text('Promo code')),
+                  DataColumn(label: Text('Used'), numeric: true),
+                  DataColumn(label: Text('Final total'), numeric: true),
+                  DataColumn(label: Text('Discount'), numeric: true),
+                ],
+                rows: [
+                  for (final summary in summaries)
+                    DataRow(
+                      selected: _promoFilter == summary.code,
+                      onSelectChanged: (_) {
+                        setState(() {
+                          _promoFilter = _promoFilter == summary.code
+                              ? ''
+                              : summary.code;
+                        });
+                      },
+                      cells: [
+                        DataCell(Text(summary.code)),
+                        DataCell(Text(summary.count.toString())),
+                        DataCell(Text(_money(summary.totalFinalFee))),
+                        DataCell(Text(_money(summary.totalDiscount))),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String label, String value) {
+    final selected = _promoFilter == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _promoFilter = selected ? '' : value),
+      selectedColor: actionOrange.withValues(alpha: 0.18),
+      labelStyle: TextStyle(
+        color: selected ? actionOrange : primaryBlue,
+        fontWeight: FontWeight.w900,
+      ),
+      side: BorderSide(color: selected ? actionOrange : uiBorder),
+      backgroundColor: Colors.white,
+    );
+  }
+
+  static String _money(double value) => '${value.toStringAsFixed(0)} DA';
 
   Widget _buildSubscriptionTile(BuildContext context, SubscriptionItem s) {
     final deliveryText = s.studyTypeDisplay;
@@ -174,6 +368,7 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (s.selectedFee != null ||
+                      s.promoCode.trim().isNotEmpty ||
                       s.accessLabel.trim().isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Wrap(
@@ -185,6 +380,12 @@ class AdminSubscriptionsScreen extends StatelessWidget {
                             label: '${s.selectedFee!.toStringAsFixed(0)} DA',
                             bg: actionOrange.withValues(alpha: 0.10),
                             fg: actionOrange,
+                          ),
+                        if (s.promoCode.trim().isNotEmpty)
+                          _pill(
+                            label: 'Promo ${s.promoCode}',
+                            bg: const Color(0xFF059669).withValues(alpha: 0.10),
+                            fg: const Color(0xFF059669),
                           ),
                         if (s.accessLabel.trim().isNotEmpty)
                           _pill(
@@ -371,6 +572,34 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                   sub.selectedFee == null
                       ? ''
                       : '${sub.selectedFee!.toStringAsFixed(0)} DA',
+                ),
+                _line(
+                  'Original fee',
+                  sub.originalFee == null
+                      ? ''
+                      : '${sub.originalFee!.toStringAsFixed(0)} DA',
+                ),
+                _line(
+                  'Discounted fee',
+                  sub.discountedFee == null
+                      ? ''
+                      : '${sub.discountedFee!.toStringAsFixed(0)} DA',
+                ),
+                _line('Promo code', sub.promoCode),
+                _line('Promo type', sub.promoType),
+                _line(
+                  'Promo value',
+                  sub.promoValue == null
+                      ? ''
+                      : sub.promoType == 'percent'
+                      ? '${sub.promoValue!.toStringAsFixed(0)}%'
+                      : '${sub.promoValue!.toStringAsFixed(0)} DA',
+                ),
+                _line(
+                  'Discount',
+                  sub.discountAmount == null
+                      ? ''
+                      : '${sub.discountAmount!.toStringAsFixed(0)} DA',
                 ),
                 _line(
                   'Access months',
@@ -850,6 +1079,15 @@ String _studyModeLabel(String key) {
   }
 }
 
+class _PromoUsageSummary {
+  _PromoUsageSummary({required this.code});
+
+  final String code;
+  int count = 0;
+  double totalFinalFee = 0;
+  double totalDiscount = 0;
+}
+
 class SubscriptionItem {
   SubscriptionItem({
     required this.id,
@@ -864,6 +1102,12 @@ class SubscriptionItem {
     required this.studyMode,
     required this.studyModeLabel,
     required this.selectedFee,
+    required this.originalFee,
+    required this.discountedFee,
+    required this.promoCode,
+    required this.promoType,
+    required this.promoValue,
+    required this.discountAmount,
     required this.accessMode,
     required this.accessDurationMonths,
     required this.accessLabel,
@@ -885,6 +1129,12 @@ class SubscriptionItem {
   final String studyMode;
   final String studyModeLabel;
   final double? selectedFee;
+  final double? originalFee;
+  final double? discountedFee;
+  final String promoCode;
+  final String promoType;
+  final double? promoValue;
+  final double? discountAmount;
   final String accessMode;
   final int? accessDurationMonths;
   final String accessLabel;
@@ -986,6 +1236,12 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
         studyMode: normalizedStudyMode,
         studyModeLabel: normalizedStudyModeLabel,
         selectedFee: asDouble(m['selectedFee'] ?? m['selected_fee']),
+        originalFee: asDouble(m['originalFee'] ?? m['original_fee']),
+        discountedFee: asDouble(m['discountedFee'] ?? m['discounted_fee']),
+        promoCode: readString(m, ['promoCode', 'promo_code']),
+        promoType: readString(m, ['promoType', 'promo_type']),
+        promoValue: asDouble(m['promoValue'] ?? m['promo_value']),
+        discountAmount: asDouble(m['discountAmount'] ?? m['discount_amount']),
         accessMode: readString(m, ['accessMode', 'access_mode']),
         accessDurationMonths:
             (m['accessDurationMonths'] ?? m['access_duration_months']) == null

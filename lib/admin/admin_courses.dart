@@ -1587,6 +1587,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
   late final Map<String, TextEditingController> _deliveryFeeControllers;
   late final Map<String, String> _deliveryAccessModes;
   late final Map<String, TextEditingController> _deliveryDurationControllers;
+  late final Map<String, List<_EditablePromoCode>> _deliveryPromoCodes;
 
   File? _localThumbFile;
 
@@ -1832,6 +1833,19 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
       ),
     };
 
+    _deliveryPromoCodes = {
+      'online': _editablePromoCodes(
+        existingConfigs['online']?.promoCodes ?? {},
+      ),
+      'live': _editablePromoCodes(existingConfigs['live']?.promoCodes ?? {}),
+      'recorded': _editablePromoCodes(
+        existingConfigs['recorded']?.promoCodes ?? {},
+      ),
+      'inclass': _editablePromoCodes(
+        existingConfigs['inclass']?.promoCodes ?? {},
+      ),
+    };
+
     _syncOldDeliveryFields();
 
     _loadCategorySuggestions();
@@ -1875,6 +1889,11 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     }
     for (final c in _deliveryDurationControllers.values) {
       c.dispose();
+    }
+    for (final items in _deliveryPromoCodes.values) {
+      for (final item in items) {
+        item.dispose();
+      }
     }
     requirementsC.dispose();
     tagsC.dispose();
@@ -2042,6 +2061,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                       feeControllers: _deliveryFeeControllers,
                       accessModes: _deliveryAccessModes,
                       durationControllers: _deliveryDurationControllers,
+                      promoCodes: _deliveryPromoCodes,
                       onChanged: () {
                         setState(() {
                           _syncOldDeliveryFields();
@@ -2158,6 +2178,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   onlineAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['online']!.text)
               : null,
+          promoCodes: _parsePromoCodes(_deliveryPromoCodes['online'] ?? []),
         ),
         'live': CourseDeliveryConfig(
           enabled: _deliveryEnabled['live'] == true,
@@ -2169,6 +2190,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
               (_deliveryEnabled['live'] == true && liveAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['live']!.text)
               : null,
+          promoCodes: _parsePromoCodes(_deliveryPromoCodes['live'] ?? []),
         ),
         'recorded': CourseDeliveryConfig(
           enabled: _deliveryEnabled['recorded'] == true,
@@ -2181,6 +2203,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   recordedAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['recorded']!.text)
               : null,
+          promoCodes: _parsePromoCodes(_deliveryPromoCodes['recorded'] ?? []),
         ),
         'inclass': CourseDeliveryConfig(
           enabled: _deliveryEnabled['inclass'] == true,
@@ -2193,6 +2216,7 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
                   inclassAccessMode == 'duration')
               ? _parseIntOrNull(_deliveryDurationControllers['inclass']!.text)
               : null,
+          promoCodes: _parsePromoCodes(_deliveryPromoCodes['inclass'] ?? []),
         ),
       };
 
@@ -2295,6 +2319,44 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
     final t = input.trim();
     if (t.isEmpty) return null;
     return int.tryParse(t);
+  }
+
+  static List<_EditablePromoCode> _editablePromoCodes(
+    Map<String, CoursePromoCode> input,
+  ) {
+    final entries = input.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return entries
+        .map(
+          (entry) => _EditablePromoCode(
+            code: entry.value.code.isEmpty ? entry.key : entry.value.code,
+            type: entry.value.type,
+            value: entry.value.value,
+            enabled: entry.value.enabled,
+          ),
+        )
+        .toList();
+  }
+
+  static Map<String, CoursePromoCode> _parsePromoCodes(
+    List<_EditablePromoCode> input,
+  ) {
+    final out = <String, CoursePromoCode>{};
+    for (final item in input) {
+      final code = CoursePromoCode.normalizeCode(item.codeC.text);
+      if (code.isEmpty) continue;
+      final type = item.type == 'fixed' ? 'fixed' : 'percent';
+      final value = double.tryParse(item.valueC.text.trim());
+      if (value == null || value < 0) continue;
+      if (type == 'percent' && value > 100) continue;
+      out[code] = CoursePromoCode(
+        code: code,
+        type: type,
+        value: value,
+        enabled: item.enabled,
+      );
+    }
+    return out;
   }
 
   Widget _buildResponsiveSections(List<Widget> sections) {
@@ -2693,7 +2755,9 @@ class UploadClient {
       })
       ..fields.addAll(authFields)
       ..fields['app_id'] = appId
-      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+      ..files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
 
     final streamed = await req.send();
     final body = await streamed.stream.bytesToString();
@@ -2736,6 +2800,7 @@ class CourseDeliveryConfig {
     required this.fee,
     required this.accessMode,
     required this.accessDurationMonths,
+    required this.promoCodes,
   });
 
   final bool enabled;
@@ -2747,12 +2812,17 @@ class CourseDeliveryConfig {
   /// used only when accessMode == "duration"
   final int? accessDurationMonths;
 
+  final Map<String, CoursePromoCode> promoCodes;
+
   Map<String, dynamic> toMap() {
     return {
       'enabled': enabled,
       'fee': fee,
       'access_mode': accessMode,
       'access_duration_months': accessDurationMonths,
+      'promo_codes': promoCodes.map(
+        (key, value) => MapEntry(key, value.toMap()),
+      ),
     };
   }
 
@@ -2763,6 +2833,7 @@ class CourseDeliveryConfig {
         fee: null,
         accessMode: 'lifetime',
         accessDurationMonths: null,
+        promoCodes: const {},
       );
     }
 
@@ -2791,7 +2862,93 @@ class CourseDeliveryConfig {
       fee: parseFee(m['fee']),
       accessMode: accessMode.isEmpty ? 'lifetime' : accessMode,
       accessDurationMonths: parseInt(m['access_duration_months']),
+      promoCodes: CoursePromoCode.parseMap(m['promo_codes']),
     );
+  }
+}
+
+class CoursePromoCode {
+  const CoursePromoCode({
+    required this.code,
+    required this.type,
+    required this.value,
+    required this.enabled,
+  });
+
+  final String code;
+  final String type;
+  final double value;
+  final bool enabled;
+
+  static String normalizeCode(String raw) => raw.trim().toUpperCase();
+
+  Map<String, dynamic> toMap() {
+    return {
+      'code': normalizeCode(code),
+      'type': type == 'fixed' ? 'fixed' : 'percent',
+      'value': value,
+      'enabled': enabled,
+    };
+  }
+
+  factory CoursePromoCode.fromMap(String fallbackCode, dynamic raw) {
+    if (raw is! Map) {
+      return CoursePromoCode(
+        code: normalizeCode(fallbackCode),
+        type: 'percent',
+        value: 0,
+        enabled: false,
+      );
+    }
+
+    final m = Map<String, dynamic>.from(raw);
+    final rawType = (m['type'] ?? m['discountType'] ?? 'percent')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final rawValue = m['value'] ?? m['discountValue'];
+    final value = rawValue is num
+        ? rawValue.toDouble()
+        : double.tryParse((rawValue ?? '').toString().trim()) ?? 0;
+
+    return CoursePromoCode(
+      code: normalizeCode((m['code'] ?? fallbackCode).toString()),
+      type: rawType == 'fixed' ? 'fixed' : 'percent',
+      value: value,
+      enabled: m['enabled'] != false,
+    );
+  }
+
+  static Map<String, CoursePromoCode> parseMap(dynamic raw) {
+    if (raw is! Map) return const {};
+    final out = <String, CoursePromoCode>{};
+    raw.forEach((key, value) {
+      final code = normalizeCode(key.toString());
+      if (code.isEmpty) return;
+      out[code] = CoursePromoCode.fromMap(code, value);
+    });
+    return out;
+  }
+}
+
+class _EditablePromoCode {
+  _EditablePromoCode({
+    required String code,
+    required String type,
+    required double value,
+    required this.enabled,
+  }) : codeC = TextEditingController(text: code),
+       valueC = TextEditingController(text: value <= 0 ? '' : value.toString()),
+       type = type == 'fixed' ? 'fixed' : 'percent';
+
+  final TextEditingController codeC;
+  final TextEditingController valueC;
+  String type;
+  bool enabled;
+
+  void dispose() {
+    codeC.dispose();
+    valueC.dispose();
   }
 }
 
@@ -3024,6 +3181,7 @@ class _DeliveryConfigsEditor extends StatelessWidget {
     required this.feeControllers,
     required this.accessModes,
     required this.durationControllers,
+    required this.promoCodes,
     required this.onChanged,
   });
 
@@ -3031,6 +3189,7 @@ class _DeliveryConfigsEditor extends StatelessWidget {
   final Map<String, TextEditingController> feeControllers;
   final Map<String, String> accessModes;
   final Map<String, TextEditingController> durationControllers;
+  final Map<String, List<_EditablePromoCode>> promoCodes;
   final VoidCallback onChanged;
 
   static const List<Map<String, String>> _items = [
@@ -3170,11 +3329,209 @@ class _DeliveryConfigsEditor extends StatelessWidget {
                         },
                       ),
                     ],
+                    const SizedBox(height: 12),
+                    _PromoCodesEditor(
+                      label: label,
+                      items: promoCodes[key] ?? const [],
+                      onChanged: onChanged,
+                    ),
                   ],
                 ],
               ),
             );
           }),
+        ],
+      ),
+    );
+  }
+}
+
+class _PromoCodesEditor extends StatelessWidget {
+  const _PromoCodesEditor({
+    required this.label,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final String label;
+  final List<_EditablePromoCode> items;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AdminCoursesScreen.appBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AdminCoursesScreen.uiBorders),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$label promo codes',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  items.add(
+                    _EditablePromoCode(
+                      code: '',
+                      type: 'percent',
+                      value: 0,
+                      enabled: true,
+                    ),
+                  );
+                  onChanged();
+                },
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add code'),
+              ),
+            ],
+          ),
+          if (items.isEmpty)
+            Text(
+              'No promo codes for this variant.',
+              style: TextStyle(
+                color: AdminCoursesScreen.mainText.withValues(alpha: 0.68),
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            ...items.map(
+              (item) =>
+                  _PromoCodeRow(item: item, items: items, onChanged: onChanged),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PromoCodeRow extends StatelessWidget {
+  const _PromoCodeRow({
+    required this.item,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final _EditablePromoCode item;
+  final List<_EditablePromoCode> items;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AdminCoursesScreen.uiBorders),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: item.codeC,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Code',
+                    hintText: 'WELCOME500',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => onChanged(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Remove code',
+                onPressed: () {
+                  items.remove(item);
+                  item.dispose();
+                  onChanged();
+                },
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: item.type,
+                  decoration: const InputDecoration(
+                    labelText: 'Discount type',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'percent',
+                      child: Text('Percent %'),
+                    ),
+                    DropdownMenuItem(value: 'fixed', child: Text('Fixed DA')),
+                  ],
+                  onChanged: (v) {
+                    item.type = v == 'fixed' ? 'fixed' : 'percent';
+                    onChanged();
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: item.valueC,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Value',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => onChanged(),
+                  validator: (v) {
+                    final code = item.codeC.text.trim();
+                    final valueText = (v ?? '').trim();
+                    if (code.isEmpty && valueText.isEmpty) return null;
+                    if (code.isEmpty) return 'Code required';
+                    final n = double.tryParse(valueText);
+                    if (n == null) return 'Number required';
+                    if (n < 0) return 'Must be >= 0';
+                    if (item.type == 'percent' && n > 100) return 'Max 100%';
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                children: [
+                  const Text(
+                    'On',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  Switch(
+                    value: item.enabled,
+                    onChanged: (v) {
+                      item.enabled = v;
+                      onChanged();
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
         ],
       ),
     );

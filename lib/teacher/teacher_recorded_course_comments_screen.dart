@@ -30,6 +30,37 @@ class TeacherRecordedCourseCommentsScreen extends StatefulWidget {
 
 enum _CourseCommentFilter { approved, all, pending, reported, removed }
 
+class _RecordedLessonMeta {
+  const _RecordedLessonMeta({
+    required this.id,
+    required this.title,
+    required this.sessionNumber,
+    required this.hasVideo,
+  });
+
+  final String id;
+  final String title;
+  final int sessionNumber;
+  final bool hasVideo;
+}
+
+class _CommentGroup {
+  _CommentGroup({
+    required this.dateKey,
+    required this.lessonId,
+    required this.items,
+  });
+
+  final String dateKey;
+  final String lessonId;
+  final List<LessonCommentItem> items;
+
+  int get latestCreatedAt => items.fold<int>(
+    0,
+    (latest, item) => item.createdAt > latest ? item.createdAt : latest,
+  );
+}
+
 class _TeacherRecordedCourseCommentsScreenState
     extends State<TeacherRecordedCourseCommentsScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
@@ -47,6 +78,7 @@ class _TeacherRecordedCourseCommentsScreenState
   final Set<String> _selectedRemovedCommentIds = <String>{};
 
   List<LessonCommentItem> _comments = const [];
+  Map<String, _RecordedLessonMeta> _lessonMetaById = const {};
 
   String get _courseId => widget.courseId.trim();
 
@@ -61,6 +93,13 @@ class _TeacherRecordedCourseCommentsScreenState
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  String _fmtDateKey(int ms) {
+    if (ms <= 0) return 'Unknown date';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
   bool _isPending(LessonCommentItem item) => item.status == 'pending';
@@ -98,7 +137,12 @@ class _TeacherRecordedCourseCommentsScreenState
     });
 
     try {
-      final snap = await _db.child('lesson_comments').child(_courseId).get();
+      final results = await Future.wait<DataSnapshot>([
+        _db.child('lesson_comments').child(_courseId).get(),
+        _db.child('syllabi').child(_courseId).child('recorded').get(),
+      ]);
+      final snap = results[0];
+      final lessonMetaById = _parseLessonMeta(results[1].value);
       final out = <LessonCommentItem>[];
       if (snap.exists && snap.value is Map) {
         final lessons = Map<dynamic, dynamic>.from(snap.value as Map);
@@ -125,6 +169,7 @@ class _TeacherRecordedCourseCommentsScreenState
       if (!mounted) return;
       setState(() {
         _comments = out;
+        _lessonMetaById = lessonMetaById;
         _busy = false;
       });
       _refreshReplyCountsForVisibleComments();
@@ -135,6 +180,114 @@ class _TeacherRecordedCourseCommentsScreenState
         _busy = false;
       });
     }
+  }
+
+  List<Map<String, dynamic>> _mapsFrom(dynamic raw) {
+    if (raw is List) {
+      return raw
+          .whereType<Map>()
+          .map((item) => item.map((k, v) => MapEntry('$k', v)))
+          .toList();
+    }
+    if (raw is Map) {
+      return raw.values
+          .whereType<Map>()
+          .map((item) => item.map((k, v) => MapEntry('$k', v)))
+          .toList();
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  Map<String, _RecordedLessonMeta> _parseLessonMeta(dynamic raw) {
+    final out = <String, _RecordedLessonMeta>{};
+    if (raw is! Map) return out;
+    final root = raw.map((k, v) => MapEntry('$k', v));
+
+    void addLesson(dynamic lessonRaw, int fallbackNumber) {
+      if (lessonRaw is! Map) return;
+      final lesson = lessonRaw.map((k, v) => MapEntry('$k', v));
+      final id = (lesson['id'] ?? '').toString().trim();
+      if (id.isEmpty) return;
+      final number = CourseFeedbackService.asInt(
+        lesson['sessionNumber'] ?? lesson['lessonNumber'] ?? lesson['order'],
+      );
+      out[id] = _RecordedLessonMeta(
+        id: id,
+        title: (lesson['title'] ?? '').toString().trim(),
+        sessionNumber: number > 0 ? number : fallbackNumber,
+        hasVideo: (lesson['videoUrl'] ?? '').toString().trim().isNotEmpty,
+      );
+    }
+
+    final modules = _mapsFrom(root['modules']);
+    if (modules.isNotEmpty) {
+      var fallbackNumber = 0;
+      for (final module in modules) {
+        for (final unit in _mapsFrom(module['units'])) {
+          for (final lesson in _mapsFrom(unit['lessons'])) {
+            fallbackNumber += 1;
+            addLesson(lesson, fallbackNumber);
+          }
+        }
+      }
+      return out;
+    }
+
+    var fallbackNumber = 0;
+    for (final unit in _mapsFrom(root['units'])) {
+      for (final session in _mapsFrom(unit['sessions'])) {
+        fallbackNumber += 1;
+        addLesson(session, fallbackNumber);
+      }
+    }
+    return out;
+  }
+
+  String _lessonLabel(String lessonId) {
+    final safeLessonId = lessonId.trim();
+    final meta = _lessonMetaById[safeLessonId];
+    if (meta == null) {
+      return 'Lesson ${safeLessonId.isEmpty ? '-' : safeLessonId}';
+    }
+
+    final title = meta.title.trim();
+    final number = meta.sessionNumber;
+    final prefix = meta.hasVideo ? 'Video' : 'Lesson';
+    if (number > 0 && title.isNotEmpty) return '$prefix $number: $title';
+    if (title.isNotEmpty) return title;
+    if (number > 0) return '$prefix $number';
+    return 'Lesson ${safeLessonId.isEmpty ? '-' : safeLessonId}';
+  }
+
+  List<_CommentGroup> _groupComments(List<LessonCommentItem> comments) {
+    final groupsByKey = <String, _CommentGroup>{};
+    for (final item in comments) {
+      final dateKey = _fmtDateKey(item.createdAt);
+      final lessonId = item.lessonId.trim();
+      final key = '$dateKey\u0000$lessonId';
+      final group = groupsByKey.putIfAbsent(
+        key,
+        () => _CommentGroup(
+          dateKey: dateKey,
+          lessonId: lessonId,
+          items: <LessonCommentItem>[],
+        ),
+      );
+      group.items.add(item);
+    }
+
+    final groups = groupsByKey.values.toList();
+    for (final group in groups) {
+      group.items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+    groups.sort((a, b) {
+      final cmp = b.latestCreatedAt.compareTo(a.latestCreatedAt);
+      if (cmp != 0) return cmp;
+      return _lessonLabel(
+        a.lessonId,
+      ).toLowerCase().compareTo(_lessonLabel(b.lessonId).toLowerCase());
+    });
+    return groups;
   }
 
   Future<void> _ensureRepliesLoaded(LessonCommentItem item) async {
@@ -655,6 +808,82 @@ class _TeacherRecordedCourseCommentsScreenState
     );
   }
 
+  Widget _commentGroupHeader(_CommentGroup group) {
+    final count = group.items.length;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFEFF6FF), Color(0xFFF8FAFC)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.video_library_rounded,
+              color: Color(0xFF1D4ED8),
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  group.dateKey,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _lessonLabel(group.lessonId),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: const Color(0xFFDBEAFE)),
+            ),
+            child: Text(
+              '$count comment${count == 1 ? '' : 's'}',
+              style: const TextStyle(
+                color: Color(0xFF1D4ED8),
+                fontWeight: FontWeight.w900,
+                fontSize: 10.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _commentCard(LessonCommentItem item, {required bool removedView}) {
     final replies = _repliesByComment[item.id] ?? const [];
     final loadingReplies = _loadingReplies.contains(item.id);
@@ -758,7 +987,7 @@ class _TeacherRecordedCourseCommentsScreenState
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            'Lesson ${item.lessonId.isEmpty ? '-' : item.lessonId}',
+                            _lessonLabel(item.lessonId),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1007,6 +1236,7 @@ class _TeacherRecordedCourseCommentsScreenState
   @override
   Widget build(BuildContext context) {
     final comments = _filteredComments;
+    final groups = _groupComments(comments);
     final removedView = _filter == _CourseCommentFilter.removed;
     final removedVisibleComments = comments.where(_isRemoved).toList();
     return Scaffold(
@@ -1208,11 +1438,18 @@ class _TeacherRecordedCourseCommentsScreenState
                           child: Text('No comments for this course yet.'),
                         )
                       : ListView.builder(
-                          itemCount: comments.length,
-                          itemBuilder: (_, index) => _commentCard(
-                            comments[index],
-                            removedView: removedView,
-                          ),
+                          itemCount: groups.length,
+                          itemBuilder: (_, index) {
+                            final group = groups[index];
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _commentGroupHeader(group),
+                                for (final item in group.items)
+                                  _commentCard(item, removedView: removedView),
+                              ],
+                            );
+                          },
                         ),
                 ),
               ],

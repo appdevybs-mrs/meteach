@@ -248,22 +248,8 @@ class CertificatePdfService {
     pw.Document doc,
   ) async {
     pw.MemoryImage? template;
-    pw.Font? playfairRegular;
-    pw.Font? playfairBold;
 
     template = await _loadPdfTemplate('assets/images/digital_cert_exam.pdf');
-    try {
-      final bytes = await rootBundle.load(
-        'assets/fonts/PlayfairDisplay-Regular.ttf',
-      );
-      playfairRegular = pw.Font.ttf(bytes);
-    } catch (_) {}
-    try {
-      final bytes = await rootBundle.load(
-        'assets/fonts/PlayfairDisplay-Bold.ttf',
-      );
-      playfairBold = pw.Font.ttf(bytes);
-    } catch (_) {}
     const double pageHeight = 842;
 
     const double learnerNameTop = 322;
@@ -317,7 +303,7 @@ class CertificatePdfService {
                 style: pw.TextStyle(
                   fontSize: 36,
                   fontWeight: pw.FontWeight.bold,
-                  font: playfairBold,
+                  font: pw.Font.helveticaBold(),
                   color: PdfColor.fromInt(0xFF111827),
                 ),
               ),
@@ -329,7 +315,7 @@ class CertificatePdfService {
                 style: pw.TextStyle(
                   fontSize: 24,
                   fontWeight: pw.FontWeight.bold,
-                  font: playfairBold,
+                  font: pw.Font.helveticaBold(),
                   color: PdfColor.fromInt(0xFF111827),
                 ),
               ),
@@ -340,7 +326,7 @@ class CertificatePdfService {
                   _fmtDate(issueDate),
                   style: pw.TextStyle(
                     fontSize: 14,
-                    font: playfairRegular,
+                    font: pw.Font.helvetica(),
                     color: PdfColor.fromInt(0xFF1F2937),
                   ),
                 ),
@@ -352,7 +338,7 @@ class CertificatePdfService {
                 text: instructor,
                 style: pw.TextStyle(
                   fontSize: 14,
-                  font: playfairBold,
+                  font: pw.Font.helveticaBold(),
                   color: PdfColor.fromInt(0xFF1F2937),
                 ),
               ),
@@ -363,7 +349,7 @@ class CertificatePdfService {
                 text: academicDirectorName,
                 style: pw.TextStyle(
                   fontSize: 14,
-                  font: playfairBold,
+                  font: pw.Font.helveticaBold(),
                   color: PdfColor.fromInt(0xFF1F2937),
                 ),
               ),
@@ -377,7 +363,7 @@ class CertificatePdfService {
                     maxLines: 2,
                     style: pw.TextStyle(
                       fontSize: 12,
-                      font: playfairRegular,
+                      font: pw.Font.helvetica(),
                       color: PdfColor.fromInt(0xFF111827),
                     ),
                   ),
@@ -503,21 +489,6 @@ class CertificatePdfService {
       'assets/images/certificate_template.pdf',
     );
 
-    pw.Font? playfairRegular;
-    pw.Font? playfairBold;
-    try {
-      final bytes = await rootBundle.load(
-        'assets/fonts/PlayfairDisplay-Regular.ttf',
-      );
-      playfairRegular = pw.Font.ttf(bytes);
-    } catch (_) {}
-    try {
-      final bytes = await rootBundle.load(
-        'assets/fonts/PlayfairDisplay-Bold.ttf',
-      );
-      playfairBold = pw.Font.ttf(bytes);
-    } catch (_) {}
-
     final issueDate = cert.createdAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(cert.createdAt)
         : DateTime.now();
@@ -554,7 +525,7 @@ class CertificatePdfService {
                     style: pw.TextStyle(
                       fontSize: 20,
                       fontWeight: pw.FontWeight.bold,
-                      font: playfairBold,
+                      font: pw.Font.helveticaBold(),
                       color: PdfColor.fromInt(0xFF111827),
                     ),
                   ),
@@ -567,7 +538,7 @@ class CertificatePdfService {
                   input.grade.toUpperCase(),
                   style: pw.TextStyle(
                     fontSize: 14,
-                    font: playfairBold,
+                    font: pw.Font.helveticaBold(),
                     color: PdfColor.fromInt(0xFFD35400),
                   ),
                 ),
@@ -579,7 +550,7 @@ class CertificatePdfService {
                   input.councilLevel,
                   style: pw.TextStyle(
                     fontSize: 14,
-                    font: playfairBold,
+                    font: pw.Font.helveticaBold(),
                     color: PdfColor.fromInt(0xFF111827),
                   ),
                 ),
@@ -591,7 +562,7 @@ class CertificatePdfService {
                   '${input.overallScore}',
                   style: pw.TextStyle(
                     fontSize: 14,
-                    font: playfairBold,
+                    font: pw.Font.helveticaBold(),
                     color: PdfColor.fromInt(0xFF111827),
                   ),
                 ),
@@ -603,7 +574,7 @@ class CertificatePdfService {
                   _fmtDate(input.examinationDate),
                   style: pw.TextStyle(
                     fontSize: 10,
-                    font: playfairRegular,
+                    font: pw.Font.helvetica(),
                     color: PdfColor.fromInt(0xFF111827),
                   ),
                 ),
@@ -615,7 +586,7 @@ class CertificatePdfService {
                   cert.cvn,
                   style: pw.TextStyle(
                     fontSize: 10,
-                    font: playfairRegular,
+                    font: pw.Font.helvetica(),
                     color: PdfColor.fromInt(0xFF111827),
                   ),
                 ),
@@ -627,7 +598,7 @@ class CertificatePdfService {
                   _fmtDate(issueDate),
                   style: pw.TextStyle(
                     fontSize: 10,
-                    font: playfairRegular,
+                    font: pw.Font.helvetica(),
                     color: PdfColor.fromInt(0xFF111827),
                   ),
                 ),
@@ -641,7 +612,7 @@ class CertificatePdfService {
                     input.directorName,
                     style: pw.TextStyle(
                       fontSize: 12,
-                      font: playfairBold,
+                      font: pw.Font.helveticaBold(),
                       color: PdfColor.fromInt(0xFF111827),
                     ),
                   ),
@@ -768,7 +739,7 @@ class CertificatePdfService {
                   left: 63,
                   top: 502,
                   child: pw.SizedBox(
-                    width: 501,
+                    width: 483,
                     child: pw.Text(
                       cert.description,
                       textAlign: pw.TextAlign.justify,
