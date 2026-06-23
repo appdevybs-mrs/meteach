@@ -631,7 +631,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   bool _sessionRequiresMaterials(_RecordedSession session) {
-    return session.materialsUrl.trim().isNotEmpty;
+    return session.materialsUrl.trim().isNotEmpty && !session.materialsHidden;
   }
 
   bool _isSessionCompleted(_RecordedSession session) {

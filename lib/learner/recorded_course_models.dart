@@ -194,6 +194,7 @@ class _RecordedSession {
     required this.sessionNumber,
     required this.videoUrl,
     required this.materialsUrl,
+    this.materialsHidden = false,
   });
 
   final String id;
@@ -203,6 +204,7 @@ class _RecordedSession {
   final int sessionNumber;
   final String videoUrl;
   final String materialsUrl;
+  final bool materialsHidden;
 
   factory _RecordedSession.fromMap(Map<String, dynamic> map) {
     return _RecordedSession(
@@ -213,6 +215,7 @@ class _RecordedSession {
       sessionNumber: _asInt(map['sessionNumber']),
       videoUrl: (map['videoUrl'] ?? '').toString(),
       materialsUrl: (map['materialsUrl'] ?? '').toString(),
+      materialsHidden: map['materialsHidden'] == true,
     );
   }
 }

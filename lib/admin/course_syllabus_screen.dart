@@ -811,6 +811,252 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     );
   }
 
+  bool get _anySessionHasHtml {
+    for (final unit in _units) {
+      for (final s in unit.sessions) {
+        if (s.materialsUrl.trim().isNotEmpty) return true;
+        if (s.homeworkUrl.trim().isNotEmpty) return true;
+      }
+    }
+    return false;
+  }
+
+  bool get _allSessionsHtmlHidden {
+    if (_units.isEmpty) return false;
+    for (final unit in _units) {
+      for (final s in unit.sessions) {
+        if (s.materialsUrl.trim().isNotEmpty && !s.materialsHidden) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  Future<void> _deleteRecordedCourseHtmlOnly() async {
+    if (!_isRecordedVariant || _recordedAssetBusy) return;
+    if (!_anySessionHasHtml) {
+      if (!mounted) return;
+      AppToast.show(context, 'No lesson HTML to delete.', type: AppToastType.info);
+      return;
+    }
+
+    final ok = await _confirmDeleteHtml();
+    if (!ok) return;
+
+    final unitIndexes = [for (int i = 0; i < _units.length; i++) i];
+    final nextUnits = [..._units];
+    final totalTargets = unitIndexes.fold<int>(0, (sum, idx) {
+      if (idx < 0 || idx >= _units.length) return sum;
+      return sum + _units[idx].sessions.length;
+    });
+
+    if (mounted) {
+      setState(() {
+        _recordedAssetBusy = true;
+        _recordedAssetDone = 0;
+        _recordedAssetTotal = totalTargets;
+        _recordedAssetLabel = 'Deleting lesson HTML...';
+      });
+    }
+    int cleared = 0;
+    int failed = 0;
+
+    try {
+      for (final unitIndex in unitIndexes) {
+        if (unitIndex < 0 || unitIndex >= nextUnits.length) continue;
+        final unit = nextUnits[unitIndex];
+        final sessions = [...unit.sessions];
+
+        for (int i = 0; i < sessions.length; i++) {
+          final s = sessions[i];
+          if (mounted) {
+            setState(() {
+              _recordedAssetLabel =
+                  'Deleting ${unit.title.isEmpty ? 'unit' : unit.title} • ${i + 1}/${sessions.length}';
+            });
+          }
+          try {
+            final htmlUrl = s.materialsUrl.trim();
+            final hwUrl = s.homeworkUrl.trim();
+
+            String? htmlRel;
+            String? hwRel;
+            if (htmlUrl.isNotEmpty) {
+              htmlRel = _SyllabusServerStorage.extractRelativePathFromUrl(htmlUrl);
+            }
+            if (hwUrl.isNotEmpty) {
+              hwRel = _SyllabusServerStorage.extractRelativePathFromUrl(hwUrl);
+            }
+
+            if (htmlRel != null && htmlRel.isNotEmpty) {
+              try {
+                await _SyllabusServerStorage.deletePath(root: 'courses', path: htmlRel);
+              } catch (e) {
+                if (!e.toString().toLowerCase().contains('item not found')) rethrow;
+              }
+            }
+            if (hwRel != null && hwRel.isNotEmpty) {
+              try {
+                await _SyllabusServerStorage.deletePath(root: 'courses', path: hwRel);
+              } catch (e) {
+                if (!e.toString().toLowerCase().contains('item not found')) rethrow;
+              }
+            }
+
+            sessions[i] = s.copyWith(
+              materialsUrl: '',
+              homeworkUrl: '',
+            );
+            cleared += 1;
+          } catch (_) {
+            failed += 1;
+          } finally {
+            if (mounted) {
+              setState(() => _recordedAssetDone += 1);
+            }
+          }
+        }
+        nextUnits[unitIndex] = unit.copyWith(sessions: sessions);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _recordedAssetBusy = false;
+          _recordedAssetLabel = '';
+        });
+      }
+    }
+
+    setState(() {
+      _units = nextUnits;
+      _rebuildLessonPresenceFromRtdb();
+    });
+    await _saveSyllabus(showToast: false);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      'HTML delete completed. Cleared: $cleared • Failed: $failed',
+      type: failed == 0 ? AppToastType.success : AppToastType.info,
+    );
+  }
+
+  Future<void> _hideUnhideRecordedCourseHtml({required bool hidden}) async {
+    if (!_isRecordedVariant || _recordedAssetBusy) return;
+
+    final label = hidden ? 'Hide' : 'Unhide';
+    final ok = await _confirm(
+      title: '$label All Lesson HTML?',
+      message: hidden
+          ? 'This will hide all lesson HTML from learners. '
+              'Files remain on the server and can be unhidden later. '
+              'Videos and course book are not affected.'
+          : 'This will make all hidden lesson HTML visible to learners again.',
+      confirmText: label,
+    );
+    if (!ok) return;
+
+    final nextUnits = _units.map((unit) {
+      final sessions = unit.sessions.map((s) {
+        if (s.materialsUrl.trim().isEmpty && s.homeworkUrl.trim().isEmpty) {
+          return s;
+        }
+        return s.copyWith(materialsHidden: hidden);
+      }).toList();
+      return unit.copyWith(sessions: sessions);
+    }).toList();
+
+    setState(() {
+      _units = nextUnits;
+    });
+    await _saveSyllabus(showToast: false);
+    if (!mounted) return;
+    AppToast.show(
+      context,
+      hidden ? 'Lesson HTML hidden from learners.' : 'Lesson HTML visible to learners.',
+      type: AppToastType.success,
+    );
+  }
+
+  Future<bool> _confirmDeleteHtml() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final typed = controller.text.trim();
+          final canDelete = typed == 'delete';
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.delete_forever, color: Colors.red.shade700, size: 24),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Delete All Lesson HTML?',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This will permanently delete all lesson HTML files from the '
+                  'server and remove their references from the syllabus.\n\n'
+                  'Videos and course book are NOT affected.\n\n'
+                  'This action cannot be undone. You will need to re-upload HTML '
+                  'files to restore lessons.',
+                  style: const TextStyle(fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Type "delete" to confirm:',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'type "delete"',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: canDelete ? () => Navigator.pop(ctx, true) : null,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
+    return confirmed ?? false;
+  }
+
   List<_RecordedBulkTarget> _buildRecordedBulkTargets(List<int> unitIndexes) {
     final targets = <_RecordedBulkTarget>[];
     for (final unitIndex in unitIndexes) {
@@ -1356,6 +1602,12 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
     if (res == null) return;
 
+    final newMaterialsUrl = res.materialsUrl.trim();
+    final newHomeworkUrl = res.homeworkUrl.trim();
+    final autoUnhide = s.materialsHidden &&
+        (newMaterialsUrl != s.materialsUrl || newHomeworkUrl != s.homeworkUrl) &&
+        (newMaterialsUrl.isNotEmpty || newHomeworkUrl.isNotEmpty);
+
     final updated = s.copyWith(
       title: res.title.trim(),
       skillType: res.skillType,
@@ -1365,10 +1617,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       durationMinutes: res.durationMinutes,
       videoUrl: res.videoUrl.trim(),
       videoThumbnailUrl: res.videoThumbnailUrl.trim(),
-      materialsUrl: res.materialsUrl.trim(),
-      homeworkUrl: res.homeworkUrl.trim(),
+      materialsUrl: newMaterialsUrl,
+      homeworkUrl: newHomeworkUrl,
       serverFolderPath: res.serverFolderPath.trim(),
       lessonFiles: res.lessonFiles,
+      materialsHidden: autoUnhide ? false : s.materialsHidden,
     );
 
     setState(() {
@@ -1497,6 +1750,60 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   : _bulkUploadRecordedCourseAssets,
               icon: const Icon(Icons.upload_file_rounded),
               color: const Color(0xFF2563EB),
+            ),
+          if (_isRecordedVariant)
+            PopupMenuButton<String>(
+              tooltip: 'Lesson HTML actions',
+              icon: const Icon(Icons.html_rounded),
+              color: const Color(0xFFEA580C),
+              enabled: !_loading && !_saving && !_recordedAssetBusy,
+              onSelected: (value) async {
+                switch (value) {
+                  case 'delete':
+                    await _deleteRecordedCourseHtmlOnly();
+                  case 'hide':
+                    await _hideUnhideRecordedCourseHtml(hidden: true);
+                  case 'unhide':
+                    await _hideUnhideRecordedCourseHtml(hidden: false);
+                }
+              },
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_forever, size: 18, color: Colors.red.shade700),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Delete All Lesson HTML',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_allSessionsHtmlHidden)
+                  PopupMenuItem(
+                    value: 'unhide',
+                    child: Row(
+                      children: [
+                        Icon(Icons.visibility, size: 18, color: Colors.orange.shade700),
+                        const SizedBox(width: 10),
+                        const Text('Unhide All Lesson HTML'),
+                      ],
+                    ),
+                  )
+                else
+                  PopupMenuItem(
+                    value: 'hide',
+                    child: Row(
+                      children: [
+                        Icon(Icons.visibility_off, size: 18, color: Colors.orange.shade700),
+                        const SizedBox(width: 10),
+                        const Text('Hide All Lesson HTML'),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           IconButton(
             tooltip: 'Check RTDB vs server',
@@ -7340,6 +7647,7 @@ class SyllabusSession {
     this.homeworkUrl = '',
     this.serverFolderPath = '',
     this.lessonFiles = const <LessonFileAsset>[],
+    this.materialsHidden = false,
   });
 
   final String id;
@@ -7357,6 +7665,7 @@ class SyllabusSession {
   final String homeworkUrl;
   final String serverFolderPath;
   final List<LessonFileAsset> lessonFiles;
+  final bool materialsHidden;
 
   SyllabusSession copyWith({
     String? title,
@@ -7373,6 +7682,7 @@ class SyllabusSession {
     String? homeworkUrl,
     String? serverFolderPath,
     List<LessonFileAsset>? lessonFiles,
+    bool? materialsHidden,
   }) {
     return SyllabusSession(
       id: id,
@@ -7390,6 +7700,7 @@ class SyllabusSession {
       homeworkUrl: homeworkUrl ?? this.homeworkUrl,
       serverFolderPath: serverFolderPath ?? this.serverFolderPath,
       lessonFiles: lessonFiles ?? this.lessonFiles,
+      materialsHidden: materialsHidden ?? this.materialsHidden,
     );
   }
 
@@ -7415,6 +7726,7 @@ class SyllabusSession {
       map['materialsUrl'] = materialsUrl;
       map['homeworkUrl'] = homeworkUrl;
       map['serverFolderPath'] = serverFolderPath;
+      map['materialsHidden'] = materialsHidden;
     }
 
     if (includeOnlineExtras) {
@@ -7467,6 +7779,7 @@ class SyllabusSession {
       homeworkUrl: (m['homeworkUrl'] ?? '').toString(),
       serverFolderPath: (m['serverFolderPath'] ?? '').toString(),
       lessonFiles: lessonFiles,
+      materialsHidden: m['materialsHidden'] == true,
     );
   }
 }
