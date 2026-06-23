@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/human_error.dart';
 import '../shared/admin_web_layout.dart';
+import '../shared/name_formatting.dart';
 
 import 'admin_learners.dart'; // LearnerEditorScreen, EditorMode, LearnerPrefill
 import '../shared/app_feedback.dart';
@@ -538,6 +539,20 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                             selectedCourseIds: {
                               if (sub.courseId.trim().isNotEmpty) sub.courseId,
                             },
+                            sourceSubscriptionId: sub.id,
+                            courseId: sub.courseId,
+                            courseTitle: sub.courseTitle,
+                            variantKey: sub.deliveryKey,
+                            variantLabel: sub.deliveryLabel,
+                            studyMode: sub.studyMode,
+                            studyModeLabel: sub.studyModeLabel,
+                            selectedFee: sub.selectedFee,
+                            originalFee: sub.originalFee,
+                            discountedFee: sub.discountedFee,
+                            promoCode: sub.promoCode,
+                            promoType: sub.promoType,
+                            promoValue: sub.promoValue,
+                            discountAmount: sub.discountAmount,
                           ),
                         ),
                       ),
@@ -810,8 +825,8 @@ class _SubscriptionCreateScreenState extends State<SubscriptionCreateScreen> {
       return;
     }
 
-    final fn = firstNameC.text.trim();
-    final ln = lastNameC.text.trim();
+    final fn = normalizePersonNamePart(firstNameC.text);
+    final ln = normalizePersonNamePart(lastNameC.text);
     final ph = phoneC.text.trim();
     final dob = dobC.text.trim();
     final email = emailC.text.trim();

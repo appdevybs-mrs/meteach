@@ -15,6 +15,7 @@ import '../shared/payment_status.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/ybs_busy_logo.dart';
+import '../shared/name_formatting.dart';
 
 import 'payment_dialog_shared.dart';
 import 'admin_payments.dart';
@@ -2483,8 +2484,21 @@ class LearnerPrefill {
     this.phone1 = '',
     this.dob = '',
     this.email = '',
-
     this.selectedCourseIds = const <String>{},
+    this.sourceSubscriptionId = '',
+    this.courseId = '',
+    this.courseTitle = '',
+    this.variantKey = '',
+    this.variantLabel = '',
+    this.studyMode = '',
+    this.studyModeLabel = '',
+    this.selectedFee,
+    this.originalFee,
+    this.discountedFee,
+    this.promoCode = '',
+    this.promoType = '',
+    this.promoValue,
+    this.discountAmount,
   });
 
   final String firstName;
@@ -2494,6 +2508,20 @@ class LearnerPrefill {
   final String dob;
   final String email;
   final Set<String> selectedCourseIds;
+  final String sourceSubscriptionId;
+  final String courseId;
+  final String courseTitle;
+  final String variantKey;
+  final String variantLabel;
+  final String studyMode;
+  final String studyModeLabel;
+  final double? selectedFee;
+  final double? originalFee;
+  final double? discountedFee;
+  final String promoCode;
+  final String promoType;
+  final double? promoValue;
+  final double? discountAmount;
 }
 
 enum LearnerGender {
@@ -2724,8 +2752,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     try {
       final isCreate = widget.mode == EditorMode.create;
 
-      final first = firstNameC.text.trim();
-      final last = lastNameC.text.trim();
+      final first = normalizePersonNamePart(firstNameC.text);
+      final last = normalizePersonNamePart(lastNameC.text);
       final email = emailC.text.trim();
       final pass = passwordC.text.trim();
 

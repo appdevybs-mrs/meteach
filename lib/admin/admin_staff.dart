@@ -14,6 +14,7 @@ import '../shared/profile_avatar.dart';
 import '../widgets/teacher_media_sheet.dart';
 import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
+import '../shared/name_formatting.dart';
 
 class AdminStaffScreen extends StatefulWidget {
   const AdminStaffScreen({super.key, this.initialSearch = ''});
@@ -2130,8 +2131,8 @@ class _StaffEditorScreenState extends State<StaffEditorScreen> {
         _serial = await _generateNextSerial();
       }
 
-      final first = firstNameC.text.trim();
-      final last = lastNameC.text.trim();
+      final first = normalizePersonNamePart(firstNameC.text);
+      final last = normalizePersonNamePart(lastNameC.text);
       final email = emailC.text.trim();
       final pass = passwordC.text.trim();
 

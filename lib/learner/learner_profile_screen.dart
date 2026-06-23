@@ -16,6 +16,7 @@ import '../shared/responsive_layout.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
+import '../shared/name_formatting.dart';
 import '../services/backend_api.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
@@ -924,10 +925,12 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       if (_uid.isEmpty) throw Exception('Missing uid');
 
       final socialLinks = _socialLinksPayload();
+      final firstName = normalizePersonNamePart(_fn.text);
+      final lastName = normalizePersonNamePart(_ln.text);
 
       final updates = <String, dynamic>{
-        'first_name': _fn.text.trim(),
-        'last_name': _ln.text.trim(),
+        'first_name': firstName,
+        'last_name': lastName,
         'phone1': _phone1.text.trim(),
         'phone2': _phone2.text.trim(),
         'dob': _dob.text.trim(),
