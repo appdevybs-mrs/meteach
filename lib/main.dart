@@ -5805,15 +5805,18 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
               runSpacing: 8,
               children: [
                 _PrettyChip(
-                  label: 'Original ${_moneyLabel(applied.originalFee)}',
+                  label:
+                      'Original ${_moneyLabel(applied.originalFee)} | السعر الأصلي ${applied.originalFee.toStringAsFixed(0)} د.ج',
                   icon: Icons.payments_rounded,
                 ),
                 _PrettyChip(
-                  label: 'Discount -${_moneyLabel(applied.discountAmount)}',
+                  label:
+                      'Discount -${_moneyLabel(applied.discountAmount)} | الخصم ${applied.discountAmount.toStringAsFixed(0)} د.ج',
                   icon: Icons.discount_rounded,
                 ),
                 _PrettyChip(
-                  label: 'Total ${_moneyLabel(_effectiveFee(option))}',
+                  label:
+                      'Total ${_moneyLabel(_effectiveFee(option))} | المجموع ${_effectiveFee(option).toStringAsFixed(0)} د.ج',
                   icon: Icons.check_circle_rounded,
                 ),
               ],
@@ -5958,7 +5961,8 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                             if (selected != null) ...[
                               _selectedDeliverySummary(selected),
                               const SizedBox(height: 10),
-                              _promoCodeBlock(selected),
+                              if (selected.promoCodes.isNotEmpty)
+                                _promoCodeBlock(selected),
                             ],
                           ],
                         ],

@@ -837,7 +837,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     if (!_isRecordedVariant || _recordedAssetBusy) return;
     if (!_anySessionHasHtml) {
       if (!mounted) return;
-      AppToast.show(context, 'No lesson HTML to delete.', type: AppToastType.info);
+      AppToast.show(
+        context,
+        'No lesson HTML to delete.',
+        type: AppToastType.info,
+      );
       return;
     }
 
@@ -883,7 +887,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
             String? htmlRel;
             String? hwRel;
             if (htmlUrl.isNotEmpty) {
-              htmlRel = _SyllabusServerStorage.extractRelativePathFromUrl(htmlUrl);
+              htmlRel = _SyllabusServerStorage.extractRelativePathFromUrl(
+                htmlUrl,
+              );
             }
             if (hwUrl.isNotEmpty) {
               hwRel = _SyllabusServerStorage.extractRelativePathFromUrl(hwUrl);
@@ -891,23 +897,28 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
             if (htmlRel != null && htmlRel.isNotEmpty) {
               try {
-                await _SyllabusServerStorage.deletePath(root: 'courses', path: htmlRel);
+                await _SyllabusServerStorage.deletePath(
+                  root: 'courses',
+                  path: htmlRel,
+                );
               } catch (e) {
-                if (!e.toString().toLowerCase().contains('item not found')) rethrow;
+                if (!e.toString().toLowerCase().contains('item not found'))
+                  rethrow;
               }
             }
             if (hwRel != null && hwRel.isNotEmpty) {
               try {
-                await _SyllabusServerStorage.deletePath(root: 'courses', path: hwRel);
+                await _SyllabusServerStorage.deletePath(
+                  root: 'courses',
+                  path: hwRel,
+                );
               } catch (e) {
-                if (!e.toString().toLowerCase().contains('item not found')) rethrow;
+                if (!e.toString().toLowerCase().contains('item not found'))
+                  rethrow;
               }
             }
 
-            sessions[i] = s.copyWith(
-              materialsUrl: '',
-              homeworkUrl: '',
-            );
+            sessions[i] = s.copyWith(materialsUrl: '', homeworkUrl: '');
             cleared += 1;
           } catch (_) {
             failed += 1;
@@ -949,8 +960,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       title: '$label All Lesson HTML?',
       message: hidden
           ? 'This will hide all lesson HTML from learners. '
-              'Files remain on the server and can be unhidden later. '
-              'Videos and course book are not affected.'
+                'Files remain on the server and can be unhidden later. '
+                'Videos and course book are not affected.'
           : 'This will make all hidden lesson HTML visible to learners again.',
       confirmText: label,
     );
@@ -973,7 +984,9 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
     if (!mounted) return;
     AppToast.show(
       context,
-      hidden ? 'Lesson HTML hidden from learners.' : 'Lesson HTML visible to learners.',
+      hidden
+          ? 'Lesson HTML hidden from learners.'
+          : 'Lesson HTML visible to learners.',
       type: AppToastType.success,
     );
   }
@@ -989,7 +1002,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
           return AlertDialog(
             title: Row(
               children: [
-                Icon(Icons.delete_forever, color: Colors.red.shade700, size: 24),
+                Icon(
+                  Icons.delete_forever,
+                  color: Colors.red.shade700,
+                  size: 24,
+                ),
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
@@ -1604,8 +1621,10 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
     final newMaterialsUrl = res.materialsUrl.trim();
     final newHomeworkUrl = res.homeworkUrl.trim();
-    final autoUnhide = s.materialsHidden &&
-        (newMaterialsUrl != s.materialsUrl || newHomeworkUrl != s.homeworkUrl) &&
+    final autoUnhide =
+        s.materialsHidden &&
+        (newMaterialsUrl != s.materialsUrl ||
+            newHomeworkUrl != s.homeworkUrl) &&
         (newMaterialsUrl.isNotEmpty || newHomeworkUrl.isNotEmpty);
 
     final updated = s.copyWith(
@@ -1734,32 +1753,19 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         iconTheme: const IconThemeData(color: Color(0xFF1A2B48)),
         actions: [
           if (_isRecordedVariant)
-            IconButton(
-              tooltip: 'Clear course assets',
-              onPressed: (_loading || _saving || _recordedAssetBusy)
-                  ? null
-                  : _clearRecordedCourseAssets,
-              icon: const Icon(Icons.delete_sweep_outlined),
-              color: const Color(0xFFDC2626),
-            ),
-          if (_isRecordedVariant)
-            IconButton(
-              tooltip: 'Bulk upload course assets',
-              onPressed: (_loading || _saving || _recordedAssetBusy)
-                  ? null
-                  : _bulkUploadRecordedCourseAssets,
-              icon: const Icon(Icons.upload_file_rounded),
-              color: const Color(0xFF2563EB),
-            ),
-          if (_isRecordedVariant)
             PopupMenuButton<String>(
-              tooltip: 'Lesson HTML actions',
-              icon: const Icon(Icons.html_rounded),
-              color: const Color(0xFFEA580C),
+              tooltip: 'More actions',
+              icon: const Icon(Icons.more_vert),
               enabled: !_loading && !_saving && !_recordedAssetBusy,
               onSelected: (value) async {
                 switch (value) {
-                  case 'delete':
+                  case 'refresh':
+                    await _refreshLessonPresenceFromServer();
+                  case 'delete_assets':
+                    await _clearRecordedCourseAssets();
+                  case 'bulk_upload':
+                    await _bulkUploadRecordedCourseAssets();
+                  case 'delete_html':
                     await _deleteRecordedCourseHtmlOnly();
                   case 'hide':
                     await _hideUnhideRecordedCourseHtml(hidden: true);
@@ -1768,11 +1774,57 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                 }
               },
               itemBuilder: (ctx) => [
-                PopupMenuItem(
-                  value: 'delete',
+                const PopupMenuItem(
+                  value: 'refresh',
                   child: Row(
                     children: [
-                      Icon(Icons.delete_forever, size: 18, color: Colors.red.shade700),
+                      Icon(Icons.refresh, size: 18),
+                      SizedBox(width: 10),
+                      Text('Refresh'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete_assets',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.delete_sweep_outlined,
+                        size: 18,
+                        color: Colors.red,
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        'Delete course assets',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'bulk_upload',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.upload_file_rounded,
+                        size: 18,
+                        color: Colors.blue,
+                      ),
+                      SizedBox(width: 10),
+                      Text('Bulk upload'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'delete_html',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.delete_forever,
+                        size: 18,
+                        color: Colors.red.shade700,
+                      ),
                       const SizedBox(width: 10),
                       const Text(
                         'Delete All Lesson HTML',
@@ -1786,7 +1838,11 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                     value: 'unhide',
                     child: Row(
                       children: [
-                        Icon(Icons.visibility, size: 18, color: Colors.orange.shade700),
+                        Icon(
+                          Icons.visibility,
+                          size: 18,
+                          color: Colors.orange.shade700,
+                        ),
                         const SizedBox(width: 10),
                         const Text('Unhide All Lesson HTML'),
                       ],
@@ -1797,21 +1853,26 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                     value: 'hide',
                     child: Row(
                       children: [
-                        Icon(Icons.visibility_off, size: 18, color: Colors.orange.shade700),
+                        Icon(
+                          Icons.visibility_off,
+                          size: 18,
+                          color: Colors.orange.shade700,
+                        ),
                         const SizedBox(width: 10),
                         const Text('Hide All Lesson HTML'),
                       ],
                     ),
                   ),
               ],
+            )
+          else
+            IconButton(
+              tooltip: 'Check RTDB vs server',
+              onPressed: (_loading || _saving || _recordedAssetBusy)
+                  ? null
+                  : _refreshLessonPresenceFromServer,
+              icon: const Icon(Icons.refresh),
             ),
-          IconButton(
-            tooltip: 'Check RTDB vs server',
-            onPressed: (_loading || _saving || _recordedAssetBusy)
-                ? null
-                : _refreshLessonPresenceFromServer,
-            icon: const Icon(Icons.refresh),
-          ),
           if (!_isRecordedVariant)
             Padding(
               padding: const EdgeInsets.only(right: 8.0),
@@ -1963,8 +2024,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                                     : () => _bulkUploadRecordedModuleAssets(
                                         group.moduleLabel,
                                       ),
-                                onEditLabel: () =>
-                                    _editModuleLabel(group),
+                                onEditLabel: () => _editModuleLabel(group),
                               ),
                               if (_isModuleExpanded(group.moduleLabel))
                                 for (final pair in group.units)

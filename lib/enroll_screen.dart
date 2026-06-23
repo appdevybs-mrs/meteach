@@ -964,15 +964,18 @@ class _EnrollScreenState extends State<EnrollScreen> {
               children: [
                 _PromoPricePill(
                   icon: Icons.payments_rounded,
-                  label: 'Original ${_moneyLabel(applied.originalFee)}',
+                  label:
+                      'Original ${_moneyLabel(applied.originalFee)} | السعر الأصلي ${applied.originalFee.toStringAsFixed(0)} د.ج',
                 ),
                 _PromoPricePill(
                   icon: Icons.discount_rounded,
-                  label: 'Discount -${_moneyLabel(applied.discountAmount)}',
+                  label:
+                      'Discount -${_moneyLabel(applied.discountAmount)} | الخصم ${applied.discountAmount.toStringAsFixed(0)} د.ج',
                 ),
                 _PromoPricePill(
                   icon: Icons.check_circle_rounded,
-                  label: 'Total ${_moneyLabel(_effectiveFee(option))}',
+                  label:
+                      'Total ${_moneyLabel(_effectiveFee(option))} | المجموع ${_effectiveFee(option).toStringAsFixed(0)} د.ج',
                 ),
               ],
             ),
@@ -1098,7 +1101,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                   effectiveFee: _effectiveFee(selected),
                                 ),
                               if (selected != null) const SizedBox(height: 12),
-                              if (selected != null) _promoCodeBlock(selected),
+                              if (selected != null &&
+                                  selected.promoCodes.isNotEmpty)
+                                _promoCodeBlock(selected),
                               if (selected != null) const SizedBox(height: 12),
                               if (selected != null)
                                 _DeliveryExplanation(option: selected),
