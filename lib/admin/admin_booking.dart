@@ -658,6 +658,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     BookingSnapshot? after,
     required List<String> learnerUids,
     String? cancelReason,
+    String? rescheduleReason,
   }) async {
     await _ensureLearnerProfiles(learnerUids);
 
@@ -675,6 +676,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         after: after,
         learnerRecipients: _learnerRecipientsFor(learnerUids),
         cancelReason: cancelReason,
+        rescheduleReason: rescheduleReason,
       ),
     );
   }
@@ -1739,6 +1741,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       return;
     }
 
+    final rescheduleReason = await _pickRescheduleReason();
+    if (rescheduleReason == null) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1866,6 +1871,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               learnerUids: [learnerUid],
             ),
             learnerUids: [learnerUid],
+            rescheduleReason: rescheduleReason,
           );
         } catch (e) {
           _toast('Booking moved, but notifications failed.');
@@ -2289,6 +2295,93 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return completer.future;
   }
 
+  Future<String?> _pickRescheduleReason() {
+    final completer = Completer<String?>();
+    showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        String selected = 'schedule_conflict';
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.schedule_rounded, color: actionOrange),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Reschedule Reason',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+            content: RadioGroup<String>(
+              groupValue: selected,
+              onChanged: (v) { if (v != null) setDialogState(() => selected = v); },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Why is this being rescheduled?',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 12),
+                  RadioListTile<String>(
+                    title: const Text('\uD83D\uDCC5 Teacher schedule conflict'),
+                    value: 'schedule_conflict',
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('\uD83D\uDC64 Student request'),
+                    value: 'student_request',
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('\uD83D\uDD04 Makeup session'),
+                    value: 'makeup',
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('\u2753 Other reason'),
+                    value: 'other',
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  completer.complete(null);
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Back'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: actionOrange,
+                ),
+                onPressed: () {
+                  completer.complete(selected);
+                  Navigator.pop(ctx);
+                },
+                icon: const Icon(Icons.schedule_rounded),
+                label: const Text('Reschedule'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    return completer.future;
+  }
+
   Future<void> _cancelWholeGroup(
     _AdminBookedSlot slot,
     BuildContext detailsSheetContext,
@@ -2443,6 +2536,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
     final chosen = await _pickRescheduleChoice(sourceSlot);
     if (chosen == null) return;
+
+    final rescheduleReason = await _pickRescheduleReason();
+    if (rescheduleReason == null) return;
+
     if (!mounted) return;
 
     final ok = await showDialog<bool>(
@@ -2570,6 +2667,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               learnerUids: sourceSlot.learnerUids,
             ),
             learnerUids: sourceSlot.learnerUids,
+            rescheduleReason: rescheduleReason,
           );
         } catch (e) {
           _toast('Group moved, but notifications failed.');

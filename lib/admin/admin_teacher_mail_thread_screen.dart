@@ -13,6 +13,10 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../services/backend_api.dart';
 import '../services/mail_consistency_service.dart';
@@ -266,6 +270,50 @@ class _AdminTeacherMailThreadScreenState
 
   bool get _selectionMode => _selectedMessageIds.isNotEmpty;
 
+  final ImagePicker _picker = ImagePicker();
+
+  final AudioPlayer _audio = AudioPlayer();
+  StreamSubscription<Duration>? _posSub;
+  StreamSubscription<Duration>? _durSub;
+  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<void>? _completeSub;
+  String? _playingUrl;
+  Duration _pos = Duration.zero;
+  Duration _dur = Duration.zero;
+  bool _isPlaying = false;
+
+  final AudioRecorder _rec = AudioRecorder();
+
+  bool _recStarting = false;
+  bool _recRecording = false;
+  bool _recUploading = false;
+
+  bool _recLocked = false;
+  bool _recCancelling = false;
+
+  bool _recPendingStop = false;
+  bool _recPendingCancel = false;
+
+  DateTime? _recStartedAt;
+  Timer? _recTicker;
+  Duration _recElapsed = Duration.zero;
+  String? _recPath;
+
+  Offset? _pressStartGlobal;
+
+  static const double _cancelDxThreshold = 110;
+  static const double _lockDyThreshold = 95;
+  static const double _lockDeadzoneDx = 45;
+
+  bool get _composerBusy =>
+      _sending || _recStarting || _recRecording || _recUploading || _fileUploading;
+
+  bool get _disableTextInput => _recStarting || _recRecording || _recUploading;
+  bool get _disableAttachActions => _composerBusy;
+  bool get _disableSendAction =>
+      _sending || _recStarting || _recRecording || _recUploading || _fileUploading;
+  bool get _disableMicAction => _composerBusy;
+
   @override
   void initState() {
     super.initState();
@@ -285,6 +333,29 @@ class _AdminTeacherMailThreadScreenState
     _listenPeerState();
     _ensureIndexForMe(); // so it appears in inbox even if empty
     unawaited(_warmSenderIdentities());
+
+    _posSub = _audio.onPositionChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _pos = d);
+    });
+
+    _durSub = _audio.onDurationChanged.listen((d) {
+      if (!mounted) return;
+      setState(() => _dur = d);
+    });
+
+    _stateSub = _audio.onPlayerStateChanged.listen((s) {
+      if (!mounted) return;
+      setState(() => _isPlaying = (s == PlayerState.playing));
+    });
+
+    _completeSub = _audio.onPlayerComplete.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _isPlaying = false;
+        _pos = _dur;
+      });
+    });
   }
 
   @override
@@ -295,6 +366,16 @@ class _AdminTeacherMailThreadScreenState
       ..removeListener(_handleMessagesScroll)
       ..dispose();
     _peerStateSub?.cancel();
+
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _stateSub?.cancel();
+    _completeSub?.cancel();
+    _audio.dispose();
+
+    _recTicker?.cancel();
+    unawaited(_rec.dispose());
+
     super.dispose();
   }
 
@@ -732,6 +813,312 @@ class _AdminTeacherMailThreadScreenState
     }
   }
 
+  Future<void> _takePhotoAndAttach() async {
+    if (_disableAttachActions) return;
+
+    try {
+      final x = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+      if (x == null) {
+        _snack('Upload was cancelled.');
+        return;
+      }
+
+      final client = MailUploadClient.defaultClient();
+      final name = x.name.isNotEmpty
+          ? x.name
+          : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      String url;
+      if (kIsWeb) {
+        final bytes = await x.readAsBytes();
+        if (bytes.isEmpty) {
+          _snack(
+            'The selected image appears to be unreadable. Please choose another image.',
+          );
+          return;
+        }
+        url = await client.uploadBytes(bytes: bytes, filename: name);
+      } else {
+        final file = File(x.path);
+        url = await client.uploadFile(file: file);
+      }
+
+      if (!mounted) return;
+      setState(() => _attachments.add({'name': name, 'url': url}));
+    } catch (e) {
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Something unexpected happened while sending the file. Please try again.',
+        ),
+      );
+    }
+  }
+
+  Future<void> _recStart(LongPressStartDetails d) async {
+    if (_disableMicAction) return;
+
+    _pressStartGlobal = d.globalPosition;
+    _recStarting = true;
+    _recRecording = true;
+    _recUploading = false;
+    _recCancelling = false;
+    _recLocked = false;
+    _recPendingStop = false;
+    _recPendingCancel = false;
+    _recElapsed = Duration.zero;
+    _recStartedAt = DateTime.now();
+    _recPath = null;
+
+    if (mounted) setState(() {});
+
+    try {
+      final ok = await _rec.hasPermission();
+      if (!ok) {
+        _snack('Microphone permission denied.');
+        _resetRecUi();
+        return;
+      }
+
+      if (kIsWeb) {
+        final webPath = 'rec_${DateTime.now().millisecondsSinceEpoch}.webm';
+        _recPath = webPath;
+
+        try {
+          await _rec.start(
+            const RecordConfig(
+              encoder: AudioEncoder.opus,
+              bitRate: 64000,
+              sampleRate: 48000,
+            ),
+            path: webPath,
+          );
+        } catch (_) {
+          final wavPath = 'rec_${DateTime.now().millisecondsSinceEpoch}.wav';
+          _recPath = wavPath;
+
+          await _rec.start(
+            const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 44100),
+            path: wavPath,
+          );
+        }
+      } else {
+        final tmp = await getTemporaryDirectory();
+        final path =
+            '${tmp.path}/rec_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        _recPath = path;
+
+        await _rec.start(
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: path,
+        );
+      }
+
+      _recTicker?.cancel();
+      _recTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        if (!mounted) return;
+        final start = _recStartedAt;
+        if (start == null) return;
+        setState(() => _recElapsed = DateTime.now().difference(start));
+      });
+
+      _recStarting = false;
+      if (mounted) setState(() {});
+
+      if (_recPendingCancel) {
+        _recPendingCancel = false;
+        await _recCancel();
+        return;
+      }
+      if (_recPendingStop && !_recLocked) {
+        _recPendingStop = false;
+        await _recStopAndSend();
+        return;
+      }
+    } catch (e) {
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'The audio recording could not start. Please try again.',
+        ),
+      );
+      _resetRecUi();
+    }
+  }
+
+  void _recMove(LongPressMoveUpdateDetails d) {
+    if (!_recRecording) return;
+    if (_recLocked) return;
+
+    final start = _pressStartGlobal;
+    if (start == null) return;
+
+    final dx = d.globalPosition.dx - start.dx;
+    final dy = d.globalPosition.dy - start.dy;
+
+    final cancel = dx <= -_cancelDxThreshold;
+    final lock = (dy <= -_lockDyThreshold) && (dx.abs() <= _lockDeadzoneDx);
+
+    if (cancel != _recCancelling || lock != _recLocked) {
+      setState(() {
+        _recCancelling = cancel;
+        _recLocked = lock;
+      });
+    }
+  }
+
+  Future<void> _recEnd(LongPressEndDetails d) async {
+    if (!_recRecording) return;
+
+    if (_recStarting) {
+      if (_recLocked) return;
+      if (_recCancelling) {
+        _recPendingCancel = true;
+      } else {
+        _recPendingStop = true;
+      }
+      return;
+    }
+
+    if (_recLocked) return;
+
+    if (_recCancelling) {
+      await _recCancel();
+      return;
+    }
+
+    await _recStopAndSend();
+  }
+
+  Future<void> _recLongPressCancel() async {
+    if (!_recRecording) return;
+    await _recCancel();
+  }
+
+  void _resetRecUi() {
+    _recTicker?.cancel();
+    _recTicker = null;
+
+    _recStarting = false;
+    _recRecording = false;
+    _recUploading = false;
+
+    _recLocked = false;
+    _recCancelling = false;
+
+    _recPendingStop = false;
+    _recPendingCancel = false;
+
+    _recStartedAt = null;
+    _recElapsed = Duration.zero;
+    _recPath = null;
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _recCancel() async {
+    try {
+      _recTicker?.cancel();
+      _recTicker = null;
+      await _rec.stop();
+    } catch (_) {}
+
+    _resetRecUi();
+  }
+
+  Future<void> _recStopAndSend() async {
+    if (_recUploading) return;
+
+    setState(() {
+      _recUploading = true;
+      _recCancelling = false;
+      _recLocked = false;
+    });
+
+    try {
+      _recTicker?.cancel();
+      _recTicker = null;
+
+      final pathOrUrl = await _rec.stop();
+      if (pathOrUrl == null || pathOrUrl.trim().isEmpty) {
+        await _recCancel();
+        return;
+      }
+
+      final client = MailUploadClient.defaultClient();
+
+      final ext = (kIsWeb && (_recPath ?? '').toLowerCase().endsWith('.wav'))
+          ? 'wav'
+          : (kIsWeb ? 'webm' : 'm4a');
+
+      final name = 'audio_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      String url;
+
+      if (kIsWeb) {
+        final resp = await http.get(Uri.parse(pathOrUrl));
+        if (resp.statusCode < 200 || resp.statusCode >= 300) {
+          throw Exception(
+            'Could not read recorded audio (HTTP ${resp.statusCode})',
+          );
+        }
+        url = await client.uploadBytes(bytes: resp.bodyBytes, filename: name);
+      } else {
+        final file = File(pathOrUrl);
+        url = await client.uploadFile(file: file);
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _recStarting = false;
+        _recRecording = false;
+        _recUploading = false;
+        _recStartedAt = null;
+        _recElapsed = Duration.zero;
+        _recPath = null;
+        _attachments.add({'name': name, 'url': url});
+      });
+
+      await _send();
+    } catch (e) {
+      _snack(
+        toHumanError(
+          e,
+          fallback: 'The audio message could not be sent. Please try again.',
+        ),
+      );
+      await _recCancel();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _recUploading = false;
+          _recStarting = false;
+          _recRecording = false;
+          _recLocked = false;
+          _recCancelling = false;
+          _recPendingStop = false;
+          _recPendingCancel = false;
+        });
+      }
+    }
+  }
+
+  String _fmtRec(Duration d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final mm = two(d.inMinutes.remainder(60));
+    final ss = two(d.inSeconds.remainder(60));
+    return '$mm:$ss';
+  }
+
   Future<void> _setSubjectIfNeeded() async {
     if (_subject.trim().isNotEmpty) return;
 
@@ -1094,6 +1481,16 @@ class _AdminTeacherMailThreadScreenState
         clean.endsWith('.avi');
   }
 
+  static bool _looksLikeAudio(String urlOrName) {
+    final s = urlOrName.toLowerCase();
+    final clean = s.split('?').first.split('#').first;
+    return clean.endsWith('.mp3') ||
+        clean.endsWith('.m4a') ||
+        clean.endsWith('.aac') ||
+        clean.endsWith('.wav') ||
+        clean.endsWith('.ogg');
+  }
+
   Future<void> _showVideoViewer(String rawUrl, {String? title}) async {
     final url = _safeNetworkUrl(rawUrl);
     if (url.isEmpty || !mounted) return;
@@ -1107,6 +1504,41 @@ class _AdminTeacherMailThreadScreenState
         child: _MailVideoViewer(url: url, title: title),
       ),
     );
+  }
+
+  Future<void> _toggleAudio(String rawUrl) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
+
+    try {
+      if (_playingUrl != null && _playingUrl != url) {
+        await _audio.stop();
+        _pos = Duration.zero;
+        _dur = Duration.zero;
+      }
+
+      if (_playingUrl == url && _isPlaying) {
+        await _audio.pause();
+        return;
+      }
+
+      _playingUrl = url;
+      await _audio.play(UrlSource(url));
+    } catch (e) {
+      _snack(
+        toHumanError(
+          e,
+          fallback:
+              'Audio playback is not available right now. Please try again.',
+        ),
+      );
+    }
+  }
+
+  Future<void> _seekAudio(Duration to) async {
+    try {
+      await _audio.seek(to);
+    } catch (_) {}
   }
 
   Future<void> _showImageViewer(String rawUrl, {String? title}) async {
@@ -1180,6 +1612,160 @@ class _AdminTeacherMailThreadScreenState
     );
   }
 
+  Widget _buildCompactAudioBubble({
+    required String name,
+    required String url,
+    required bool mine,
+  }) {
+    final active = (_playingUrl == url);
+    final dur = active ? _dur : Duration.zero;
+    final pos = active ? _pos : Duration.zero;
+
+    double progress() {
+      final msDur = dur.inMilliseconds;
+      if (msDur <= 0) return 0.0;
+      final v = pos.inMilliseconds / msDur;
+      if (v.isNaN || v.isInfinite) return 0.0;
+      return v.clamp(0.0, 1.0);
+    }
+
+    String fmt(Duration d) {
+      String two(int n) => n.toString().padLeft(2, '0');
+      final mm = two(d.inMinutes.remainder(60));
+      final ss = two(d.inSeconds.remainder(60));
+      return '$mm:$ss';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 220),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: mine
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: mine
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : const Color(0xFF243B5A).withValues(alpha: 0.08),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: () => _toggleAudio(url),
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: mine
+                        ? Colors.white.withValues(alpha: 0.16)
+                        : Colors.white.withValues(alpha: 0.78),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    (active && _isPlaying)
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    color: mine ? Colors.white : const Color(0xFF243B5A),
+                    size: 22,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                        color: mine ? Colors.white : const Color(0xFF243B5A),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: progress(),
+                        minHeight: 4,
+                        backgroundColor: mine
+                            ? Colors.white.withValues(alpha: 0.18)
+                            : const Color(0xFF243B5A).withValues(alpha: 0.10),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Text(
+                          active ? fmt(pos) : '00:00',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                            color: mine
+                                ? Colors.white.withValues(alpha: 0.82)
+                                : const Color(0xFF243B5A).withValues(alpha: 0.70),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          active && dur.inMilliseconds > 0 ? fmt(dur) : '--:--',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                            color: mine
+                                ? Colors.white.withValues(alpha: 0.82)
+                                : const Color(0xFF243B5A).withValues(alpha: 0.70),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (active && dur.inMilliseconds > 0) ...[
+                      const SizedBox(height: 2),
+                      SizedBox(
+                        height: 24,
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 2,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 6,
+                            ),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 12,
+                            ),
+                          ),
+                          child: Slider(
+                            value: pos.inMilliseconds
+                                .clamp(0, dur.inMilliseconds)
+                                .toDouble(),
+                            min: 0,
+                            max: dur.inMilliseconds.toDouble(),
+                            onChanged: (v) =>
+                                _seekAudio(Duration(milliseconds: v.toInt())),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAttachmentWidget({
     required Map<String, String> a,
     required bool mine,
@@ -1188,6 +1774,7 @@ class _AdminTeacherMailThreadScreenState
     final url = _safeNetworkUrl((a['url'] ?? '').trim());
     final isImg = _looksLikeImage(name) || _looksLikeImage(url);
     final isVid = _looksLikeVideo(name) || _looksLikeVideo(url);
+    final isAud = _looksLikeAudio(name) || _looksLikeAudio(url);
 
     Widget withDownloadAction(Widget child) {
       if (url.isEmpty) return child;
@@ -1285,6 +1872,12 @@ class _AdminTeacherMailThreadScreenState
       ));
     }
 
+    if (isAud && url.isNotEmpty) {
+      return withDownloadAction(
+        _buildCompactAudioBubble(name: name, url: url, mine: mine),
+      );
+    }
+
     return withDownloadAction(Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: InkWell(
@@ -1335,6 +1928,118 @@ class _AdminTeacherMailThreadScreenState
           const SizedBox(height: 8),
           LinearProgressIndicator(value: _fileUploadProgress),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRecordingBar() {
+    final showRecBar =
+        _recStarting || _recRecording || _recLocked || _recUploading;
+    if (!showRecBar) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.10)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.mic_rounded, color: Color(0xFFEC740A)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _recUploading
+                      ? 'Uploading audio…'
+                      : _recLocked
+                      ? 'Recording (locked)'
+                      : (_recCancelling
+                            ? 'Release to cancel'
+                            : (_recStarting ? 'Starting…' : 'Recording…')),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF243B5A).withValues(alpha: 0.9),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _fmtRec(_recElapsed),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF243B5A).withValues(alpha: 0.65),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_recUploading)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          if (!_recUploading) ...[
+            IconButton(
+              tooltip: 'Cancel',
+              onPressed: _recCancel,
+              icon: Icon(
+                Icons.close_rounded,
+                color: Colors.red.withValues(alpha: 0.85),
+              ),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF243B5A),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: _recStopAndSend,
+              child: const Text('Send'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisabledMicButton() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFF9AA6B8),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: const Icon(Icons.mic_off_rounded, color: Colors.white),
+    );
+  }
+
+  Widget _buildActiveMicButton() {
+    return GestureDetector(
+      onLongPressStart: _recStart,
+      onLongPressMoveUpdate: _recMove,
+      onLongPressEnd: _recEnd,
+      onLongPressCancel: _recLongPressCancel,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFF7C3AED),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Icon(
+          (_recRecording || _recStarting)
+              ? Icons.mic_rounded
+              : Icons.mic_none_rounded,
+          color: Colors.white,
+        ),
       ),
     );
   }
@@ -1699,6 +2404,7 @@ class _AdminTeacherMailThreadScreenState
                   child: Column(
                     children: [
                       _buildFileUploadingBar(),
+                      _buildRecordingBar(),
                       if (_attachments.isNotEmpty)
                         Align(
                           alignment: Alignment.centerLeft,
@@ -1729,8 +2435,23 @@ class _AdminTeacherMailThreadScreenState
                         child: Row(
                           children: [
                             IconButton(
+                              tooltip: 'Camera',
+                              style: IconButton.styleFrom(
+                                backgroundColor: const Color(0xFFEC740A),
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: _disableAttachActions
+                                  ? null
+                                  : _takePhotoAndAttach,
+                              icon: const Icon(Icons.photo_camera_rounded),
+                            ),
+                            IconButton(
                               tooltip: 'Attach',
-                              onPressed: (_sending || _fileUploading)
+                              style: IconButton.styleFrom(
+                                backgroundColor: const Color(0xFF1F4E79),
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: _disableAttachActions
                                   ? null
                                   : _pickAndUploadAttachment,
                               icon: const Icon(Icons.attach_file),
@@ -1740,6 +2461,7 @@ class _AdminTeacherMailThreadScreenState
                                 controller: _bodyC,
                                 minLines: 1,
                                 maxLines: 4,
+                                enabled: !_disableTextInput,
                                 decoration: const InputDecoration(
                                   hintText:
                                       'Write mail… (Ctrl/Cmd+Enter to send)',
@@ -1748,19 +2470,51 @@ class _AdminTeacherMailThreadScreenState
                               ),
                             ),
                             const SizedBox(width: 8),
-                            FilledButton(
-                              onPressed: (_sending || _fileUploading)
-                                  ? null
-                                  : _send,
-                              child: Text(
-                                _sending
-                                    ? 'Sending…'
-                                    : (_fileUploading ? 'Uploading…' : 'Send'),
-                              ),
-                            ),
+                            if (_bodyC.text.trim().isNotEmpty ||
+                                _attachments.isNotEmpty)
+                              FilledButton(
+                                onPressed: _disableSendAction
+                                    ? null
+                                    : _send,
+                                child: Text(
+                                  _sending
+                                      ? 'Sending…'
+                                      : (_fileUploading ? 'Uploading…' : 'Send'),
+                                ),
+                              )
+                            else
+                              (_disableMicAction
+                                  ? _buildDisabledMicButton()
+                                  : _buildActiveMicButton()),
                           ],
                         ),
                       ),
+                      if ((_recRecording || _recStarting) &&
+                          !_recLocked &&
+                          !_recUploading)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline_rounded,
+                                size: 16,
+                                color: Colors.black.withValues(alpha: 0.55),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Hold to record • Swipe left to cancel • Slide up to lock',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ),

@@ -59,6 +59,7 @@ class BookingCommunicationRequest {
     this.after,
     this.learnerRecipients = const <BookingRecipient>[],
     this.cancelReason,
+    this.rescheduleReason,
   });
 
   final BookingChangeAction action;
@@ -68,6 +69,7 @@ class BookingCommunicationRequest {
   final BookingSnapshot? after;
   final List<BookingRecipient> learnerRecipients;
   final String? cancelReason;
+  final String? rescheduleReason;
 }
 
 class BookingCommunicationService {
@@ -327,9 +329,12 @@ class BookingCommunicationService {
         }
       }
       case BookingChangeAction.rescheduleLearner:
-      case BookingChangeAction.rescheduleGroup:
-        return '$learnerPart in ${before.courseTitle} moved from ${before.dayKey} ${before.time} to ${after?.dayKey ?? ''} ${after?.time ?? ''}.'
+      case BookingChangeAction.rescheduleGroup: {
+        final reason = request.rescheduleReason;
+        final reasonPart = reason != null ? ' Reason: ${_rescheduleReasonText(reason)}' : '';
+        return '$learnerPart in ${before.courseTitle} moved from ${before.dayKey} ${before.time} to ${after?.dayKey ?? ''} ${after?.time ?? ''}.$reasonPart'
             .trim();
+      }
       case BookingChangeAction.changeSessionSingle:
       case BookingChangeAction.changeSessionGroup:
         return '$learnerPart in ${before.courseTitle} changed from Session ${before.sessionNo} to Session ${after?.sessionNo ?? before.sessionNo}.';
@@ -428,6 +433,9 @@ Your session has been cancelled by admin.
         break;
       case BookingChangeAction.rescheduleLearner:
       case BookingChangeAction.rescheduleGroup:
+        if (request.rescheduleReason != null) {
+          lines.add('Reason: ${_rescheduleReasonText(request.rescheduleReason!)}');
+        }
         lines.add('Status: booking rescheduled.');
         break;
       case BookingChangeAction.changeSessionSingle:
@@ -482,5 +490,14 @@ Your session has been cancelled by admin.
 
   static String _sessionLabel(int sessionNo) {
     return sessionNo <= 0 ? 'Session -' : 'Session $sessionNo';
+  }
+
+  static String _rescheduleReasonText(String reason) {
+    return switch (reason) {
+      'schedule_conflict' => 'Teacher schedule conflict',
+      'student_request' => 'Student request',
+      'makeup' => 'Makeup session',
+      _ => 'Other reason',
+    };
   }
 }

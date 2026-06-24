@@ -456,6 +456,7 @@ class SubscriptionDetailsScreen extends StatelessWidget {
   static const actionOrange = Color(0xFFF98D28);
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
+  static const green = Color(0xFF059669);
 
   final SubscriptionItem sub;
 
@@ -582,141 +583,320 @@ class SubscriptionDetailsScreen extends StatelessWidget {
       body: adminWebBodyFrame(
         context: context,
         maxWidth: 980,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: _card(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+          children: [
+            _headerCard(),
+            const SizedBox(height: 12),
+            _infoCard(
+              icon: Icons.person_rounded,
+              title: 'Personal Information',
               children: [
-                _line('Name', sub.displayName),
-                _phoneLine(context, sub.phone),
-                _line('Course', sub.courseTitle),
-                _line('Study type', sub.studyTypeDisplay),
-                _line('Gender', sub.gender),
-                _line('Date of birth', sub.dob),
-                _line('Email', sub.email),
-                _line('Study mode', sub.studyModeLabel),
-                _line(
-                  'Selected fee',
-                  sub.selectedFee == null
-                      ? ''
-                      : '${sub.selectedFee!.toStringAsFixed(0)} DA',
-                ),
-                _line(
-                  'Original fee',
-                  sub.originalFee == null
-                      ? ''
-                      : '${sub.originalFee!.toStringAsFixed(0)} DA',
-                ),
-                _line(
-                  'Discounted fee',
-                  sub.discountedFee == null
-                      ? ''
-                      : '${sub.discountedFee!.toStringAsFixed(0)} DA',
-                ),
-                _line('Promo code', sub.promoCode),
-                _line('Promo type', sub.promoType),
-                _line(
-                  'Promo value',
-                  sub.promoValue == null
-                      ? ''
-                      : sub.promoType == 'percent'
-                      ? '${sub.promoValue!.toStringAsFixed(0)}%'
-                      : '${sub.promoValue!.toStringAsFixed(0)} DA',
-                ),
-                _line(
-                  'Discount',
-                  sub.discountAmount == null
-                      ? ''
-                      : '${sub.discountAmount!.toStringAsFixed(0)} DA',
-                ),
-                _line(
-                  'Access months',
-                  sub.accessDurationMonths == null
-                      ? ''
-                      : sub.accessDurationMonths.toString(),
-                ),
-                _line('Access label', sub.accessLabel),
-                _line('Additional info', sub.additionalInfo),
-                _line('CreatedAt', formatTimestamp(sub.createdAt)),
+                _infoRow(Icons.people_alt_rounded, 'Gender', sub.gender),
+                _infoRow(Icons.cake_rounded, 'Date of birth', sub.dob),
+                if (sub.email.trim().isNotEmpty)
+                  _infoRow(Icons.email_rounded, 'Email', sub.email),
               ],
             ),
-          ),
+            const SizedBox(height: 12),
+            _infoCard(
+              icon: Icons.school_rounded,
+              title: 'Course Information',
+              children: [
+                _infoRow(Icons.book_rounded, 'Course', sub.courseTitle),
+                if (sub.studyTypeDisplay.isNotEmpty)
+                  _infoRow(
+                    Icons.delivery_dining_rounded,
+                    'Study type',
+                    sub.studyTypeDisplay,
+                  ),
+                if (sub.studyModeLabel.isNotEmpty)
+                  _infoRow(Icons.laptop_rounded, 'Study mode', sub.studyModeLabel),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _pricingCard(),
+            if (sub.accessDurationMonths != null &&
+                    sub.accessDurationMonths! > 0 ||
+                sub.accessLabel.trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _infoCard(
+                icon: Icons.vpn_key_rounded,
+                title: 'Access',
+                children: [
+                  if (sub.accessDurationMonths != null &&
+                      sub.accessDurationMonths! > 0)
+                    _infoRow(
+                      Icons.timer_rounded,
+                      'Access months',
+                      sub.accessDurationMonths.toString(),
+                    ),
+                  if (sub.accessLabel.trim().isNotEmpty)
+                    _infoRow(Icons.label_rounded, 'Access label', sub.accessLabel),
+                ],
+              ),
+            ],
+            if (sub.additionalInfo.trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              _infoCard(
+                icon: Icons.info_rounded,
+                title: 'Additional Info',
+                children: [
+                  _infoRow(Icons.notes_rounded, 'Notes', sub.additionalInfo),
+                  _infoRow(
+                    Icons.calendar_month_rounded,
+                    'Created',
+                    formatTimestamp(sub.createdAt),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
     );
   }
 
-  Widget _phoneLine(BuildContext context, String phone) {
-    final p = phone.trim();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+  // ─── Header Card ───────────────────────────────────────────────
+
+  Widget _headerCard() {
+    final initial = sub.displayName.isNotEmpty
+        ? sub.displayName[0].toUpperCase()
+        : 'S';
+
+    return _card(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(
-            width: 110,
+          CircleAvatar(
+            radius: 30,
+            backgroundColor: primaryBlue.withValues(alpha: 0.08),
             child: Text(
-              'Phone',
-              style: TextStyle(fontWeight: FontWeight.w900, color: primaryBlue),
-            ),
-          ),
-          Expanded(
-            child: InkWell(
-              onTap: p.isEmpty ? null : () => callPhone(p),
-              child: Text(
-                p.isEmpty ? '-' : p,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: p.isEmpty
-                      ? Colors.black.withValues(alpha: 0.7)
-                      : actionOrange,
-                  decoration: p.isEmpty
-                      ? TextDecoration.none
-                      : TextDecoration.underline,
-                ),
+              initial,
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
               ),
             ),
           ),
-          IconButton(
-            tooltip: 'Call',
-            icon: const Icon(Icons.call, color: actionOrange),
-            onPressed: p.isEmpty ? null : () => callPhone(p),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sub.displayName,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: primaryBlue,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (sub.phone.trim().isNotEmpty)
+                  InkWell(
+                    onTap: () => callPhone(sub.phone),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.call, size: 15, color: actionOrange),
+                          const SizedBox(width: 5),
+                          Text(
+                            sub.phone,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: actionOrange,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (sub.courseTitle.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    sub.courseTitle,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    if (sub.studyTypeDisplay.isNotEmpty)
+                      _pill(
+                        label: sub.studyTypeDisplay,
+                        bg: actionOrange.withValues(alpha: 0.1),
+                        fg: actionOrange,
+                      ),
+                    if (sub.studyModeLabel.isNotEmpty &&
+                        !sub.studyTypeDisplay.contains(sub.studyModeLabel))
+                      _pill(
+                        label: sub.studyModeLabel,
+                        bg: primaryBlue.withValues(alpha: 0.06),
+                        fg: primaryBlue,
+                      ),
+                    if (sub.promoCode.trim().isNotEmpty)
+                      _pill(
+                        label: 'Promo ${sub.promoCode}',
+                        bg: green.withValues(alpha: 0.1),
+                        fg: green,
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _line(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
+  // ─── Info Card (generic section) ───────────────────────────────
+
+  Widget _infoCard({
+    required IconData icon,
+    required String title,
+    required List<Widget> children,
+  }) {
+    return _card(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 110,
-            child: Text(
-              k,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                color: primaryBlue,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              v.trim().isEmpty ? '-' : v,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Colors.black.withValues(alpha: 0.7),
-              ),
-            ),
-          ),
+          _sectionHeader(icon, title),
+          const Divider(height: 20),
+          ...children,
         ],
       ),
     );
   }
+
+  // ─── Pricing Card ──────────────────────────────────────────────
+
+  Widget _pricingCard() {
+    final hasOriginal = sub.originalFee != null && sub.originalFee! > 0;
+    final hasDiscount = sub.discountAmount != null && sub.discountAmount! > 0;
+    final hasSelected = sub.selectedFee != null && sub.selectedFee! > 0;
+    final hasPromo = sub.promoCode.trim().isNotEmpty;
+
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(Icons.payments_rounded, 'Pricing'),
+          const Divider(height: 20),
+          if (hasOriginal)
+            _infoRow(
+              Icons.money_off_rounded,
+              'Original fee',
+              '${sub.originalFee!.toStringAsFixed(0)} DA',
+              valueStyle: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.black.withValues(alpha: 0.45),
+                decoration: hasDiscount ? TextDecoration.lineThrough : null,
+              ),
+            ),
+          if (hasDiscount)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  const SizedBox(width: 24),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '-${sub.discountAmount!.toStringAsFixed(0)} DA',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: green,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (hasPromo) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      sub.promoCode,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black.withValues(alpha: 0.35),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (hasSelected)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  const SizedBox(width: 24),
+                  Text(
+                    '${sub.selectedFee!.toStringAsFixed(0)} DA',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      color: actionOrange,
+                    ),
+                  ),
+                  if (hasPromo && sub.promoValue != null && sub.promoValue! > 0) ...[
+                    const SizedBox(width: 8),
+                    _pill(
+                      label: sub.promoType == 'percent'
+                          ? '${sub.promoValue!.toStringAsFixed(0)}% OFF'
+                          : '${sub.promoValue!.toStringAsFixed(0)} DA OFF',
+                      bg: green.withValues(alpha: 0.12),
+                      fg: green,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          if (hasPromo) ...[
+            const Divider(height: 8),
+            const SizedBox(height: 6),
+            _infoRow(Icons.local_offer_rounded, 'Promo code', sub.promoCode),
+            if (sub.promoType.isNotEmpty)
+              _infoRow(Icons.category_rounded, 'Promo type', sub.promoType),
+            _infoRow(
+              Icons.sell_rounded,
+              'Promo value',
+              sub.promoValue == null
+                  ? ''
+                  : sub.promoType == 'percent'
+                      ? '${sub.promoValue!.toStringAsFixed(0)}%'
+                      : '${sub.promoValue!.toStringAsFixed(0)} DA',
+            ),
+            if (hasDiscount)
+              _infoRow(
+                Icons.discount_rounded,
+                'Discount',
+                '${sub.discountAmount!.toStringAsFixed(0)} DA',
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ─── Shared Widget Builders ────────────────────────────────────
 
   Widget _card({required Widget child}) {
     return Container(
@@ -725,8 +905,86 @@ class SubscriptionDetailsScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: uiBorder),
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       child: child,
+    );
+  }
+
+  Widget _sectionHeader(IconData icon, String title) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: primaryBlue),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: primaryBlue,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoRow(
+    IconData icon,
+    String label,
+    String value, {
+    TextStyle? valueStyle,
+  }) {
+    final displayValue = value.trim().isEmpty ? '-' : value;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 20,
+            child: Icon(icon, size: 16, color: actionOrange.withValues(alpha: 0.7)),
+          ),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: primaryBlue,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              displayValue,
+              style: valueStyle ??
+                  TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black.withValues(alpha: 0.7),
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pill({required String label, required Color bg, required Color fg}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: fg,
+        ),
+      ),
     );
   }
 }

@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:http/http.dart' as http;
 import '../shared/app_feedback.dart';
+import '../shared/city_data.dart';
 import '../shared/human_error.dart';
 import '../shared/offline_action_guard.dart';
 import '../shared/payment_status.dart';
@@ -2582,12 +2583,26 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   late final TextEditingController passwordC;
   late final TextEditingController serialC;
   late final TextEditingController nationalIdC;
+  late final TextEditingController _countryC;
+  late final TextEditingController _cityC;
   bool _serialUnlocked = false;
 
   DateTime? _dob;
   LearnerGender? _gender;
   LearnerStatus _status = LearnerStatus.active;
   bool _saving = false;
+
+  Map<String, CityAssetMeta> _cityIndex = const {};
+  List<CityOption> _countryCities = const [];
+  Map<String, CityOption> _cityByNameLookup = const {};
+  bool _loadingCities = false;
+
+  Map<String, List<String>> _worldData = const {};
+  String _selectedCountry = '';
+  Timer? _geocodeTimer;
+
+  double? _parsedLat;
+  double? _parsedLng;
 
   @override
   void initState() {
@@ -2621,6 +2636,16 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     serialC = TextEditingController(text: initial?.serial ?? '');
     nationalIdC = TextEditingController(text: initial?.nationalIdNumber ?? '');
 
+    _countryC = TextEditingController(text: initial?.country ?? '');
+    _cityC = TextEditingController(text: initial?.city ?? '');
+
+    _selectedCountry = initial?.country ?? '';
+
+    if (initial != null) {
+      _parsedLat = initial.lat;
+      _parsedLng = initial.lng;
+    }
+
     _gender = initial?.gender;
     if (_gender == null &&
         widget.mode == EditorMode.create &&
@@ -2647,11 +2672,27 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         if (!mounted) return;
         if (serialC.text.trim().isEmpty) serialC.text = s;
       });
+      if (_countryC.text.trim().isEmpty) {
+        _countryC.text = 'Algeria';
+        _cityC.text = 'Djelfa';
+        _selectedCountry = 'Algeria';
+      }
     }
+
+    _loadWorldData().then((_) {
+      if (!mounted) return;
+      if (widget.mode == EditorMode.create && _cityC.text.trim().isNotEmpty) {
+        final city = _cityByNameLookup[_cityC.text.trim()];
+        if (city != null) {
+          _onCitySelected(city);
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _geocodeTimer?.cancel();
     firstNameC.dispose();
     lastNameC.dispose();
     dobC.dispose();
@@ -2661,6 +2702,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     passwordC.dispose();
     serialC.dispose();
     nationalIdC.dispose();
+    _countryC.dispose();
+    _cityC.dispose();
     super.dispose();
   }
 
@@ -2713,6 +2756,174 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     final next = maxNum + 1;
     final padded = next.toString().padLeft(6, '0');
     return '🎓-$padded';
+  }
+
+  // ------------------------------------------------
+  // Country / City / World data
+  // ------------------------------------------------
+
+  Future<void> _loadWorldData() async {
+    try {
+      final data = await rootBundle.loadString('assets/world_data.json');
+      final cityIndexData = await rootBundle.loadString(
+        'assets/cities_index.json',
+      );
+      final parsed = jsonDecode(data) as Map;
+      final raw = parsed['countries'] as Map;
+      final map = <String, List<String>>{};
+      raw.forEach((k, v) {
+        map[k.toString()] = (v as List).map((e) => e.toString()).toList();
+      });
+      final indexRaw = jsonDecode(cityIndexData) as Map;
+      final index = <String, CityAssetMeta>{};
+      indexRaw.forEach((k, v) {
+        if (v is Map) {
+          index[k.toString()] = CityAssetMeta.fromJson(v);
+        }
+      });
+      if (!mounted) return;
+      setState(() {
+        _worldData = map;
+        _cityIndex = index;
+      });
+      if (_selectedCountry.trim().isNotEmpty) {
+        await _loadCitiesForCountry(_selectedCountry);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadCitiesForCountry(String country) async {
+    final normalizedCountry = country.trim();
+    final meta = _cityIndex[normalizedCountry];
+    _geocodeTimer?.cancel();
+    if (meta == null) {
+      if (!mounted) return;
+      setState(() {
+        _countryCities = const [];
+        _cityByNameLookup = const {};
+        _loadingCities = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingCities = true;
+      _countryCities = const [];
+      _cityByNameLookup = const {};
+    });
+    try {
+      final raw = await rootBundle.loadString(meta.file);
+      final decoded = jsonDecode(raw) as List;
+      final cities = decoded
+          .whereType<Map>()
+          .map(CityOption.fromJson)
+          .where((c) => c.name.isNotEmpty)
+          .toList();
+      if (!mounted || _selectedCountry.trim() != normalizedCountry) return;
+      setState(() {
+        _countryCities = cities;
+        _cityByNameLookup = {for (final c in cities) c.name: c};
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _countryCities = const [];
+        _cityByNameLookup = const {};
+      });
+    } finally {
+      if (mounted && _selectedCountry.trim() == normalizedCountry) {
+        setState(() => _loadingCities = false);
+      }
+    }
+  }
+
+  List<String> get _countrySuggestions {
+    if (_countryC.text.trim().isEmpty) return _worldData.keys.toList()..sort();
+    final q = _countryC.text.trim().toLowerCase();
+    return _worldData.keys
+        .where((c) => c.toLowerCase().contains(q))
+        .take(10)
+        .toList()
+      ..sort();
+  }
+
+  void _onCountrySelected(String country) {
+    _countryC.text = country;
+    _countryC.selection = TextSelection.fromPosition(
+      TextPosition(offset: country.length),
+    );
+    if (country == _selectedCountry) return;
+    setState(() {
+      _selectedCountry = country;
+      _cityC.clear();
+      _parsedLat = null;
+      _parsedLng = null;
+    });
+    unawaited(_loadCitiesForCountry(country));
+  }
+
+  Iterable<String> _cityOptionsFor(String rawQuery) {
+    if (_countryCities.isEmpty) return const <String>[];
+    final q = CityOption.normalize(rawQuery);
+    if (q.isEmpty) {
+      return _countryCities.map((c) => c.name).toList(growable: false);
+    }
+    return _countryCities
+        .where((c) => c.matches(q))
+        .map((c) => c.name)
+        .toList(growable: false);
+  }
+
+  CityOption? _cityByName(String name) => _cityByNameLookup[name];
+
+  void _onCitySelected(CityOption city) {
+    _cityC.text = city.name;
+    _cityC.selection = TextSelection.fromPosition(
+      TextPosition(offset: city.name.length),
+    );
+    _parsedLat = city.lat;
+    _parsedLng = city.lng;
+    _geocodeTimer?.cancel();
+  }
+
+  void _onCityChanged(String value) {
+    _cityC.text = value;
+    _cityC.selection = TextSelection.fromPosition(
+      TextPosition(offset: value.length),
+    );
+    _geocodeTimer?.cancel();
+    if (value.trim().length < 2) return;
+    _scheduleGeocode();
+  }
+
+  void _scheduleGeocode() {
+    _geocodeTimer?.cancel();
+    _geocodeTimer = Timer(const Duration(milliseconds: 1200), _geocode);
+  }
+
+  Future<void> _geocode() async {
+    final city = _cityC.text.trim();
+    final country = _countryC.text.trim();
+    if (city.isEmpty || country.isEmpty) return;
+
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?q=$city,$country&format=json&limit=1',
+      );
+      final res = await http.get(
+        uri,
+        headers: {'User-Agent': 'com.appdevybs.mycertenglish'},
+      );
+      if (!mounted) return;
+      final data = jsonDecode(res.body) as List;
+      if (data.isEmpty) return;
+      final first = data[0] as Map;
+      final lat = first['lat'];
+      final lon = first['lon'];
+      if (lat != null) _parsedLat = double.tryParse(lat.toString());
+      if (lon != null) _parsedLng = double.tryParse(lon.toString());
+    } catch (_) {
+    }
   }
 
   Future<String> _createAuthUserAndGetUid({
@@ -2797,6 +3008,10 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         email: email,
         serial: serial,
         nationalIdNumber: nationalId,
+        country: _countryC.text.trim(),
+        city: _cityC.text.trim(),
+        lat: _parsedLat,
+        lng: _parsedLng,
         role: 'learner',
         status: _status,
         updatedAtMs: null,
@@ -3283,6 +3498,132 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    Autocomplete<String>(
+                      optionsBuilder: (_) => _countrySuggestions,
+                      initialValue: TextEditingValue(text: _countryC.text),
+                      fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
+                        _countryC.addListener(() {});
+                        return TextFormField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          decoration: InputDecoration(
+                            labelText: 'Country',
+                            hintText: 'Select country',
+                            filled: true,
+                            fillColor: AdminLearnersScreen.appBg,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(Icons.public_rounded),
+                          ),
+                          onChanged: (v) {
+                            if (v != _selectedCountry &&
+                                _worldData.containsKey(v)) {
+                              _onCountrySelected(v);
+                            } else {
+                              _countryC.text = v;
+                              _countryC.selection = TextSelection.fromPosition(
+                                TextPosition(offset: v.length),
+                              );
+                            }
+                          },
+                        );
+                      },
+                      onSelected: (v) {
+                        _onCountrySelected(v);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Autocomplete<String>(
+                      key: ValueKey(_selectedCountry),
+                      optionsBuilder: (value) => _cityOptionsFor(value.text),
+                      optionsViewBuilder: (ctx, onSelected, options) {
+                        return Material(
+                          elevation: 8,
+                          borderRadius: BorderRadius.circular(6),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxHeight: 240,
+                              maxWidth: 400,
+                            ),
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              itemCount: options.length,
+                              itemBuilder: (ctx, i) {
+                                final name = options.elementAt(i);
+                                final city = _cityByName(name);
+                                final subtitle = city == null
+                                    ? ''
+                                    : city.ascii != city.name
+                                        ? '${city.ascii} • ${city.lat}, ${city.lng}'
+                                        : '${city.lat}, ${city.lng}';
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  subtitle: subtitle.isNotEmpty
+                                      ? Text(
+                                          subtitle,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: const Color(
+                                              0xFF1A2B48,
+                                            ).withValues(alpha: 0.55),
+                                          ),
+                                        )
+                                      : null,
+                                  onTap: () => onSelected(name),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                      initialValue: TextEditingValue(text: _cityC.text),
+                      fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
+                        return TextFormField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          decoration: InputDecoration(
+                            labelText: 'City',
+                            hintText: 'Select or type city',
+                            filled: true,
+                            fillColor: AdminLearnersScreen.appBg,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                            prefixIcon: const Icon(Icons.location_city_rounded),
+                            suffixIcon: _loadingCities
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                          onChanged: _onCityChanged,
+                        );
+                      },
+                      onSelected: (v) {
+                        final city = _cityByName(v);
+                        if (city != null) _onCitySelected(city);
+                      },
+                    ),
+                    const SizedBox(height: 12),
                     if (isEdit)
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3527,6 +3868,10 @@ class Learner {
     required this.updatedAtMs,
     required this.profilePhoto,
     required this.profilePhotos,
+    this.country = '',
+    this.city = '',
+    this.lat,
+    this.lng,
     this.deleteAuth = false,
     this.selfDeleteDone = false,
     this.examMode = false,
@@ -3547,6 +3892,10 @@ class Learner {
   final int? updatedAtMs;
   final String profilePhoto;
   final List<String> profilePhotos;
+  final String country;
+  final String city;
+  final double? lat;
+  final double? lng;
   final bool deleteAuth;
   final bool selfDeleteDone;
   final bool examMode;
@@ -3577,6 +3926,10 @@ class Learner {
       'updatedAt': updatedAtMs,
       'profile_photo': profilePhoto,
       'profile_photos': profilePhotos,
+      'country': country,
+      'city': city,
+      'lat': lat,
+      'lng': lng,
       'deleteAuth': deleteAuth,
       'selfDeleteDone': selfDeleteDone,
       'examMode': examMode,
@@ -3608,6 +3961,10 @@ class Learner {
           .toString(),
       status: LearnerStatus.fromValue(m['status']?.toString()),
       updatedAtMs: parseInt(m['updatedAt']),
+      country: (m['country'] ?? '').toString(),
+      city: (m['city'] ?? '').toString(),
+      lat: _toDoubleOrNull(m['lat']),
+      lng: _toDoubleOrNull(m['lng']),
       profilePhoto: (m['profile_photo'] ?? '').toString().trim(),
       profilePhotos: _stringList(m['profile_photos']),
       deleteAuth:
@@ -3618,6 +3975,13 @@ class Learner {
       examMode:
           (m['examMode'] == true) || (m['examMode']?.toString() == 'true'),
     );
+  }
+
+  static double? _toDoubleOrNull(dynamic raw) {
+    if (raw is num) return raw.toDouble();
+    final s = (raw ?? '').toString().trim();
+    if (s.isEmpty) return null;
+    return double.tryParse(s);
   }
 
   static List<String> _stringList(dynamic raw) {

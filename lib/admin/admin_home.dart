@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../shared/human_error.dart';
+import '../services/backend_api.dart';
 import 'admin_contract_screen.dart';
 import 'admin_wages_screen.dart';
 import 'admin_payments.dart';
@@ -105,6 +110,10 @@ class _AdminHomeState extends State<AdminHome> {
   final TextEditingController _homeSearchController = TextEditingController();
   Map<String, bool> _receptionistWindowEnabled = const <String, bool>{};
 
+  Map<String, int> _cardUsage = <String, int>{};
+  bool _sortByUsage = true;
+  bool _usageLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +122,7 @@ class _AdminHomeState extends State<AdminHome> {
     );
     _homeSearchController.text = _homeSearch;
     _loadSavedRoleMode();
+    unawaited(_loadCardUsage());
     unawaited(_loadReceptionistWindowAccess());
     _listenToReceptionistWindowAccess();
     unawaited(WebsiteMirrorBackfillService.runOnceForAdminLogin());
@@ -152,6 +162,34 @@ class _AdminHomeState extends State<AdminHome> {
         _loadingRole = false;
       });
     }
+  }
+
+  Future<void> _loadCardUsage() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('card_usage_$uid');
+      if (raw != null) {
+        final decoded = json.decode(raw) as Map<String, dynamic>;
+        _cardUsage = decoded.map((k, v) => MapEntry(k, v as int));
+      }
+    } catch (_) {}
+    _usageLoaded = true;
+  }
+
+  Future<void> _saveCardUsage() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('card_usage_$uid', json.encode(_cardUsage));
+    } catch (_) {}
+  }
+
+  void _incrementUsage(String title) {
+    _cardUsage.update(title, (v) => v + 1, ifAbsent: () => 1);
+    unawaited(_saveCardUsage());
   }
 
   Future<void> _setRoleMode(bool isAdmin) async {
@@ -316,7 +354,10 @@ class _AdminHomeState extends State<AdminHome> {
     }) {
       return _HomeCardItem(
         title: title,
-        child: child,
+        child: Listener(
+          onPointerDown: (_) => _incrementUsage(title),
+          child: child,
+        ),
         windowKey: windowKey,
         adminOnly: adminOnly,
       );
@@ -764,6 +805,15 @@ class _AdminHomeState extends State<AdminHome> {
       ),
     ];
 
+    if (_usageLoaded) {
+      if (_sortByUsage) {
+        allCards.sort((a, b) =>
+          (_cardUsage[b.title] ?? 0).compareTo(_cardUsage[a.title] ?? 0));
+      } else {
+        allCards.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      }
+    }
+
     final q = _homeSearch.trim().toLowerCase();
     final visibleCards = allCards
         .where((c) {
@@ -1055,6 +1105,15 @@ class _AdminHomeState extends State<AdminHome> {
             ),
           ),
           actions: [
+            IconButton(
+              tooltip: _sortByUsage ? 'Sort A–Z' : 'Sort by usage',
+              icon: Icon(_sortByUsage
+                  ? Icons.sort_by_alpha
+                  : Icons.trending_up),
+              onPressed: () {
+                setState(() => _sortByUsage = !_sortByUsage);
+              },
+            ),
             IconButton(
               tooltip: _showSearch ? 'Hide search' : 'Search tools',
               icon: const Icon(Icons.search_rounded),
@@ -4380,6 +4439,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   static const actionOrange = Color(0xFFF98D28);
   static const appBg = Color(0xFFF4F7F9);
   static const uiBorder = Color(0xFFD1D9E0);
+  static const softText = Color(0xFF5E6B70);
 
   // ANDROID controllers
   final aMinVersionC = TextEditingController();
@@ -4403,6 +4463,10 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   final cAddressC = TextEditingController();
   final cAcademicDirectorC = TextEditingController();
 
+  // AVATAR state
+  List<String> _avatarUrls = [];
+  bool _uploadingAvatar = false;
+
   bool loading = true;
   bool saving = false;
 
@@ -4415,6 +4479,8 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       FirebaseDatabase.instance.ref('appConfig/Company info');
   DatabaseReference get _companyAltRoot =>
       FirebaseDatabase.instance.ref('appConfig/companyInfo');
+  DatabaseReference get _avatarRoot =>
+      FirebaseDatabase.instance.ref('appConfig/avatarPresets');
 
   String _normalizeKey(String raw) {
     return raw.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
@@ -4439,7 +4505,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   void initState() {
     super.initState();
 
-    _tabController = TabController(length: 2, vsync: this)
+    _tabController = TabController(length: 3, vsync: this)
       ..addListener(() {
         if (!_tabController.indexIsChanging && mounted) {
           setState(() => _activeTab = _tabController.index);
@@ -4616,6 +4682,13 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
       }
 
       _fillCompanyControllers(company);
+
+      final avatarSnap = await _avatarRoot.get();
+      if (avatarSnap.value is List) {
+        _avatarUrls = (avatarSnap.value as List).map((e) => e.toString()).toList();
+      } else {
+        _avatarUrls = [];
+      }
     } catch (e) {
       if (!mounted) return;
       AppToast.fromSnackBar(
@@ -4773,6 +4846,248 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
     if (!ok) return;
     await _companyRoot.remove();
     await _loadAll();
+  }
+
+  Future<void> _autosaveAvatars() async {
+    try {
+      await _avatarRoot.set(_avatarUrls);
+    } catch (_) {}
+  }
+
+  Future<void> _uploadAvatar() async {
+    if (_uploadingAvatar) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: true,
+      withData: kIsWeb,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    setState(() => _uploadingAvatar = true);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) { setState(() => _uploadingAvatar = false); return; }
+
+    int successCount = 0;
+    int failCount = 0;
+    final uploadedUrls = <String>[];
+
+    for (int i = 0; i < result.files.length; i++) {
+      if (!mounted) break;
+      final file = result.files[i];
+      try {
+        final uploadUri = await BackendApi.withAuthQuery(
+          BackendApi.uri('upload_secure.php'),
+        );
+        final request = http.MultipartRequest('POST', uploadUri)
+          ..headers['X-Requested-With'] = 'XMLHttpRequest'
+          ..fields['app_id'] = 'avatar_presets_${user.uid}';
+        await BackendApi.applyAuthToMultipart(request);
+
+        if (kIsWeb) {
+          final bytes = file.bytes;
+          if (bytes == null || bytes.isEmpty) {
+            failCount++; continue;
+          }
+          request.files.add(
+            http.MultipartFile.fromBytes('file', bytes, filename: file.name),
+          );
+        } else {
+          final path = file.path;
+          if (path == null || path.trim().isEmpty) {
+            failCount++; continue;
+          }
+          request.files.add(
+            await http.MultipartFile.fromPath('file', path, filename: file.name),
+          );
+        }
+
+        final streamed = await request.send();
+        final body = await streamed.stream.bytesToString();
+        if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+          failCount++; continue;
+        }
+        final decoded = jsonDecode(body);
+        if (decoded is! Map || decoded['success'] != true) {
+          failCount++; continue;
+        }
+        final url = (decoded['url'] ?? '').toString().trim();
+        if (url.isEmpty) { failCount++; continue; }
+        uploadedUrls.add(url);
+        successCount++;
+      } catch (_) {
+        failCount++;
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _avatarUrls = [..._avatarUrls, ...uploadedUrls];
+      _uploadingAvatar = false;
+    });
+    await _autosaveAvatars();
+
+    final msg = failCount == 0
+        ? '$successCount avatar${successCount == 1 ? '' : 's'} uploaded ✅'
+        : '$successCount uploaded, $failCount failed';
+    if (mounted) {
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(content: Text(msg)),
+      );
+    }
+  }
+
+  Future<void> _deleteAvatarFromServer(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      final segments = uri.pathSegments;
+      const knownRoots = ['courses', 'games', 'stories', 'shared_files', 'certificates'];
+      final rootIdx = segments.indexWhere((s) => knownRoots.contains(s));
+      if (rootIdx < 0) return;
+      final root = segments[rootIdx];
+      final path = segments.sublist(rootIdx + 1).join('/');
+
+      final deleteUri = await BackendApi.withAuthQuery(
+        BackendApi.uri('delete_file_secure.php'),
+      );
+      final request = http.MultipartRequest('POST', deleteUri)
+        ..fields['root'] = root
+        ..fields['path'] = path;
+      await BackendApi.applyAuthToMultipart(request);
+      await request.send();
+    } catch (_) {}
+  }
+
+  Future<void> _removeAvatar(int index) async {
+    if (index < 0 || index >= _avatarUrls.length) return;
+    final url = _avatarUrls[index];
+    final ok = await _confirm(
+      context,
+      'Remove avatar?',
+      'Delete this avatar image permanently?',
+    );
+    if (!ok) return;
+    await _deleteAvatarFromServer(url);
+    if (!mounted) return;
+    setState(() {
+      _avatarUrls = [..._avatarUrls]..removeAt(index);
+    });
+    await _autosaveAvatars();
+  }
+
+  void _moveAvatarUp(int index) {
+    if (index <= 0 || index >= _avatarUrls.length) return;
+    setState(() {
+      final list = [..._avatarUrls];
+      final temp = list[index];
+      list[index] = list[index - 1];
+      list[index - 1] = temp;
+      _avatarUrls = list;
+    });
+    _autosaveAvatars();
+  }
+
+  void _moveAvatarDown(int index) {
+    if (index < 0 || index >= _avatarUrls.length - 1) return;
+    setState(() {
+      final list = [..._avatarUrls];
+      final temp = list[index];
+      list[index] = list[index + 1];
+      list[index + 1] = temp;
+      _avatarUrls = list;
+    });
+    _autosaveAvatars();
+  }
+
+  void _showAvatarViewer(int initialIndex) {
+    if (_avatarUrls.isEmpty) return;
+    final pageController = PageController(initialPage: initialIndex);
+    int currentPage = initialIndex;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close viewer',
+      barrierColor: Colors.black,
+      pageBuilder: (ctx, anim1, anim2) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return Scaffold(
+              backgroundColor: Colors.black,
+              appBar: AppBar(
+                backgroundColor: Colors.black87,
+                iconTheme: const IconThemeData(color: Colors.white),
+                title: Text(
+                  '${currentPage + 1} / ${_avatarUrls.length}',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
+              ),
+              body: GestureDetector(
+                onTap: () => Navigator.of(ctx).pop(),
+                child: PageView.builder(
+                  controller: pageController,
+                  itemCount: _avatarUrls.length,
+                  onPageChanged: (page) {
+                    setDialogState(() => currentPage = page);
+                    _precacheAdjacentAvatars(page);
+                  },
+                  itemBuilder: (ctx, index) {
+                    final url = _avatarUrls[index];
+                    return InteractiveViewer(
+                      minScale: 1.0,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: Image.network(
+                          url,
+                          fit: BoxFit.contain,
+                          loadingBuilder: (_, child, progress) {
+                            if (progress == null) return child;
+                            return Center(
+                              child: CircularProgressIndicator(
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                    : null,
+                                color: Colors.white,
+                              ),
+                            );
+                          },
+                          errorBuilder: (_, _, _) => const Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white54,
+                            size: 64,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _precacheAdjacentAvatars(int index) {
+    if (_avatarUrls.isEmpty) return;
+    for (final offset in [-1, 1]) {
+      final idx = index + offset;
+      if (idx >= 0 && idx < _avatarUrls.length) {
+        unawaited(precacheImage(
+          NetworkImage(_avatarUrls[idx]),
+          context,
+          onError: (_, _) {},
+        ));
+      }
+    }
   }
 
   Widget _section({
@@ -4991,6 +5306,223 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
     );
   }
 
+  Widget _buildAvatarsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: uiBorder),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Avatar Presets',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  color: primaryBlue,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'These avatars are shown to learners who choose not to upload a personal photo.',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: softText,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (_avatarUrls.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: appBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: uiBorder.withValues(alpha: 0.5)),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'No avatars yet. Upload one to get started.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: softText,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: 0.85,
+                  ),
+                  itemCount: _avatarUrls.length,
+                  itemBuilder: (ctx, index) {
+                    final url = _avatarUrls[index];
+                    return GestureDetector(
+                      onTap: () => _showAvatarViewer(index),
+                      onLongPress: () => _removeAvatar(index),
+                      child: Stack(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: appBg,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: uiBorder.withValues(alpha: 0.6),
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: Image.network(
+                                    url,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => Container(
+                                      color: appBg,
+                                      child: const Icon(
+                                        Icons.broken_image_outlined,
+                                        size: 28,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Column(
+                              children: [
+                                InkWell(
+                                  onTap: index > 0
+                                      ? () => _moveAvatarUp(index)
+                                      : null,
+                                  child: Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(
+                                      color: index > 0
+                                          ? primaryBlue.withValues(alpha: 0.8)
+                                          : Colors.grey.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(
+                                      Icons.keyboard_arrow_up_rounded,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                InkWell(
+                                  onTap: index < _avatarUrls.length - 1
+                                      ? () => _moveAvatarDown(index)
+                                      : null,
+                                  child: Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(
+                                      color: index < _avatarUrls.length - 1
+                                          ? primaryBlue.withValues(alpha: 0.8)
+                                          : Colors.grey.withValues(alpha: 0.3),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 4,
+                            left: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${index + 1}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _uploadingAvatar ? null : _uploadAvatar,
+                  icon: _uploadingAvatar
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_photo_alternate_outlined),
+                  label: Text(
+                    _uploadingAvatar ? 'Uploading...' : 'Upload Avatar Images',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: primaryBlue,
+                    side: BorderSide(color: uiBorder),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: appBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: uiBorder),
+          ),
+          child: const Text(
+            'Tap to preview  •  Long-press to delete  •  Arrows to reorder\nUpload multiple JPG or PNG images at once.',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -5012,6 +5544,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
           tabs: const [
             Tab(text: 'Force Update'),
             Tab(text: 'Company Info'),
+            Tab(text: 'Avatars'),
           ],
         ),
         actions: [
@@ -5023,70 +5556,76 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
           const SizedBox(width: 6),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  onPressed: saving
-                      ? null
-                      : (_activeTab == 0 ? _deleteAll : _deleteCompany),
-                  icon: const Icon(Icons.delete_forever_rounded),
-                  label: Text(
-                    _activeTab == 0 ? 'Delete ALL' : 'Delete Company',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: actionOrange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  onPressed: saving
-                      ? null
-                      : (_activeTab == 0 ? _saveAll : _saveCompany),
-                  icon: saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+      bottomNavigationBar: _activeTab == 2
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                        )
-                      : const Icon(Icons.save_rounded),
-                  label: Text(
-                    saving
-                        ? 'Saving…'
-                        : (_activeTab == 0 ? 'Save ALL' : 'Save Company'),
-                  ),
+                        ),
+                        onPressed: saving
+                            ? null
+                            : (_activeTab == 0 ? _deleteAll : _deleteCompany),
+                        icon: const Icon(Icons.delete_forever_rounded),
+                        label: Text(
+                          _activeTab == 0 ? 'Delete ALL' : 'Delete Company',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: actionOrange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: saving
+                            ? null
+                            : (_activeTab == 0 ? _saveAll : _saveCompany),
+                        icon: saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_rounded),
+                        label: Text(
+                          saving
+                              ? 'Saving…'
+                              : (_activeTab == 0 ? 'Save ALL' : 'Save Company'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
+            ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : TabBarView(
               controller: _tabController,
-              children: [_buildForceUpdateTab(), _buildCompanyTab()],
+              children: [
+                _buildForceUpdateTab(),
+                _buildCompanyTab(),
+                _buildAvatarsTab(),
+              ],
             ),
     );
   }

@@ -308,7 +308,7 @@ class WorldGraduatesHome extends StatelessWidget {
                 Icon(Icons.public_rounded, size: 20, color: Brand.primaryBlue),
                 const SizedBox(width: 8),
                 Text(
-                  'YBS Graduates Around The World',
+                  'YBS Family and Graduates',
                   style: const TextStyle(
                     color: Brand.primaryBlue,
                     fontWeight: FontWeight.w900,
@@ -746,7 +746,7 @@ class _GraduateProfileDialog extends StatelessWidget {
                     ],
                     const SizedBox(height: 16),
                     Text(
-                      'YBS Graduate Around The World',
+                      'YBS Family and Graduates',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Brand.actionOrange,

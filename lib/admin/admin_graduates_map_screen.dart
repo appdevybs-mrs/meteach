@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import '../services/backend_api.dart';
 import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
+import '../shared/city_data.dart';
 
 class AdminGraduatesMapScreen extends StatefulWidget {
   const AdminGraduatesMapScreen({super.key});
@@ -21,12 +22,30 @@ class AdminGraduatesMapScreen extends StatefulWidget {
       _AdminGraduatesMapScreenState();
 }
 
-class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
+class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
+    with SingleTickerProviderStateMixin {
   static const _primaryBlue = Color(0xFF1A2B48);
   static const _actionOrange = Color(0xFFF98D28);
   static const _appBg = Color(0xFFF4F7F9);
   DatabaseReference get _ref =>
       FirebaseDatabase.instance.ref('graduate_world_map');
+
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   Future<void> _openEditor([_GraduateMapAdminItem? item]) async {
     await showDialog<void>(
@@ -84,173 +103,198 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen> {
         ),
         iconTheme: const IconThemeData(color: _primaryBlue),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: _actionOrange,
-                foregroundColor: Colors.white,
+          if (_tabController.index == 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: _actionOrange,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => _openEditor(),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add'),
               ),
-              onPressed: () => _openEditor(),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add'),
             ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: _actionOrange,
+          labelColor: _primaryBlue,
+          unselectedLabelColor: _primaryBlue.withValues(alpha: 0.55),
+          tabs: const [
+            Tab(text: 'Graduates'),
+            Tab(text: 'Learners'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          adminWebBodyFrame(
+            context: context,
+            maxWidth: 1100,
+            child: _buildGraduatesTab(),
+          ),
+          adminWebBodyFrame(
+            context: context,
+            maxWidth: 1100,
+            child: const _LearnersMapTab(),
           ),
         ],
       ),
-      body: adminWebBodyFrame(
-        context: context,
-        maxWidth: 1100,
-        child: StreamBuilder<DatabaseEvent>(
-          stream: _ref.onValue,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final items = _GraduateMapAdminItem.fromSnapshot(
-              snapshot.data?.snapshot.value,
-            );
-            if (items.isEmpty) {
-              return Center(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.public_rounded,
-                          size: 48,
-                          color: _primaryBlue,
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'No graduates yet.',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Add the first graduate to show on the public World tab.',
-                        ),
-                        const SizedBox(height: 16),
-                        FilledButton.icon(
-                          onPressed: () => _openEditor(),
-                          icon: const Icon(Icons.add_rounded),
-                          label: const Text('Add Graduate'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }
+    );
+  }
 
-            return ListView.separated(
-              padding: const EdgeInsets.all(14),
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return Card(
-                  color: Colors.white,
-                  elevation: 0.5,
-                  margin: EdgeInsets.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: _primaryBlue.withValues(alpha: 0.08),
-                          backgroundImage: item.photoUrl.isEmpty
-                              ? null
-                              : NetworkImage(item.photoUrl),
-                          child: item.photoUrl.isEmpty
-                              ? const Icon(Icons.person_rounded, size: 22)
-                              : null,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
+  Widget _buildGraduatesTab() {
+    return StreamBuilder<DatabaseEvent>(
+      stream: _ref.onValue,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = _GraduateMapAdminItem.fromSnapshot(
+          snapshot.data?.snapshot.value,
+        );
+        if (items.isEmpty) {
+          return Center(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.public_rounded,
+                      size: 48,
+                      color: _primaryBlue,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No graduates yet.',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Add the first graduate to show on the public World tab.',
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: () => _openEditor(),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('Add Graduate'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(14),
+          itemCount: items.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return Card(
+              color: Colors.white,
+              elevation: 0.5,
+              margin: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: _primaryBlue.withValues(alpha: 0.08),
+                      backgroundImage: item.photoUrl.isEmpty
+                          ? null
+                          : NetworkImage(item.photoUrl),
+                      child: item.photoUrl.isEmpty
+                          ? const Icon(Icons.person_rounded, size: 22)
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            item.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            '${item.city}, ${item.country}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _primaryBlue.withValues(alpha: 0.7),
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          Text(
+                            'Lat: ${item.lat}, Lng: ${item.lng}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _primaryBlue.withValues(alpha: 0.45),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
                             children: [
-                              Text(
-                                item.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 14,
-                                ),
+                              _CompactChip(
+                                label: item.active ? 'Active' : 'Hidden',
+                                color: item.active
+                                    ? Colors.green
+                                    : Colors.orange,
                               ),
-                              const SizedBox(height: 1),
-                              Text(
-                                '${item.city}, ${item.country}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: _primaryBlue.withValues(alpha: 0.7),
-                                ),
-                              ),
-                              const SizedBox(height: 1),
-                              Text(
-                                'Lat: ${item.lat}, Lng: ${item.lng}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: _primaryBlue.withValues(alpha: 0.45),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  _CompactChip(
-                                    label: item.active ? 'Active' : 'Hidden',
-                                    color: item.active
-                                        ? Colors.green
-                                        : Colors.orange,
+                              if (item.blurPhoto)
+                                const Padding(
+                                  padding: EdgeInsets.only(left: 4),
+                                  child: _CompactChip(
+                                    label: 'Blurred',
+                                    color: Colors.grey,
                                   ),
-                                  if (item.blurPhoto)
-                                    const Padding(
-                                      padding: EdgeInsets.only(left: 4),
-                                      child: _CompactChip(
-                                        label: 'Blurred',
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                ],
-                              ),
+                                ),
                             ],
                           ),
+                        ],
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Edit',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _openEditor(item),
+                          icon: const Icon(Icons.edit_rounded, size: 18),
                         ),
-                        Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'Edit',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => _openEditor(item),
-                              icon: const Icon(Icons.edit_rounded, size: 18),
-                            ),
-                            IconButton(
-                              tooltip: 'Delete',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => _delete(item),
-                              icon: const Icon(
-                                Icons.delete_rounded,
-                                size: 18,
-                                color: Colors.red,
-                              ),
-                            ),
-                          ],
+                        IconButton(
+                          tooltip: 'Delete',
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => _delete(item),
+                          icon: const Icon(
+                            Icons.delete_rounded,
+                            size: 18,
+                            color: Colors.red,
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                );
-              },
+                  ],
+                ),
+              ),
             );
           },
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -280,9 +324,9 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
 
   Timer? _geocodeTimer;
 
-  Map<String, _CityAssetMeta> _cityIndex = const {};
-  List<_CityOption> _countryCities = const [];
-  Map<String, _CityOption> _cityByNameLookup = const {};
+  Map<String, CityAssetMeta> _cityIndex = const {};
+  List<CityOption> _countryCities = const [];
+  Map<String, CityOption> _cityByNameLookup = const {};
   bool _loadingCities = false;
 
   Map<String, List<String>> _worldData = const {};
@@ -338,10 +382,10 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
         map[k.toString()] = (v as List).map((e) => e.toString()).toList();
       });
       final indexRaw = jsonDecode(cityIndexData) as Map;
-      final index = <String, _CityAssetMeta>{};
+      final index = <String, CityAssetMeta>{};
       indexRaw.forEach((k, v) {
         if (v is Map) {
-          index[k.toString()] = _CityAssetMeta.fromJson(v);
+          index[k.toString()] = CityAssetMeta.fromJson(v);
         }
       });
       if (!mounted) return;
@@ -379,7 +423,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
       final decoded = jsonDecode(raw) as List;
       final cities = decoded
           .whereType<Map>()
-          .map(_CityOption.fromJson)
+          .map(CityOption.fromJson)
           .where((c) => c.name.isNotEmpty)
           .toList();
       if (!mounted || _selectedCountry.trim() != normalizedCountry) return;
@@ -554,7 +598,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
     _scheduleGeocode();
   }
 
-  void _onCitySelected(_CityOption city) {
+  void _onCitySelected(CityOption city) {
     _cityC.text = city.name;
     _cityC.selection = TextSelection.fromPosition(
       TextPosition(offset: city.name.length),
@@ -566,7 +610,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
 
   Iterable<String> _cityOptionsFor(String rawQuery) {
     if (_countryCities.isEmpty) return const <String>[];
-    final q = _CityOption.normalize(rawQuery);
+    final q = CityOption.normalize(rawQuery);
     if (q.isEmpty) {
       return _countryCities.map((c) => c.name).toList(growable: false);
     }
@@ -576,7 +620,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
         .toList(growable: false);
   }
 
-  _CityOption? _cityByName(String name) => _cityByNameLookup[name];
+  CityOption? _cityByName(String name) => _cityByNameLookup[name];
 
   Future<void> _save() async {
     if (_saving || _uploading) return;
@@ -884,115 +928,7 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   }
 }
 
-class _CityAssetMeta {
-  const _CityAssetMeta({required this.file});
 
-  final String file;
-
-  factory _CityAssetMeta.fromJson(Map<dynamic, dynamic> json) {
-    return _CityAssetMeta(file: (json['file'] ?? '').toString());
-  }
-}
-
-class _CityOption {
-  _CityOption({
-    required this.name,
-    required this.ascii,
-    required this.alternates,
-    required this.lat,
-    required this.lng,
-  }) : _searchText = normalize([name, ascii, ...alternates].join(' '));
-
-  final String name;
-  final String ascii;
-  final List<String> alternates;
-  final double lat;
-  final double lng;
-  final String _searchText;
-
-  factory _CityOption.fromJson(Map<dynamic, dynamic> json) {
-    final alternatesRaw = json['alternates'];
-    return _CityOption(
-      name: (json['name'] ?? '').toString(),
-      ascii: (json['ascii'] ?? json['name'] ?? '').toString(),
-      alternates: alternatesRaw is List
-          ? alternatesRaw.map((e) => e.toString()).toList()
-          : const [],
-      lat: (json['lat'] as num).toDouble(),
-      lng: (json['lng'] as num).toDouble(),
-    );
-  }
-
-  bool matches(String normalizedQuery) => _searchText.contains(normalizedQuery);
-
-  static String normalize(String value) {
-    const accents = {
-      'á': 'a',
-      'à': 'a',
-      'â': 'a',
-      'ä': 'a',
-      'ã': 'a',
-      'å': 'a',
-      'ā': 'a',
-      'ă': 'a',
-      'ą': 'a',
-      'ç': 'c',
-      'ć': 'c',
-      'č': 'c',
-      'ď': 'd',
-      'đ': 'd',
-      'é': 'e',
-      'è': 'e',
-      'ê': 'e',
-      'ë': 'e',
-      'ē': 'e',
-      'ė': 'e',
-      'ę': 'e',
-      'ě': 'e',
-      'ğ': 'g',
-      'í': 'i',
-      'ì': 'i',
-      'î': 'i',
-      'ï': 'i',
-      'ī': 'i',
-      'ı': 'i',
-      'ł': 'l',
-      'ñ': 'n',
-      'ń': 'n',
-      'ň': 'n',
-      'ó': 'o',
-      'ò': 'o',
-      'ô': 'o',
-      'ö': 'o',
-      'õ': 'o',
-      'ø': 'o',
-      'ō': 'o',
-      'ř': 'r',
-      'ś': 's',
-      'š': 's',
-      'ş': 's',
-      'ť': 't',
-      'ú': 'u',
-      'ù': 'u',
-      'û': 'u',
-      'ü': 'u',
-      'ū': 'u',
-      'ů': 'u',
-      'ý': 'y',
-      'ÿ': 'y',
-      'ž': 'z',
-      'ź': 'z',
-      'ż': 'z',
-    };
-    final lower = value.toLowerCase().trim();
-    final out = StringBuffer();
-    for (final rune in lower.runes) {
-      final ch = String.fromCharCode(rune);
-      out.write(accents[ch] ?? ch);
-    }
-    return out.toString().replaceAll(RegExp(r'\s+'), ' ');
-  }
-}
 
 class _CompactChip extends StatelessWidget {
   const _CompactChip({required this.label, required this.color});
@@ -1071,4 +1007,322 @@ class _GraduateMapAdminItem {
     if (value is num) return value.toDouble();
     return double.tryParse((value ?? '').toString().trim());
   }
+}
+
+// ---------------------------------------------------------------------------
+// Learners Map Tab
+// ---------------------------------------------------------------------------
+
+class _LearnersMapTab extends StatefulWidget {
+  const _LearnersMapTab();
+
+  @override
+  State<_LearnersMapTab> createState() => _LearnersMapTabState();
+}
+
+class _LearnersMapTabState extends State<_LearnersMapTab> {
+  static const _primaryBlue = Color(0xFF1A2B48);
+  static const _actionOrange = Color(0xFFF98D28);
+
+  final _usersRef = FirebaseDatabase.instance.ref('users');
+  final _mapRef = FirebaseDatabase.instance.ref('graduate_world_map');
+
+  final List<_LearnerMapItem> _learners = [];
+  final Set<String> _learnerUidsOnMap = {};
+  bool _loading = true;
+
+  StreamSubscription<DatabaseEvent>? _usersSub;
+  StreamSubscription<DatabaseEvent>? _mapSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _usersSub = _usersRef.onValue.listen(_onUsersChanged);
+    _mapSub = _mapRef.onValue.listen(_onMapChanged);
+  }
+
+  @override
+  void dispose() {
+    _usersSub?.cancel();
+    _mapSub?.cancel();
+    super.dispose();
+  }
+
+  void _onUsersChanged(DatabaseEvent event) {
+    final rows = <_LearnerMapItem>[];
+    final data = event.snapshot.value;
+    if (data is Map) {
+      data.forEach((key, value) {
+        if (key == null || value == null) return;
+        if (value is Map) {
+          final uid = key.toString();
+          final m = value.map((k, v) => MapEntry(k.toString(), v));
+          final role = (m['role'] ?? '').toString().trim().toLowerCase();
+          if (role == 'learner') {
+            rows.add(_LearnerMapItem(
+              uid: uid,
+              firstName: (m['first_name'] ?? m['firstName'] ?? '').toString().trim(),
+              lastName: (m['last_name'] ?? m['lastName'] ?? '').toString().trim(),
+              photoUrl: _resolvePhoto(m),
+              country: (m['country'] ?? '').toString().trim(),
+              city: (m['city'] ?? '').toString().trim(),
+              lat: _parseDouble(m['lat']),
+              lng: _parseDouble(m['lng']),
+            ));
+          }
+        }
+      });
+    }
+    rows.sort((a, b) => a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase()));
+    if (!mounted) return;
+    setState(() {
+      _learners
+        ..clear()
+        ..addAll(rows);
+      _loading = false;
+    });
+  }
+
+  void _onMapChanged(DatabaseEvent event) {
+    final uids = <String>{};
+    final data = event.snapshot.value;
+    if (data is Map) {
+      data.forEach((key, value) {
+        if (value is Map) {
+          final lu = value['learnerUid']?.toString().trim() ?? '';
+          if (lu.isNotEmpty) uids.add(lu);
+        }
+      });
+    }
+    if (!mounted) return;
+    setState(() => _learnerUidsOnMap
+      ..clear()
+      ..addAll(uids));
+  }
+
+  String _resolvePhoto(Map<String, dynamic> m) {
+    final direct = (m['profile_photo'] ?? '').toString().trim();
+    if (direct.isNotEmpty) return direct;
+    final photos = m['profile_photos'];
+    if (photos is List) {
+      for (final item in photos) {
+        final p = item.toString().trim();
+        if (p.isNotEmpty) return p;
+      }
+    }
+    if (photos is Map) {
+      final entries = photos.entries.toList()
+        ..sort((a, b) {
+          final ai = int.tryParse(a.key.toString()) ?? 999999;
+          final bi = int.tryParse(b.key.toString()) ?? 999999;
+          return ai.compareTo(bi);
+        });
+      for (final e in entries) {
+        final p = e.value.toString().trim();
+        if (p.isNotEmpty) return p;
+      }
+    }
+    return '';
+  }
+
+  static double? _parseDouble(dynamic raw) {
+    if (raw is num) return raw.toDouble();
+    final s = (raw ?? '').toString().trim();
+    if (s.isEmpty) return null;
+    return double.tryParse(s);
+  }
+
+  String _mapName(_LearnerMapItem l) {
+    final f = l.firstName.trim();
+    final ln = l.lastName.trim();
+    if (ln.isEmpty) return f;
+    return '$f ${ln[0].toUpperCase()}';
+  }
+
+  Future<void> _addToMap(_LearnerMapItem learner) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final country = learner.country.isNotEmpty ? learner.country : 'Algeria';
+    final city = learner.city.isNotEmpty ? learner.city : 'Djelfa';
+    final lat = learner.lat ?? 34.6708;
+    final lng = learner.lng ?? 3.2632;
+
+    try {
+      final ref = FirebaseDatabase.instance.ref('graduate_world_map').push();
+      await ref.set({
+        'name': _mapName(learner),
+        'photoUrl': learner.photoUrl,
+        'country': country,
+        'city': city,
+        'lat': lat,
+        'lng': lng,
+        'active': true,
+        'blurPhoto': false,
+        'learnerUid': learner.uid,
+        'createdAt': ServerValue.timestamp,
+        'createdByUid': user.uid,
+        'updatedAt': ServerValue.timestamp,
+        'updatedByUid': user.uid,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Learner added to map.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(toHumanError(e))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_learners.isEmpty) {
+      return Center(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.people_rounded,
+                  size: 48,
+                  color: _primaryBlue,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'No learners found.',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Create learners in the Learners section first.',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(14),
+      itemCount: _learners.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final learner = _learners[index];
+        final onMap = _learnerUidsOnMap.contains(learner.uid);
+        final location = [
+          if (learner.city.isNotEmpty) learner.city,
+          if (learner.country.isNotEmpty) learner.country,
+        ].join(', ');
+
+        return Card(
+          color: Colors.white,
+          elevation: 0.5,
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: _primaryBlue.withValues(alpha: 0.08),
+                  backgroundImage: learner.photoUrl.isEmpty
+                      ? null
+                      : NetworkImage(learner.photoUrl),
+                  child: learner.photoUrl.isEmpty
+                      ? const Icon(Icons.person_rounded, size: 22)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${learner.firstName} ${learner.lastName}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                        ),
+                      ),
+                      if (location.isNotEmpty) ...[
+                        const SizedBox(height: 1),
+                        Text(
+                          location,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _primaryBlue.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                      if (learner.lat != null && learner.lng != null) ...[
+                        const SizedBox(height: 1),
+                        Text(
+                          'Lat: ${learner.lat}, Lng: ${learner.lng}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _primaryBlue.withValues(alpha: 0.45),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      if (onMap)
+                        const _CompactChip(
+                          label: 'On Map',
+                          color: Colors.green,
+                        ),
+                    ],
+                  ),
+                ),
+                if (!onMap)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _actionOrange,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _addToMap(learner),
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('Add', style: TextStyle(fontSize: 12)),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LearnerMapItem {
+  const _LearnerMapItem({
+    required this.uid,
+    required this.firstName,
+    required this.lastName,
+    required this.photoUrl,
+    required this.country,
+    required this.city,
+    this.lat,
+    this.lng,
+  });
+
+  final String uid;
+  final String firstName;
+  final String lastName;
+  final String photoUrl;
+  final String country;
+  final String city;
+  final double? lat;
+  final double? lng;
 }

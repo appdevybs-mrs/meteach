@@ -6,8 +6,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
@@ -17,6 +19,7 @@ import '../shared/offline_action_guard.dart';
 import '../shared/watermark_background.dart';
 import '../shared/ybs_busy_logo.dart';
 import '../shared/name_formatting.dart';
+import '../shared/city_data.dart';
 import '../services/backend_api.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
@@ -113,6 +116,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   final _phone1 = TextEditingController();
   final _phone2 = TextEditingController();
   final _dob = TextEditingController();
+  final _nationalId = TextEditingController();
+  final _country = TextEditingController();
+  final _city = TextEditingController();
   final _aboutMe = TextEditingController();
   final _facebookUrl = TextEditingController();
   final _linkedinUrl = TextEditingController();
@@ -120,9 +126,21 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   final _extraSocialUrl = TextEditingController();
   String _extraSocialIcon = _socialIconOptions.first.key;
   String? _gender;
+  String? _selectedCountry;
+  String _selectedLat = '';
+  String _selectedLng = '';
 
   String? _profilePhotoUrl;
   final List<String> _photoUrls = [];
+  List<String> _avatarPresets = [];
+
+  bool _summaryExpanded = true;
+
+  Map<String, List<String>> _worldData = const {};
+  Map<String, CityAssetMeta> _cityIndex = const {};
+  List<CityOption> _countryCities = const [];
+  Map<String, CityOption> _cityByNameLookup = const {};
+  bool _loadingCities = false;
 
   String _initialFirstName = '';
   String _initialLastName = '';
@@ -130,6 +148,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   String _initialPhone2 = '';
   String _initialDob = '';
   String _initialGender = '';
+  String _initialNationalId = '';
+  String _initialCountry = '';
+  String _initialCity = '';
   String _initialAboutMe = '';
   String _initialFacebookUrl = '';
   String _initialLinkedinUrl = '';
@@ -211,7 +232,25 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   void initState() {
     super.initState();
     appThemeController.addListener(_onThemeChanged);
+    _loadSummaryPrefs();
     _load();
+  }
+
+  Future<void> _loadSummaryPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final expanded = prefs.getBool('learner_summary_expanded');
+      if (expanded != null && mounted) {
+        setState(() => _summaryExpanded = expanded);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveSummaryPrefs(bool expanded) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('learner_summary_expanded', expanded);
+    } catch (_) {}
   }
 
   @override
@@ -222,6 +261,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _phone1.dispose();
     _phone2.dispose();
     _dob.dispose();
+    _nationalId.dispose();
+    _country.dispose();
+    _city.dispose();
     _aboutMe.dispose();
     _facebookUrl.dispose();
     _linkedinUrl.dispose();
@@ -496,6 +538,295 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     setState(() {
       _profilePhotoUrl = null;
     });
+  }
+
+  Future<void> _showProfilePicturePicker() async {
+    final p = palette;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 400),
+          decoration: BoxDecoration(
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: p.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(23),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      p.primary.withValues(alpha: 0.18),
+                      p.accent.withValues(alpha: 0.14),
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: p.primary.withValues(alpha: 0.16),
+                        border: Border.all(
+                          color: p.primary.withValues(alpha: 0.34),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.add_a_photo_rounded,
+                        color: p.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Set profile picture',
+                        style: TextStyle(
+                          color: p.text,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Column(
+                  children: [
+                    _ProfilePictureOptionTile(
+                      palette: p,
+                      icon: Icons.camera_alt_rounded,
+                      title: 'Upload a photo',
+                      subtitle: 'Take or select from your device',
+                      onTap: () => Navigator.pop(ctx, 'upload'),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_avatarPresets.isNotEmpty)
+                      _ProfilePictureOptionTile(
+                        palette: p,
+                        icon: Icons.portrait_rounded,
+                        title: 'Choose an avatar',
+                        subtitle: 'Pick a preset profile image',
+                        onTap: () => Navigator.pop(ctx, 'avatar'),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: p.text,
+                      side: BorderSide(color: p.border),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    if (action == 'upload') {
+      await _pickAndUploadMainPhoto();
+    } else if (action == 'avatar') {
+      await _showAvatarPicker();
+    }
+  }
+
+  Future<void> _showAvatarPicker() async {
+    final p = palette;
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          decoration: BoxDecoration(
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: p.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(23),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      p.primary.withValues(alpha: 0.18),
+                      p.accent.withValues(alpha: 0.14),
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: p.primary.withValues(alpha: 0.16),
+                        border: Border.all(
+                          color: p.primary.withValues(alpha: 0.34),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.portrait_rounded,
+                        color: p.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Choose an Avatar',
+                        style: TextStyle(
+                          color: p.text,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1,
+                    ),
+                    itemCount: _avatarPresets.length + 1,
+                    itemBuilder: (ctx, index) {
+                      if (index == 0) {
+                        return InkWell(
+                          onTap: () => Navigator.pop(ctx, ''),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: p.soft,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: p.border),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.person_off_rounded,
+                                    color: p.primary, size: 28),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'None',
+                                  style: TextStyle(
+                                    color: p.primary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      final url = _avatarPresets[index - 1];
+                      return InkWell(
+                        onTap: () => Navigator.pop(ctx, url),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: p.border.withValues(alpha: 0.7),
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Image.network(
+                            url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              color: p.soft,
+                              child: Icon(Icons.broken_image_outlined,
+                                  color: p.primary),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: p.text,
+                      side: BorderSide(color: p.border),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      setState(() {
+        _profilePhotoUrl = selected.isEmpty ? null : selected;
+      });
+    }
   }
 
   Future<void> _removeExtraPhoto(int index) async {
@@ -825,6 +1156,131 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadWorldData() async {
+    try {
+      final data = await rootBundle.loadString('assets/world_data.json');
+      final cityIndexData = await rootBundle.loadString('assets/cities_index.json');
+      final parsed = jsonDecode(data) as Map;
+      final raw = parsed['countries'] as Map;
+      final map = <String, List<String>>{};
+      raw.forEach((k, v) {
+        map[k.toString()] = (v as List).map((e) => e.toString()).toList();
+      });
+      final indexRaw = jsonDecode(cityIndexData) as Map;
+      final index = <String, CityAssetMeta>{};
+      indexRaw.forEach((k, v) {
+        if (v is Map) {
+          index[k.toString()] = CityAssetMeta.fromJson(v);
+        }
+      });
+      if (!mounted) return;
+      setState(() {
+        _worldData = map;
+        _cityIndex = index;
+      });
+      if (_selectedCountry != null && _selectedCountry!.trim().isNotEmpty) {
+        await _loadCitiesForCountry(_selectedCountry!);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadCitiesForCountry(String country) async {
+    final normalized = country.trim();
+    final meta = _cityIndex[normalized];
+    if (meta == null) {
+      if (!mounted) return;
+      setState(() {
+        _countryCities = const [];
+        _cityByNameLookup = const {};
+        _loadingCities = false;
+      });
+      return;
+    }
+    setState(() {
+      _loadingCities = true;
+      _countryCities = const [];
+      _cityByNameLookup = const {};
+    });
+    try {
+      final raw = await rootBundle.loadString(meta.file);
+      final decoded = jsonDecode(raw) as List;
+      final cities = decoded
+          .whereType<Map>()
+          .map(CityOption.fromJson)
+          .where((c) => c.name.isNotEmpty)
+          .toList();
+      if (!mounted || _selectedCountry != normalized) return;
+      setState(() {
+        _countryCities = cities;
+        _cityByNameLookup = {for (final c in cities) c.name: c};
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _countryCities = const [];
+        _cityByNameLookup = const {};
+      });
+    } finally {
+      if (mounted && _selectedCountry == normalized) {
+        setState(() => _loadingCities = false);
+      }
+    }
+  }
+
+  Future<void> _loadAvatarPresets() async {
+    try {
+      final snap = await _db.child('appConfig/avatarPresets').get();
+      if (snap.value is List) {
+        final list = (snap.value as List).map((e) => e.toString()).toList();
+        if (mounted) setState(() => _avatarPresets = list);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _onCountrySelected(String country) async {
+    setState(() {
+      _selectedCountry = country;
+      _country.text = country;
+      _city.text = '';
+      _selectedLat = '';
+      _selectedLng = '';
+      _cityByNameLookup = const {};
+    });
+    await _loadCitiesForCountry(country);
+  }
+
+  List<String> get _countrySuggestions {
+    if (_country.text.trim().isEmpty) return _worldData.keys.toList()..sort();
+    final q = _country.text.trim().toLowerCase();
+    return _worldData.keys
+        .where((c) => c.toLowerCase().contains(q))
+        .take(10)
+        .toList()
+      ..sort();
+  }
+
+  List<String> _cityOptionsFor(String query) {
+    if (_countryCities.isEmpty) return const [];
+    final rawQuery = query.trim();
+    if (rawQuery.isEmpty) {
+      return _countryCities.map((c) => c.name).toList();
+    }
+    final q = CityOption.normalize(rawQuery);
+    return _countryCities
+        .where((c) => c.matches(q))
+        .map((c) => c.name)
+        .take(10)
+        .toList();
+  }
+
+  void _onCitySelected(CityOption city) {
+    setState(() {
+      _city.text = city.name;
+      _selectedLat = city.lat.toString();
+      _selectedLng = city.lng.toString();
+    });
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
 
@@ -839,6 +1295,10 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       _statAttendancePct = 0;
       _statLessonsCovered = 0;
       _statHomeworkPending = 0;
+      _selectedLat = '';
+      _selectedLng = '';
+      _countryCities = const [];
+      _cityByNameLookup = const {};
 
       _selectedHobbiesAr.clear();
       _selectedLearningAr.clear();
@@ -863,6 +1323,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       _phone1.text = (_user['phone1'] ?? '').toString();
       _phone2.text = (_user['phone2'] ?? '').toString();
       _dob.text = (_user['dob'] ?? '').toString();
+      _nationalId.text = (_user['national_id_number'] ?? _user['nationalIdNumber'] ?? '').toString();
+      _country.text = (_user['country'] ?? '').toString();
+      _city.text = (_user['city'] ?? '').toString();
       final rawGender = (_user['gender'] ?? '').toString().trim();
       _gender = _genderOptions.contains(rawGender) ? rawGender : null;
       _aboutMe.text = (_user['about_me'] ?? '').toString();
@@ -900,7 +1363,22 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         _photoUrls.removeRange(_maxExtraPhotos, _photoUrls.length);
       }
 
-      await _loadSmallStats();
+      _selectedCountry = _country.text.trim().isNotEmpty ? _country.text.trim() : null;
+      final lat = _user['lat'];
+      final lng = _user['lng'];
+      _selectedLat = lat != null ? lat.toString() : '';
+      _selectedLng = lng != null ? lng.toString() : '';
+
+      await Future.wait([
+        _loadSmallStats(),
+        _loadWorldData(),
+        _loadAvatarPresets(),
+      ]);
+
+      if (_selectedCountry != null && _worldData.containsKey(_selectedCountry)) {
+        await _loadCitiesForCountry(_selectedCountry!);
+      }
+
       _captureInitialState();
     } catch (e) {
       _error = toHumanError(e);
@@ -934,6 +1412,11 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         'phone1': _phone1.text.trim(),
         'phone2': _phone2.text.trim(),
         'dob': _dob.text.trim(),
+        'national_id_number': _nationalId.text.trim(),
+        'country': _country.text.trim(),
+        'city': _city.text.trim(),
+        'lat': double.tryParse(_selectedLat),
+        'lng': double.tryParse(_selectedLng),
         'gender': (_gender ?? '').trim(),
         'about_me': _aboutMe.text.trim(),
         'social_links': socialLinks,
@@ -996,6 +1479,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _initialPhone1 = _phone1.text.trim();
     _initialPhone2 = _phone2.text.trim();
     _initialDob = _dob.text.trim();
+    _initialNationalId = _nationalId.text.trim();
+    _initialCountry = _country.text.trim();
+    _initialCity = _city.text.trim();
     _initialGender = (_gender ?? '').trim();
     _initialAboutMe = _aboutMe.text.trim();
     _initialFacebookUrl = _facebookUrl.text.trim();
@@ -1017,6 +1503,9 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     if (_phone1.text.trim() != _initialPhone1) return true;
     if (_phone2.text.trim() != _initialPhone2) return true;
     if (_dob.text.trim() != _initialDob) return true;
+    if (_nationalId.text.trim() != _initialNationalId) return true;
+    if (_country.text.trim() != _initialCountry) return true;
+    if (_city.text.trim() != _initialCity) return true;
     if ((_gender ?? '').trim() != _initialGender) return true;
     if (_aboutMe.text.trim() != _initialAboutMe) return true;
     if (_facebookUrl.text.trim() != _initialFacebookUrl) return true;
@@ -2131,7 +2620,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 label: Text(
                   _uploadingMainPhoto
                       ? 'Uploading...'
-                      : (hasPhoto ? 'Replace main photo' : 'Upload main photo'),
+                      : 'Set profile picture',
                 ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
@@ -2144,7 +2633,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                 onPressed:
                     (_busy || _uploadingMainPhoto || _uploadingExtraPhotos)
                     ? null
-                    : _pickAndUploadMainPhoto,
+                    : _showProfilePicturePicker,
               ),
               if (hasPhoto)
                 OutlinedButton.icon(
@@ -2330,6 +2819,13 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       title: 'Learning Summary',
       subtitle: 'A quick view of your activity and study progress.',
       icon: Icons.insights_rounded,
+      collapsible: true,
+      isExpanded: _summaryExpanded,
+      onToggle: () {
+        final next = !_summaryExpanded;
+        setState(() => _summaryExpanded = next);
+        _saveSummaryPrefs(next);
+      },
       child: Column(
         children: [
           _smallStatTile(
@@ -2379,61 +2875,24 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         const SizedBox(height: 16),
         _SectionCard(
           palette: p,
-          title: 'Account',
-          subtitle: 'Your account credentials and access details.',
+          title: 'Account & Profile',
+          subtitle: 'Your credentials and editable profile details.',
           icon: Icons.verified_user_rounded,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _readonlyRow('Email', email),
               _readonlyRow('Serial', serial),
-              _readonlyRow('National ID', nationalIdNumber),
-              _readonlyRow('Gender', gender),
               _readonlyRow('Role', role),
               _readonlyRow('Status', status),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.lock_outline_rounded),
-                  label: const Text('Change password'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: p.primary,
-                    side: BorderSide(color: p.border.withValues(alpha: 0.9)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                  onPressed: _busy ? null : _showChangePasswordSheet,
-                ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Divider(),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _SectionCard(
-          palette: p,
-          title: 'Edit Information',
-          subtitle: 'Update your main profile details.',
-          icon: Icons.edit_note_rounded,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
               _field(
-                'First name',
-                _fn,
-                enabled: false,
-                validator: (v) =>
-                    (v ?? '').trim().isEmpty ? 'First name is required' : null,
-              ),
-              const SizedBox(height: 10),
-              _field(
-                'Last name',
-                _ln,
-                enabled: false,
-                validator: (v) =>
-                    (v ?? '').trim().isEmpty ? 'Last name is required' : null,
+                'National ID',
+                _nationalId,
+                hintText: 'Enter your national ID number',
               ),
               const SizedBox(height: 10),
               _field('Phone 1', _phone1, keyboard: TextInputType.phone),
@@ -2487,7 +2946,192 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: 10),
+              Autocomplete<String>(
+                optionsBuilder: (_) => _countrySuggestions,
+                initialValue: TextEditingValue(text: _country.text),
+                fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
+                  return TextFormField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: InputDecoration(
+                      labelText: 'Country',
+                      filled: true,
+                      fillColor: p.cardBg,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: p.accent, width: 1.4),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      if (v != _selectedCountry && _worldData.containsKey(v)) {
+                        _onCountrySelected(v);
+                      } else {
+                        _country.text = v;
+                        _country.selection = TextSelection.fromPosition(
+                          TextPosition(offset: v.length),
+                        );
+                      }
+                    },
+                  );
+                },
+                onSelected: (v) {
+                  _onCountrySelected(v);
+                },
+              ),
+              const SizedBox(height: 10),
+              Autocomplete<String>(
+                key: ValueKey(_selectedCountry),
+                optionsBuilder: (value) => _cityOptionsFor(value.text),
+                optionsViewBuilder: (ctx, onSelected, options) {
+                  return Material(
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(6),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxHeight: 240,
+                        maxWidth: 400,
+                      ),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        itemCount: options.length,
+                        itemBuilder: (ctx, i) {
+                          final name = options.elementAt(i);
+                          final city = _cityByNameLookup[name];
+                          final subtitle = city == null
+                              ? ''
+                              : city.ascii != city.name
+                                  ? '${city.ascii} • ${city.lat}, ${city.lng}'
+                                  : '${city.lat}, ${city.lng}';
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                            subtitle: subtitle.isNotEmpty
+                                ? Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: p.primary.withValues(alpha: 0.55),
+                                    ),
+                                  )
+                                : null,
+                            onTap: () => onSelected(name),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+                initialValue: TextEditingValue(text: _city.text),
+                fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
+                  return TextFormField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    decoration: InputDecoration(
+                      labelText: 'Wilaya / City',
+                      hintText: _cityIndex.containsKey(_selectedCountry)
+                          ? 'Select or type city'
+                          : 'Type city',
+                      suffixIcon: _loadingCities
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: p.cardBg,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(
+                          color: p.border.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: p.accent, width: 1.4),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      final city = _cityByNameLookup[v];
+                      if (city != null) _onCitySelected(city);
+                    },
+                  );
+                },
+                onSelected: (v) {
+                  final city = _cityByNameLookup[v];
+                  if (city != null) _onCitySelected(city);
+                },
+              ),
+              if (_selectedLat.isNotEmpty || _selectedLng.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.location_on_outlined,
+                        size: 16, color: p.primary.withValues(alpha: 0.7)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Lat: $_selectedLat, Lng: $_selectedLng',
+                      style: TextStyle(
+                        color: p.text.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.lock_outline_rounded),
+            label: const Text('Change password'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: p.primary,
+              side: BorderSide(color: p.border.withValues(alpha: 0.9)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 13),
+            ),
+            onPressed: _busy ? null : _showChangePasswordSheet,
           ),
         ),
       ],
@@ -2698,6 +3342,85 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   }
 }
 
+class _ProfilePictureOptionTile extends StatelessWidget {
+  const _ProfilePictureOptionTile({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final _ProfilePalette palette;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: p.soft.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: p.border.withValues(alpha: 0.6)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: p.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: p.primary, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: p.text,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: p.text.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: p.text.withValues(alpha: 0.3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.palette,
@@ -2705,6 +3428,9 @@ class _SectionCard extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.child,
+    this.collapsible = false,
+    this.isExpanded = true,
+    this.onToggle,
   });
 
   final _ProfilePalette palette;
@@ -2712,6 +3438,9 @@ class _SectionCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final Widget child;
+  final bool collapsible;
+  final bool isExpanded;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -2733,46 +3462,70 @@ class _SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: palette.soft,
-                    borderRadius: BorderRadius.circular(15),
+            InkWell(
+              onTap: collapsible ? onToggle : null,
+              borderRadius: BorderRadius.circular(15),
+              child: Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: palette.soft,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Icon(icon, color: palette.primary),
                   ),
-                  child: Icon(icon, color: palette.primary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          color: palette.primary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: palette.primary,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 17,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          color: palette.text.withValues(alpha: 0.64),
-                          fontWeight: FontWeight.w700,
-                          height: 1.35,
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            color: palette.text.withValues(alpha: 0.64),
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  if (collapsible)
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.0 : -0.5,
+                      duration: const Duration(milliseconds: 250),
+                      child: Icon(
+                        Icons.keyboard_arrow_up_rounded,
+                        color: palette.primary,
+                        size: 26,
+                      ),
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            child,
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: child,
+              ),
+              crossFadeState: isExpanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 250),
+              sizeCurve: Curves.easeInOut,
+            ),
           ],
         ),
       ),

@@ -529,15 +529,41 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
-  bool _isMissingProfileData(Map<String, dynamic> m) {
+  List<String> _missingProfileFields(Map<String, dynamic> m) {
     String field(String key) => (m[key] ?? '').toString().trim();
-    return field('profile_photo').isEmpty ||
-        field('first_name').isEmpty ||
-        field('last_name').isEmpty ||
-        field('phone1').isEmpty ||
-        field('dob').isEmpty ||
-        field('gender').isEmpty ||
-        field('about_me').isEmpty;
+    final missing = <String>[];
+    if (field('profile_photo').isEmpty) missing.add('Profile Photo');
+    if (field('phone1').isEmpty) missing.add('Phone Number');
+    if (field('dob').isEmpty) missing.add('Date of Birth');
+    if (field('gender').isEmpty) missing.add('Gender');
+    if (field('country').isEmpty) missing.add('Country');
+    if (field('city').isEmpty) missing.add('Wilaya / City');
+    if (field('about_me').isEmpty) missing.add('About Me');
+
+    final dob = field('dob');
+    if (dob.isNotEmpty && _ageFromDob(dob) < 19) {
+      if (field('phone2').isEmpty) missing.add('Second Phone Number');
+    }
+
+    return missing;
+  }
+
+  int _ageFromDob(String dob) {
+    try {
+      final parts = dob.split('-');
+      if (parts.length != 3) return 999;
+      final year = int.parse(parts[0]);
+      final month = int.parse(parts[1]);
+      final day = int.parse(parts[2]);
+      final now = DateTime.now();
+      int age = now.year - year;
+      if (now.month < month || (now.month == month && now.day < day)) {
+        age--;
+      }
+      return age;
+    } catch (_) {
+      return 999;
+    }
   }
 
   Future<void> _maybePromptProfileCompletion() async {
@@ -563,9 +589,10 @@ class _LearnerHomeState extends State<LearnerHome> {
       if (raw is! Map) return;
 
       final userMap = raw.map((k, v) => MapEntry(k.toString(), v));
-      if (!_isMissingProfileData(userMap) || !mounted) return;
+      final missingFields = _missingProfileFields(userMap);
+      if (missingFields.isEmpty || !mounted) return;
 
-      final action = await _showProfileCompletionDialog();
+      final action = await _showProfileCompletionDialog(missingFields);
       if (!mounted || action == null) return;
 
       if (action == _ProfilePromptAction.complete) {
@@ -578,7 +605,20 @@ class _LearnerHomeState extends State<LearnerHome> {
     } catch (_) {}
   }
 
-  Future<_ProfilePromptAction?> _showProfileCompletionDialog() {
+  Future<_ProfilePromptAction?> _showProfileCompletionDialog(
+    List<String> missingFields,
+  ) {
+    final iconColors = {
+      'Profile Photo': Icons.camera_alt_rounded,
+      'Phone Number': Icons.phone_rounded,
+      'Second Phone Number': Icons.phone_android_rounded,
+      'Date of Birth': Icons.cake_rounded,
+      'Gender': Icons.wc_rounded,
+      'Country': Icons.public_rounded,
+      'Wilaya / City': Icons.location_city_rounded,
+      'About Me': Icons.auto_stories_rounded,
+    };
+
     return showDialog<_ProfilePromptAction>(
       context: context,
       barrierDismissible: false,
@@ -587,7 +627,7 @@ class _LearnerHomeState extends State<LearnerHome> {
           elevation: 0,
           backgroundColor: Colors.transparent,
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 460),
+            constraints: const BoxConstraints(maxWidth: 460, maxHeight: 520),
             decoration: BoxDecoration(
               color: palette.cardBg,
               borderRadius: BorderRadius.circular(24),
@@ -632,7 +672,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                           ),
                         ),
                         child: Icon(
-                          Icons.workspace_premium_rounded,
+                          Icons.assignment_turned_in_rounded,
                           color: palette.primary,
                           size: 25,
                         ),
@@ -653,78 +693,127 @@ class _LearnerHomeState extends State<LearnerHome> {
                   ),
                 ),
                 Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                  child: Text(
+                    'Fill in the missing details to unlock the full experience:',
+                    style: TextStyle(
+                      color: palette.text.withValues(alpha: 0.78),
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: missingFields.length,
+                      itemBuilder: (ctx, index) {
+                        final field = missingFields[index];
+                        final icon = iconColors[field] ??
+                            Icons.fiber_manual_record_rounded;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: palette.soft.withValues(alpha: 0.4),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: palette.border.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    icon,
+                                    size: 18,
+                                    color: Colors.orange.shade700,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    field,
+                                    style: TextStyle(
+                                      color: palette.text,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.radio_button_unchecked_rounded,
+                                  size: 20,
+                                  color: palette.text.withValues(alpha: 0.3),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
-                      Text(
-                        'Add your photo and finish your details for a smoother learner experience.',
-                        style: TextStyle(
-                          color: palette.text.withValues(alpha: 0.88),
-                          height: 1.35,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'أضف صورتك وأكمل بياناتك لتحصل على تجربة تعلم أفضل.',
-                        style: TextStyle(
-                          color: palette.text.withValues(alpha: 0.84),
-                          height: 1.45,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () {
-                                Navigator.of(
-                                  ctx,
-                                ).pop(_ProfilePromptAction.remindLater);
-                              },
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: palette.text,
-                                side: BorderSide(color: palette.border),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 11,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text(
-                                'Later',
-                                style: TextStyle(fontWeight: FontWeight.w800),
-                              ),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop(
+                              _ProfilePromptAction.remindLater,
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: palette.text,
+                            side: BorderSide(color: palette.border),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: FilledButton(
-                              onPressed: () {
-                                Navigator.of(
-                                  ctx,
-                                ).pop(_ProfilePromptAction.complete);
-                              },
-                              style: FilledButton.styleFrom(
-                                backgroundColor: palette.primary,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 11,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text(
-                                'Profile',
-                                style: TextStyle(fontWeight: FontWeight.w900),
-                              ),
+                          child: const Text(
+                            'Later',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop(
+                              _ProfilePromptAction.complete,
+                            );
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: palette.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                        ],
+                          child: const Text(
+                            'Profile',
+                            style: TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                        ),
                       ),
                     ],
                   ),

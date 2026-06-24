@@ -5667,6 +5667,8 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
 
   Widget _genderPill(String value, FormFieldState<String> field) {
     final selected = field.value == value;
+    final isMale = value == 'Male';
+    final icon = isMale ? Icons.male_rounded : Icons.female_rounded;
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -5687,12 +5689,20 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
             ),
           ),
           alignment: Alignment.center,
-          child: Text(
-            value,
-            style: TextStyle(
-              color: selected ? Colors.white : Brand.primaryBlue,
-              fontWeight: FontWeight.w900,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: selected ? Colors.white : Brand.primaryBlue),
+              const SizedBox(width: 6),
+              Text(
+                value,
+                style: TextStyle(
+                  color: selected ? Colors.white : Brand.primaryBlue,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -5838,8 +5848,10 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         padding: EdgeInsets.only(bottom: bottomInset),
-        child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * 0.92,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+          ),
           child: Stack(
             children: [
               Positioned.fill(
@@ -5873,467 +5885,471 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                   size: 104,
                 ),
               ),
-              SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 104),
+              Positioned.fill(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      course.title.isEmpty ? 'Course' : course.title,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: Brand.primaryBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _hero(),
-                    const SizedBox(height: 14),
-                    _cardShell(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _sectionTitle(
-                            Icons.menu_book_rounded,
-                            '1. Choose how you want to study',
-                          ),
-                          const SizedBox(height: 8),
-                          if (deliveryOptions.isEmpty)
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Brand.appBg,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Brand.uiBorder),
-                              ),
-                              child: const Text(
-                                'No study options are available for this course right now.',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            )
-                          else ...[
-                            SizedBox(
-                              height: MediaQuery.sizeOf(context).width < 390
-                                  ? 132
-                                  : 144,
-                              child: PageView.builder(
-                                controller: _deliveryPageController,
-                                itemCount: deliveryOptions.length,
-                                onPageChanged: saving
-                                    ? null
-                                    : (index) {
-                                        setState(() {
-                                          _currentDeliveryIndex = index;
-                                          selectedDeliveryKey =
-                                              deliveryOptions[index].key;
-                                          _clearPromo();
-                                        });
-                                      },
-                                itemBuilder: (_, i) => _deliveryCard(
-                                  deliveryOptions[i],
-                                  i == _currentDeliveryIndex,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(deliveryOptions.length, (
-                                i,
-                              ) {
-                                final active = i == _currentDeliveryIndex;
-                                return AnimatedContainer(
-                                  duration: const Duration(milliseconds: 180),
-                                  width: active ? 20 : 8,
-                                  height: 8,
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: active
-                                        ? Brand.primaryBlue
-                                        : Brand.uiBorder,
-                                    borderRadius: BorderRadius.circular(99),
-                                  ),
-                                );
-                              }),
-                            ),
-                            const SizedBox(height: 12),
-                            if (selected != null) ...[
-                              _selectedDeliverySummary(selected),
-                              const SizedBox(height: 10),
-                              if (selected.promoCodes.isNotEmpty)
-                                _promoCodeBlock(selected),
-                            ],
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (showPrivateMode) ...[
-                      const SizedBox(height: 12),
-                      _cardShell(
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _sectionTitle(
-                              Icons.place_rounded,
-                              'Private lesson mode | طريقة الحصة الخاصة',
+                            Text(
+                              course.title.isEmpty ? 'Course' : course.title,
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w900,
+                                color: Brand.primaryBlue,
+                              ),
                             ),
                             const SizedBox(height: 12),
-                            DropdownButtonFormField<String>(
-                              initialValue:
-                                  normalizeStudyMode(_privateStudyMode).isEmpty
-                                  ? 'online'
-                                  : normalizeStudyMode(_privateStudyMode),
-                              decoration: _inputDeco(
-                                label: 'Choose mode | اختر الطريقة',
-                                icon: Icons.place_rounded,
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'online',
-                                  child: Text('Online | أونلاين'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'inclass',
-                                  child: Text('In-Class | حضوري'),
-                                ),
-                              ],
-                              onChanged: saving
-                                  ? null
-                                  : (v) => setState(
-                                      () => _privateStudyMode = v ?? 'online',
-                                    ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    _cardShell(
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _sectionTitle(
-                              Icons.assignment_rounded,
-                              '2. Enrollment details | بيانات التسجيل',
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: fullNameC,
-                              textInputAction: TextInputAction.next,
-                              decoration: _inputDeco(
-                                label: 'Full name | الاسم الكامل',
-                                icon: Icons.person_rounded,
-                                hint: 'Your full name | الاسم الكامل',
-                              ),
-                              validator: (v) {
-                                final s = (v ?? '').trim();
-                                if (s.isEmpty) {
-                                  return 'Please enter your full name.';
-                                }
-                                if (s.length < 3) {
-                                  return 'Name looks too short.';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              controller: phoneC,
-                              keyboardType: TextInputType.phone,
-                              textInputAction: TextInputAction.next,
-                              decoration: _inputDeco(
-                                label: 'Phone number | رقم الهاتف',
-                                icon: Icons.phone_rounded,
-                                hint: 'e.g. 0550 00 00 00',
-                              ),
-                              validator: (v) {
-                                final s = (v ?? '').trim();
-                                if (s.isEmpty) {
-                                  return 'Please enter your phone number.';
-                                }
-                                if (s.length < 8) {
-                                  return 'Phone number looks too short.';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              controller: dobC,
-                              readOnly: true,
-                              onTap: saving ? null : _pickDob,
-                              decoration: _inputDeco(
-                                label: 'Date of birth | تاريخ الميلاد',
-                                icon: Icons.cake_rounded,
-                                hint: 'YYYY-MM-DD',
-                              ),
-                              validator: (v) {
-                                final s = (v ?? '').trim();
-                                if (s.isEmpty) {
-                                  return 'Please select your date of birth.';
-                                }
-                                final p = s.split('-');
-                                if (p.length != 3) {
-                                  return 'Use format YYYY-MM-DD.';
-                                }
-                                final y = int.tryParse(p[0]);
-                                final m = int.tryParse(p[1]);
-                                final d = int.tryParse(p[2]);
-                                if (y == null || m == null || d == null) {
-                                  return 'Use format YYYY-MM-DD.';
-                                }
-                                final parsed = DateTime(y, m, d);
-                                if (parsed.year != y ||
-                                    parsed.month != m ||
-                                    parsed.day != d) {
-                                  return 'Please choose a valid date.';
-                                }
-                                if (parsed.isAfter(DateTime.now())) {
-                                  return 'Date of birth cannot be in the future.';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            FormField<String>(
-                              initialValue: _gender,
-                              validator: (v) {
-                                if (![
-                                  'Male',
-                                  'Female',
-                                ].contains((v ?? '').trim())) {
-                                  return 'Please select your gender.';
-                                }
-                                return null;
-                              },
-                              builder: (field) {
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Padding(
-                                      padding: EdgeInsets.only(
-                                        left: 4,
-                                        bottom: 7,
+                            _hero(),
+                            const SizedBox(height: 14),
+                            _cardShell(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _sectionTitle(
+                                    Icons.menu_book_rounded,
+                                    '1. Choose how you want to study',
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (deliveryOptions.isEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Brand.appBg,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: Brand.uiBorder),
                                       ),
-                                      child: Text(
-                                        'Gender | الجنس',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w800,
+                                      child: const Text(
+                                        'No study options are available for this course right now.',
+                                        style: TextStyle(fontWeight: FontWeight.w700),
+                                      ),
+                                    )
+                                  else ...[
+                                    SizedBox(
+                                      height: MediaQuery.sizeOf(context).width < 390
+                                          ? 132
+                                          : 144,
+                                      child: PageView.builder(
+                                        controller: _deliveryPageController,
+                                        itemCount: deliveryOptions.length,
+                                        onPageChanged: saving
+                                            ? null
+                                            : (index) {
+                                                setState(() {
+                                                  _currentDeliveryIndex = index;
+                                                  selectedDeliveryKey =
+                                                      deliveryOptions[index].key;
+                                                  _clearPromo();
+                                                });
+                                              },
+                                        itemBuilder: (_, i) => _deliveryCard(
+                                          deliveryOptions[i],
+                                          i == _currentDeliveryIndex,
                                         ),
                                       ),
                                     ),
+                                    const SizedBox(height: 8),
                                     Row(
-                                      children: [
-                                        _genderPill('Male', field),
-                                        const SizedBox(width: 10),
-                                        _genderPill('Female', field),
-                                      ],
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: List.generate(deliveryOptions.length, (
+                                        i,
+                                      ) {
+                                        final active = i == _currentDeliveryIndex;
+                                        return AnimatedContainer(
+                                          duration: const Duration(milliseconds: 180),
+                                          width: active ? 20 : 8,
+                                          height: 8,
+                                          margin: const EdgeInsets.symmetric(
+                                            horizontal: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: active
+                                                ? Brand.primaryBlue
+                                                : Brand.uiBorder,
+                                            borderRadius: BorderRadius.circular(99),
+                                          ),
+                                        );
+                                      }),
                                     ),
-                                    if (field.errorText != null) ...[
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        field.errorText!,
-                                        style: TextStyle(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.error,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
+                                    const SizedBox(height: 12),
+                                    if (selected != null) ...[
+                                      _selectedDeliverySummary(selected),
+                                      const SizedBox(height: 10),
+                                      if (selected.promoCodes.isNotEmpty)
+                                        _promoCodeBlock(selected),
                                     ],
                                   ],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            TextFormField(
-                              controller: emailC,
-                              keyboardType: TextInputType.emailAddress,
-                              textInputAction: TextInputAction.done,
-                              decoration: _inputDeco(
-                                label:
-                                    'Email (optional) | البريد الإلكتروني (اختياري)',
-                                icon: Icons.alternate_email_rounded,
-                                hint: 'name@example.com',
+                                ],
                               ),
-                              validator: (v) {
-                                final s = (v ?? '').trim();
-                                if (s.isEmpty) return null;
-                                if (!s.contains('@') || !s.contains('.')) {
-                                  return 'Please enter a valid email address.';
-                                }
-                                return null;
-                              },
+                            ),
+                            if (showPrivateMode) ...[
+                              const SizedBox(height: 12),
+                              _cardShell(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _sectionTitle(
+                                      Icons.place_rounded,
+                                      'Private lesson mode | طريقة الحصة الخاصة',
+                                    ),
+                                    const SizedBox(height: 12),
+                                    DropdownButtonFormField<String>(
+                                      initialValue:
+                                          normalizeStudyMode(_privateStudyMode).isEmpty
+                                          ? 'online'
+                                          : normalizeStudyMode(_privateStudyMode),
+                                      decoration: _inputDeco(
+                                        label: 'Choose mode | اختر الطريقة',
+                                        icon: Icons.place_rounded,
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'online',
+                                          child: Text('Online | أونلاين'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'inclass',
+                                          child: Text('In-Class | حضوري'),
+                                        ),
+                                      ],
+                                      onChanged: saving
+                                          ? null
+                                          : (v) => setState(
+                                              () => _privateStudyMode = v ?? 'online',
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            _cardShell(
+                              child: Form(
+                                key: _formKey,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _sectionTitle(
+                                      Icons.assignment_rounded,
+                                      '2. Enrollment details | بيانات التسجيل',
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextFormField(
+                                      controller: fullNameC,
+                                      textInputAction: TextInputAction.next,
+                                      decoration: _inputDeco(
+                                        label: 'Full name | الاسم الكامل',
+                                        icon: Icons.person_rounded,
+                                        hint: 'Your full name | الاسم الكامل',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) {
+                                          return 'Please enter your full name.';
+                                        }
+                                        if (s.length < 3) {
+                                          return 'Name looks too short.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextFormField(
+                                      controller: phoneC,
+                                      keyboardType: TextInputType.phone,
+                                      textInputAction: TextInputAction.next,
+                                      decoration: _inputDeco(
+                                        label: 'Phone number | رقم الهاتف',
+                                        icon: Icons.phone_rounded,
+                                        hint: 'e.g. 0550 00 00 00',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) {
+                                          return 'Please enter your phone number.';
+                                        }
+                                        if (s.length < 8) {
+                                          return 'Phone number looks too short.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextFormField(
+                                      controller: dobC,
+                                      readOnly: true,
+                                      onTap: saving ? null : _pickDob,
+                                      decoration: _inputDeco(
+                                        label: 'Date of birth | تاريخ الميلاد',
+                                        icon: Icons.cake_rounded,
+                                        hint: 'YYYY-MM-DD',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) {
+                                          return 'Please select your date of birth.';
+                                        }
+                                        final p = s.split('-');
+                                        if (p.length != 3) {
+                                          return 'Use format YYYY-MM-DD.';
+                                        }
+                                        final y = int.tryParse(p[0]);
+                                        final m = int.tryParse(p[1]);
+                                        final d = int.tryParse(p[2]);
+                                        if (y == null || m == null || d == null) {
+                                          return 'Use format YYYY-MM-DD.';
+                                        }
+                                        final parsed = DateTime(y, m, d);
+                                        if (parsed.year != y ||
+                                            parsed.month != m ||
+                                            parsed.day != d) {
+                                          return 'Please choose a valid date.';
+                                        }
+                                        if (parsed.isAfter(DateTime.now())) {
+                                          return 'Date of birth cannot be in the future.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    FormField<String>(
+                                      initialValue: _gender,
+                                      validator: (v) {
+                                        if (![
+                                          'Male',
+                                          'Female',
+                                        ].contains((v ?? '').trim())) {
+                                          return 'Please select your gender.';
+                                        }
+                                        return null;
+                                      },
+                                      builder: (field) {
+                                        return Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Padding(
+                                              padding: EdgeInsets.only(
+                                                left: 4,
+                                                bottom: 7,
+                                              ),
+                                              child: Text(
+                                                'Gender | الجنس',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                            Row(
+                                              children: [
+                                                _genderPill('Male', field),
+                                                const SizedBox(width: 10),
+                                                _genderPill('Female', field),
+                                              ],
+                                            ),
+                                            if (field.errorText != null) ...[
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                field.errorText!,
+                                                style: TextStyle(
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.error,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextFormField(
+                                      controller: emailC,
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.done,
+                                      decoration: _inputDeco(
+                                        label:
+                                            'Email (optional) | البريد الإلكتروني (اختياري)',
+                                        icon: Icons.alternate_email_rounded,
+                                        hint: 'name@example.com',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) return null;
+                                        if (!s.contains('@') || !s.contains('.')) {
+                                          return 'Please enter a valid email address.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Brand.accentCyan.withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: Brand.uiBorder),
+                                      ),
+                                      child: const Row(
+                                        children: [
+                                          Icon(
+                                            Icons.info_outline_rounded,
+                                            color: Brand.primaryBlue,
+                                          ),
+                                          SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              'لا يوجد دفع الآن. سنقوم بالتواصل معك قريباً لتأكيد التسجيل والتفاصيل.',
+                                              textDirection: TextDirection.rtl,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                             const SizedBox(height: 12),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Brand.accentCyan.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Brand.uiBorder),
-                              ),
-                              child: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.info_outline_rounded,
-                                    color: Brand.primaryBlue,
+                            _sectionTitle(Icons.info_rounded, 'More about this course'),
+                            const SizedBox(height: 8),
+                            Column(
+                              children: [
+                                if (course.content.trim().isNotEmpty)
+                                  _expandableSection(
+                                    icon: Icons.lightbulb_rounded,
+                                    title: 'What you will learn | ماذا ستتعلم',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: _rtlText(context, course.content),
+                                    ),
                                   ),
-                                  SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      'لا يوجد دفع الآن. سنقوم بالتواصل معك قريباً لتأكيد التسجيل والتفاصيل.',
-                                      textDirection: TextDirection.rtl,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
+                                if (course.content.trim().isNotEmpty)
+                                  const SizedBox(height: 8),
+                                if (course.longDesc.trim().isNotEmpty ||
+                                    course.shortDesc.trim().isNotEmpty)
+                                  _expandableSection(
+                                    icon: Icons.description_rounded,
+                                    title: 'Description | الوصف',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: _rtlText(
+                                        context,
+                                        course.longDesc.trim().isEmpty
+                                            ? course.shortDesc
+                                            : course.longDesc,
+                                      ),
+                                    ),
+                                  ),
+                                if (course.longDesc.trim().isNotEmpty ||
+                                    course.shortDesc.trim().isNotEmpty)
+                                  const SizedBox(height: 8),
+                                if (course.instructors.isNotEmpty)
+                                  _expandableSection(
+                                    icon: Icons.people_rounded,
+                                    title: 'Instructors',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: course.instructors
+                                            .map(
+                                              (teacher) =>
+                                                  _TeacherChip(teacher: teacher),
+                                            )
+                                            .toList(),
+                                      ),
+                                    ),
+                                  ),
+                                if (course.instructors.isNotEmpty)
+                                  const SizedBox(height: 8),
+                                _expandableSection(
+                                  icon: Icons.reviews_rounded,
+                                  title: 'Reviews',
+                                  child: _reviewsBlock(context),
+                                ),
+                                if (course.requirements.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _expandableSection(
+                                    icon: Icons.checklist_rounded,
+                                    title: 'Requirements',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: _rtlText(
+                                        context,
+                                        course.requirements,
+                                        height: 1.45,
                                       ),
                                     ),
                                   ),
                                 ],
-                              ),
+                              ],
                             ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _sectionTitle(Icons.info_rounded, 'More about this course'),
-                    const SizedBox(height: 8),
-                    Column(
-                      children: [
-                        if (course.content.trim().isNotEmpty)
-                          _expandableSection(
-                            icon: Icons.lightbulb_rounded,
-                            title: 'What you will learn | ماذا ستتعلم',
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: _rtlText(context, course.content),
+                    ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            border: const Border(
+                              top: BorderSide(color: Brand.uiBorder),
                             ),
-                          ),
-                        if (course.content.trim().isNotEmpty)
-                          const SizedBox(height: 8),
-                        if (course.longDesc.trim().isNotEmpty ||
-                            course.shortDesc.trim().isNotEmpty)
-                          _expandableSection(
-                            icon: Icons.description_rounded,
-                            title: 'Description | الوصف',
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: _rtlText(
-                                context,
-                                course.longDesc.trim().isEmpty
-                                    ? course.shortDesc
-                                    : course.longDesc,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 18,
+                                offset: Offset(0, -6),
                               ),
-                            ),
+                            ],
                           ),
-                        if (course.longDesc.trim().isNotEmpty ||
-                            course.shortDesc.trim().isNotEmpty)
-                          const SizedBox(height: 8),
-                        if (course.instructors.isNotEmpty)
-                          _expandableSection(
-                            icon: Icons.people_rounded,
-                            title: 'Instructors',
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: course.instructors
-                                    .map(
-                                      (teacher) =>
-                                          _TeacherChip(teacher: teacher),
+                          child: SizedBox(
+                            height: 52,
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: saving ? null : _submit,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF10B981),
+                                foregroundColor: Colors.white,
+                                disabledBackgroundColor: const Color(
+                                  0xFF10B981,
+                                ).withValues(alpha: 0.55),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              icon: saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
                                     )
-                                    .toList(),
+                                  : const Icon(Icons.check_circle_rounded),
+                              label: Text(
+                                saving ? 'Saving...' : 'Submit enrollment',
+                                style: const TextStyle(fontWeight: FontWeight.w900),
                               ),
                             ),
                           ),
-                        if (course.instructors.isNotEmpty)
-                          const SizedBox(height: 8),
-                        _expandableSection(
-                          icon: Icons.reviews_rounded,
-                          title: 'Reviews',
-                          child: _reviewsBlock(context),
                         ),
-                        if (course.requirements.trim().isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          _expandableSection(
-                            icon: Icons.checklist_rounded,
-                            title: 'Requirements',
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: _rtlText(
-                                context,
-                                course.requirements,
-                                height: 1.45,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ],
-                ),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.88),
-                        border: const Border(
-                          top: BorderSide(color: Brand.uiBorder),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
-                            blurRadius: 18,
-                            offset: const Offset(0, -6),
-                          ),
-                        ],
-                      ),
-                      child: SizedBox(
-                        height: 52,
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: saving ? null : _submit,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: const Color(
-                              0xFF10B981,
-                            ).withValues(alpha: 0.55),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          icon: saving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.check_circle_rounded),
-                          label: Text(
-                            saving ? 'Saving...' : 'Submit enrollment',
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 ),
               ),
             ],
