@@ -429,15 +429,6 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
 
           _syllabiSessions = flat;
 
-          // In new mode: auto add first syllabus lesson if empty
-          if (!_isEdit && _taughtItems.isEmpty && _syllabiSessions.isNotEmpty) {
-            final first = _syllabiSessions.first;
-            _taughtItems.add(_syllabusToTaughtItem(first));
-
-            // auto-fill homework from first lesson
-            _applyHomeworkAutofillFromSelectedSession(first);
-          }
-
           // In edit mode: enrich syllabus items with latest missing fields
           if (_isEdit &&
               _taughtItems.isNotEmpty &&

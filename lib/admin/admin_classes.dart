@@ -1120,7 +1120,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       MaterialPageRoute(
         builder: (_) => AdminLearnersScreen(initialSearch: query),
       ),
-    );
+    ).then((_) {
+      if (mounted) _refreshClassesSnapshot();
+    });
   }
 
   bool _isTeacherRole(dynamic role) {
