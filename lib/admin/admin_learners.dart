@@ -2176,8 +2176,9 @@ class _LearnersListState extends State<_LearnersList>
                                               _payFlagCache.remove(row.uid);
                                             }
                                           });
-                                          if (!enabled)
+                                          if (!enabled) {
                                             _loadPayFlagForUid(row.uid);
+                                          }
                                         },
                                       ),
                                     )
@@ -3854,7 +3855,6 @@ class _TextField extends StatelessWidget {
     required this.hint,
     this.keyboardType,
     this.validator,
-    this.enabled = true,
     this.obscureText = false,
   });
 
@@ -3863,7 +3863,6 @@ class _TextField extends StatelessWidget {
   final String hint;
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
-  final bool enabled;
   final bool obscureText;
 
   @override
@@ -3873,7 +3872,7 @@ class _TextField extends StatelessWidget {
       maxLines: 1,
       keyboardType: keyboardType,
       validator: validator,
-      enabled: enabled,
+      enabled: true,
       obscureText: obscureText,
       decoration: InputDecoration(
         labelText: label,
@@ -4223,11 +4222,6 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       <String, Future<DataSnapshot>>{};
   final Map<String, Future<DataSnapshot>> _classAttendanceFutureCache =
       <String, Future<DataSnapshot>>{};
-
-  void _toast(String msg) {
-    if (!mounted) return;
-    AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
-  }
 
   Future<bool> _confirm({
     required String title,

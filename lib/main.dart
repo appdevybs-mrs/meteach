@@ -5832,6 +5832,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                   label:
                       'Total ${_moneyLabel(_effectiveFee(option))} | المجموع ${_effectiveFee(option).toStringAsFixed(0)} د.ج',
                   icon: Icons.check_circle_rounded,
+                  accentColor: const Color(0xFF059669),
                 ),
               ],
             ),
@@ -6044,6 +6045,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                     TextFormField(
                                       controller: fullNameC,
                                       textInputAction: TextInputAction.next,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
                                       decoration: _inputDeco(
                                         label: 'Full name | الاسم الكامل',
                                         icon: Icons.person_rounded,
@@ -6065,6 +6069,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                       controller: phoneC,
                                       keyboardType: TextInputType.phone,
                                       textInputAction: TextInputAction.next,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
                                       decoration: _inputDeco(
                                         label: 'Phone number | رقم الهاتف',
                                         icon: Icons.phone_rounded,
@@ -6086,6 +6093,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                       controller: dobC,
                                       readOnly: true,
                                       onTap: saving ? null : _pickDob,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
                                       decoration: _inputDeco(
                                         label: 'Date of birth | تاريخ الميلاد',
                                         icon: Icons.cake_rounded,
@@ -6175,6 +6185,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                       controller: emailC,
                                       keyboardType: TextInputType.emailAddress,
                                       textInputAction: TextInputAction.done,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
                                       decoration: _inputDeco(
                                         label:
                                             'Email (optional) | البريد الإلكتروني (اختياري)',
