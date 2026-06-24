@@ -89,6 +89,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   bool _busy = false;
   bool _uploadingPhotos = false;
   bool _uploadingVideo = false;
+  bool _uploadingMainPhoto = false;
 
   String? _error;
   String? _ok;
@@ -102,6 +103,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   static const int _maxPhotos = 6;
 
   final List<String> _photoUrls = [];
+  String? _profilePhotoUrl;
+  List<String> _avatarPresets = [];
   String? _introVideoUrl;
 
   String _initialFirstName = '';
@@ -118,6 +121,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   String _initialExtraIconKey = _socialIconOptions.first.key;
   bool _initialSocialLinksVisibleToLearners = true;
   List<String> _initialPhotoUrls = const [];
+  String _initialProfilePhotoUrl = '';
   String _initialIntroVideoUrl = '';
 
   VideoPlayerController? _videoController;
@@ -297,6 +301,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         }
       }
 
+      _profilePhotoUrl = (data['profile_photo'] ?? '').toString().trim();
+      if (_profilePhotoUrl!.isEmpty) _profilePhotoUrl = null;
+
       _introVideoUrl = (data['intro_video_url'] ?? '').toString().trim();
       if (_introVideoUrl!.isEmpty) {
         _introVideoUrl = null;
@@ -307,6 +314,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       } else {
         await _disposeVideoController();
       }
+
+      await _loadAvatarPresets();
 
       _captureInitialState();
     } catch (e) {
@@ -423,6 +432,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'users/${user.uid}/phone2': _phone2Ctrl.text.trim(),
         'users/${user.uid}/dob': _dobCtrl.text.trim(),
         'users/${user.uid}/about_me': aboutMe,
+        'users/${user.uid}/profile_photo': _profilePhotoUrl ?? '',
         'users/${user.uid}/profile_photos': cleanPhotos,
         'users/${user.uid}/intro_video_url': _introVideoUrl ?? '',
         'users/${user.uid}/google_meet_url': _googleMeetUrlCtrl.text.trim(),
@@ -435,7 +445,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             _introVideoUrl ?? '',
         'website/teachers/${user.uid}/profile/profile_photos': cleanPhotos,
         'website/teachers/${user.uid}/profile/profile_photo':
-            cleanPhotos.isNotEmpty ? cleanPhotos.first : '',
+            _profilePhotoUrl ?? '',
         'website/teachers/${user.uid}/profile/social_links': socialLinks,
         'website/teachers/${user.uid}/profile/social_links_visible_to_learners':
             _socialLinksVisibleToLearners,
@@ -511,6 +521,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _initialExtraIconKey = _normalizeSocialIconKey(_extraIconKey);
     _initialSocialLinksVisibleToLearners = _socialLinksVisibleToLearners;
     _initialPhotoUrls = _photoUrls.map((e) => e.trim()).toList();
+    _initialProfilePhotoUrl = (_profilePhotoUrl ?? '').trim();
     _initialIntroVideoUrl = (_introVideoUrl ?? '').trim();
   }
 
@@ -538,6 +549,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     )) {
       return true;
     }
+    if ((_profilePhotoUrl ?? '').trim() != _initialProfilePhotoUrl) return true;
     if ((_introVideoUrl ?? '').trim() != _initialIntroVideoUrl) return true;
     return false;
   }
@@ -726,11 +738,365 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           .ref('website/teachers/$uid/profile')
           .update({
             'profile_photos': cleanPhotos,
-            'profile_photo': cleanPhotos.isNotEmpty ? cleanPhotos.first : '',
+            'profile_photo': _profilePhotoUrl ?? '',
           });
     } catch (e) {
       debugPrint('Teacher website profile photos mirror failed: $e');
     }
+  }
+
+  Future<void> _loadAvatarPresets() async {
+    try {
+      final snap = await FirebaseDatabase.instance
+          .ref('appConfig/avatarPresets')
+          .get();
+      if (snap.value is List) {
+        final list = (snap.value as List).map((e) => e.toString()).toList();
+        if (mounted) setState(() => _avatarPresets = list);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _showProfilePicturePicker() async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 400),
+          decoration: BoxDecoration(
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: p.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(23),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      p.primary.withValues(alpha: 0.18),
+                      p.accent.withValues(alpha: 0.14),
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: p.primary.withValues(alpha: 0.16),
+                        border: Border.all(
+                          color: p.primary.withValues(alpha: 0.34),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.add_a_photo_rounded,
+                        color: p.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Set profile picture',
+                        style: TextStyle(
+                          color: p.text,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Column(
+                  children: [
+                    _ProfilePictureOptionTile(
+                      palette: p,
+                      icon: Icons.camera_alt_rounded,
+                      title: 'Upload a photo',
+                      subtitle: 'Take or select from your device',
+                      onTap: () => Navigator.pop(ctx, 'upload'),
+                    ),
+                    const SizedBox(height: 10),
+                    if (_avatarPresets.isNotEmpty)
+                      _ProfilePictureOptionTile(
+                        palette: p,
+                        icon: Icons.portrait_rounded,
+                        title: 'Choose an avatar',
+                        subtitle: 'Pick a preset profile image',
+                        onTap: () => Navigator.pop(ctx, 'avatar'),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: p.text,
+                      side: BorderSide(color: p.border),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    if (action == 'upload') {
+      await _pickAndUploadMainPhoto();
+    } else if (action == 'avatar') {
+      await _showAvatarPicker();
+    }
+  }
+
+  Future<void> _showAvatarPicker() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          decoration: BoxDecoration(
+            color: p.cardBg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: p.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(23),
+                  ),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      p.primary.withValues(alpha: 0.18),
+                      p.accent.withValues(alpha: 0.14),
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: p.primary.withValues(alpha: 0.16),
+                        border: Border.all(
+                          color: p.primary.withValues(alpha: 0.34),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.portrait_rounded,
+                        color: p.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Choose an Avatar',
+                        style: TextStyle(
+                          color: p.text,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1,
+                    ),
+                    itemCount: _avatarPresets.length + 1,
+                    itemBuilder: (ctx, index) {
+                      if (index == 0) {
+                        return InkWell(
+                          onTap: () => Navigator.pop(ctx, ''),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: p.soft,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: p.border),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.person_off_rounded,
+                                    color: p.primary, size: 28),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'None',
+                                  style: TextStyle(
+                                    color: p.primary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      final url = _avatarPresets[index - 1];
+                      return InkWell(
+                        onTap: () => Navigator.pop(ctx, url),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: p.border.withValues(alpha: 0.7),
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Image.network(
+                            url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              color: p.soft,
+                              child: Icon(Icons.broken_image_outlined,
+                                  color: p.primary),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: p.text,
+                      side: BorderSide(color: p.border),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected != null && mounted) {
+      setState(() {
+        _profilePhotoUrl = selected.isEmpty ? null : selected;
+      });
+    }
+  }
+
+  Future<void> _pickAndUploadMainPhoto() async {
+    if (_busy || _uploadingMainPhoto || _uploadingPhotos) return;
+    if (!OfflineActionGuard.ensureOnline(context)) return;
+
+    try {
+      setState(() {
+        _uploadingMainPhoto = true;
+        _error = null;
+        _ok = null;
+      });
+
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: kIsWeb,
+        type: FileType.custom,
+        allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      final url = await _uploadPlatformFile(file);
+      await _mirrorWebsiteUploadUrl(url: url, mediaType: 'photo');
+
+      if (!mounted) return;
+      setState(() {
+        _profilePhotoUrl = url;
+        _ok = 'Profile picture uploaded successfully ✅';
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = toHumanError(e));
+    } finally {
+      if (mounted) setState(() => _uploadingMainPhoto = false);
+    }
+  }
+
+  Future<void> _removeMainPhoto() async {
+    if ((_profilePhotoUrl ?? '').trim().isEmpty) return;
+
+    final ok = await _confirmDialog(
+      title: 'Remove profile photo',
+      message: 'Do you want to remove your main profile photo?',
+      confirmText: 'Remove',
+    );
+
+    if (!ok) return;
+
+    if (!mounted) return;
+    setState(() {
+      _profilePhotoUrl = null;
+      _ok = 'Profile picture removed';
+    });
   }
 
   Future<void> _pickAndUploadPhotos() async {
@@ -1426,11 +1792,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   Widget _buildPhotosSection() {
+    final hasMainPhoto = (_profilePhotoUrl ?? '').isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Profile Photos',
+          'Main Profile Picture',
           style: TextStyle(
             color: p.primary,
             fontWeight: FontWeight.w900,
@@ -1439,7 +1807,111 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         ),
         const SizedBox(height: 6),
         Text(
-          'Upload up to 6 photos to present yourself professionally.',
+          'Set a main profile photo or choose a preset avatar.',
+          style: TextStyle(
+            color: p.text.withValues(alpha: 0.68),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: p.border),
+                color: p.soft,
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: hasMainPhoto
+                  ? Image.network(
+                      _profilePhotoUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Icon(
+                        Icons.person_rounded,
+                        color: p.primary,
+                        size: 48,
+                      ),
+                    )
+                  : Icon(Icons.person_rounded, color: p.primary, size: 48),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: _uploadingMainPhoto
+                          ? YbsBusyLogo(
+                              size: 16,
+                              color: p.primary,
+                              strokeWidth: 2,
+                            )
+                          : const Icon(Icons.add_a_photo_rounded),
+                      label: Text(
+                        _uploadingMainPhoto
+                            ? 'Uploading...'
+                            : 'Set profile picture',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: p.primary,
+                        side: BorderSide(color: p.border),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: (_busy || _uploadingMainPhoto ||
+                              _uploadingPhotos)
+                          ? null
+                          : _showProfilePicturePicker,
+                    ),
+                  ),
+                  if (hasMainPhoto) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Remove'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red.shade700,
+                          side: BorderSide(color: Colors.red.shade200),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: (_busy || _uploadingMainPhoto)
+                            ? null
+                            : _removeMainPhoto,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 22),
+        Divider(color: p.border),
+        const SizedBox(height: 22),
+        Text(
+          'Additional Photos',
+          style: TextStyle(
+            color: p.primary,
+            fontWeight: FontWeight.w900,
+            fontSize: 15,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Upload up to $_maxPhotos extra photos to present yourself professionally.',
           style: TextStyle(
             color: p.text.withValues(alpha: 0.68),
             fontWeight: FontWeight.w700,
@@ -1990,16 +2462,32 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white24),
             ),
-            child: Center(
-              child: Text(
-                displayName.isNotEmpty ? displayName[0].toUpperCase() : 'T',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 28,
-                ),
-              ),
-            ),
+            clipBehavior: Clip.antiAlias,
+            child: (_profilePhotoUrl ?? '').isNotEmpty
+                ? Image.network(
+                    _profilePhotoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Center(
+                      child: Text(
+                        displayName.isNotEmpty ? displayName[0].toUpperCase() : 'T',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 28,
+                        ),
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Text(
+                      displayName.isNotEmpty ? displayName[0].toUpperCase() : 'T',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 28,
+                      ),
+                    ),
+                  ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -2033,7 +2521,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   children: [
                     _heroPill(
                       icon: Icons.photo_library_rounded,
-                      text: '${_photoUrls.length}/$_maxPhotos photos',
+                      text: (_profilePhotoUrl ?? '').isNotEmpty
+                          ? 'Photo + ${_photoUrls.length} more'
+                          : '${_photoUrls.length}/$_maxPhotos photos',
                     ),
                     _heroPill(
                       icon: Icons.videocam_rounded,
@@ -2266,6 +2756,85 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfilePictureOptionTile extends StatelessWidget {
+  const _ProfilePictureOptionTile({
+    required this.palette,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final AppPalette palette;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: p.soft.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: p.border.withValues(alpha: 0.6)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: p.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: p.primary, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: p.text,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: p.text.withValues(alpha: 0.6),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: p.text.withValues(alpha: 0.3),
+              ),
+            ],
           ),
         ),
       ),
