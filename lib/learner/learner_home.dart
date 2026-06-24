@@ -13,6 +13,7 @@ import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/session_manager.dart';
 import '../shared/watermark_background.dart';
+import '../shared/profile_avatar.dart';
 import 'learner_stories_screen.dart';
 import 'learner_study_coach_screen.dart';
 import 'learner_regulations_screen.dart';
@@ -1079,13 +1080,25 @@ class _LearnerHomeState extends State<LearnerHome> {
           ),
           leading: webDesktop
               ? null
-              : IconButton(
-                  icon: Icon(
-                    Icons.menu_rounded,
-                    key: _menuIconKey,
-                    color: Colors.white,
+              : GestureDetector(
+                  onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: FutureBuilder<String>(
+                      future: _profilePhotoFuture,
+                      builder: (context, snap) {
+                        final url = (snap.data ?? '').trim();
+                        return ProfileAvatar(
+                          name: '',
+                          photoUrl: url,
+                          radius: 18,
+                          fallbackBg: Colors.white.withValues(alpha: 0.25),
+                          fallbackFg: Colors.white,
+                          borderColor: Colors.white.withValues(alpha: 0.6),
+                        );
+                      },
+                    ),
                   ),
-                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
           title: FutureBuilder<String>(
             future: _displayNameFuture,

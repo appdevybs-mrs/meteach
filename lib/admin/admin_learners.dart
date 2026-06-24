@@ -2554,13 +2554,11 @@ enum LearnerGender {
 const _sectionIcons = <IconData>[
   Icons.person_rounded,
   Icons.contact_phone_rounded,
-  Icons.toggle_on_rounded,
 ];
 
 const _sectionColors = <Color>[
   Color(0xFF1A2B48),
   Color(0xFF0F766E),
-  Color(0xFFF98D28),
 ];
 
 class LearnerEditorScreen extends StatefulWidget {
@@ -3302,6 +3300,71 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         title: Text(isEdit ? 'Edit Learner' : 'Add Learner'),
         actions: const [SizedBox.shrink()],
       ),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: Border(
+            top: BorderSide(
+              color: Theme.of(context).dividerColor,
+              width: 0.5,
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: SafeArea(
+          child: Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<LearnerStatus>(
+                  initialValue: _status,
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  items: LearnerStatus.values
+                      .map(
+                        (s) => DropdownMenuItem(value: s, child: Text(s.label)),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() => _status = v);
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 0.5,
+                height: 32,
+                color: Theme.of(context).dividerColor,
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton(
+                onPressed: _currentStep > 0
+                    ? () => setState(() => _currentStep--)
+                    : null,
+                child: const Text('Back'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(
+                    _saving
+                        ? 'Saving…'
+                        : (isEdit ? 'Save Changes' : 'Create Learner'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
       body: Form(
         key: _formKey,
         child: adminWebBodyFrame(
@@ -3314,46 +3377,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
             stepIconBuilder: _stepIconBuilder,
             onStepTapped: (index) => setState(() => _currentStep = index),
             controlsBuilder: (context, details) {
-              return Padding(
-                padding: const EdgeInsets.only(top: 20),
-                child: Row(
-                  children: [
-                    FilledButton(
-                      onPressed: _saving
-                          ? null
-                          : () {
-                              if (_currentStep < 2) {
-                                setState(() => _currentStep++);
-                              } else {
-                                _save();
-                              }
-                            },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Text(
-                          _saving
-                              ? 'Saving…'
-                              : (_currentStep < 2
-                                  ? 'Next'
-                                  : (isEdit
-                                      ? 'Save Changes'
-                                      : 'Create Learner')),
-                        ),
-                      ),
-                    ),
-                    if (_currentStep > 0) ...[
-                      const SizedBox(width: 12),
-                      OutlinedButton(
-                        onPressed: () => setState(() => _currentStep--),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 6),
-                          child: Text('Back'),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              );
+              return const SizedBox.shrink();
             },
             steps: [
               Step(
@@ -3754,33 +3778,6 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         ),
                       ],
                     ],
-                  ),
-                ),
-              ),
-              Step(
-                isActive: _currentStep >= 2,
-                state: _stepState(2),
-                title: const Text('Status'),
-                content: _SectionCard(
-                  title: 'Status',
-                  icon: _sectionIcons[2],
-                  color: _sectionColors[2],
-                  child: DropdownButtonFormField<LearnerStatus>(
-                    initialValue: _status,
-                    decoration: const InputDecoration(
-                      labelText: 'Status',
-                      prefixIcon: Icon(Icons.toggle_on_rounded),
-                    ),
-                    items: LearnerStatus.values
-                        .map(
-                          (s) =>
-                              DropdownMenuItem(value: s, child: Text(s.label)),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() => _status = v);
-                    },
                   ),
                 ),
               ),

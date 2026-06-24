@@ -1119,6 +1119,15 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
         ..clear()
         ..addAll(uids),
     );
+    _autoAddNewLearners();
+  }
+
+  void _autoAddNewLearners() {
+    for (final learner in _learners) {
+      if (learner.lat == null || learner.lng == null) continue;
+      if (_learnerUidsOnMap.contains(learner.uid)) continue;
+      _addToMap(learner);
+    }
   }
 
   String _resolvePhoto(Map<String, dynamic> m) {
@@ -1199,6 +1208,32 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Learner added to map.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(toHumanError(e))));
+    }
+  }
+
+  Future<void> _removeFromMap(_LearnerMapItem learner) async {
+    try {
+      final mapSnapshot = await _mapRef.get();
+      if (mapSnapshot.value is Map) {
+        final data = mapSnapshot.value as Map;
+        for (final entry in data.entries) {
+          final val = entry.value;
+          if (val is Map &&
+              val['learnerUid']?.toString().trim() == learner.uid) {
+            await _mapRef.child(entry.key.toString()).remove();
+          }
+        }
+      }
+      await _publicPinsRef.child(learner.uid).remove();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Learner removed from map.')),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1309,7 +1344,21 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
                     ],
                   ),
                 ),
-                if (!onMap)
+                if (onMap)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _removeFromMap(learner),
+                    icon: const Icon(
+                      Icons.remove_circle_outline_rounded,
+                      size: 16,
+                    ),
+                    label: const Text('Remove', style: TextStyle(fontSize: 12)),
+                  )
+                else
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: _actionOrange,

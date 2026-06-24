@@ -558,26 +558,7 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
 
     final markers = <Marker>[];
     for (final group in groups.values) {
-      if (group.length == 1 || !_showClusters) {
-        for (int i = 0; i < group.length; i++) {
-          final g = group[i];
-          final point = group.length == 1
-              ? LatLng(g.lat, g.lng)
-              : LatLng(
-                  g.lat + ((i ~/ 3) - 1) * 0.0002,
-                  g.lng + ((i % 3) - 1) * 0.0002,
-                );
-          if (!point.latitude.isFinite || !point.longitude.isFinite) continue;
-          markers.add(
-            Marker(
-              point: point,
-              width: 60,
-              height: 80,
-              child: _GraduatePhotoPin(person: g),
-            ),
-          );
-        }
-      } else {
+      if (_showClusters && group.length > 1) {
         markers.add(
           Marker(
             point: LatLng(group[0].lat, group[0].lng),
@@ -586,20 +567,58 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
             child: _GraduateClusterPin(graduates: group),
           ),
         );
+      } else if (group.length > 1) {
+        markers.add(
+          Marker(
+            point: LatLng(group[0].lat, group[0].lng),
+            width: 60,
+            height: 80,
+            child: _GraduateStackPin(graduates: group),
+          ),
+        );
+      } else {
+        final g = group[0];
+        final point = LatLng(g.lat, g.lng);
+        if (!point.latitude.isFinite || !point.longitude.isFinite) continue;
+        markers.add(
+          Marker(
+            point: point,
+            width: 60,
+            height: 80,
+            child: _GraduatePhotoPin(person: g),
+          ),
+        );
       }
     }
 
+    final learnerGroups = <String, List<_LearnerMapEntry>>{};
     for (final l in widget.learners) {
-      final point = LatLng(l.lat, l.lng);
-      if (!point.latitude.isFinite || !point.longitude.isFinite) continue;
-      markers.add(
-        Marker(
-          point: point,
-          width: 50,
-          height: 65,
-          child: _LearnerMapPin(learner: l),
-        ),
-      );
+      final key = '${l.lat},${l.lng}';
+      learnerGroups.putIfAbsent(key, () => []).add(l);
+    }
+    for (final group in learnerGroups.values) {
+      if (group.length > 1) {
+        markers.add(
+          Marker(
+            point: LatLng(group[0].lat, group[0].lng),
+            width: 50,
+            height: 65,
+            child: _LearnerStackPin(learners: group),
+          ),
+        );
+      } else {
+        final l = group[0];
+        final point = LatLng(l.lat, l.lng);
+        if (!point.latitude.isFinite || !point.longitude.isFinite) continue;
+        markers.add(
+          Marker(
+            point: point,
+            width: 50,
+            height: 65,
+            child: _LearnerMapPin(learner: l),
+          ),
+        );
+      }
     }
 
     return ClipRRect(
@@ -855,6 +874,242 @@ class _LearnerProfileDialog extends StatelessWidget {
                     const SizedBox(height: 18),
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LearnerStackPin extends StatelessWidget {
+  const _LearnerStackPin({required this.learners});
+
+  final List<_LearnerMapEntry> learners;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = learners[0];
+    final count = learners.length;
+
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => _LearnerClusterDialog(learners: learners),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 6,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Brand.primaryBlue,
+                  backgroundImage: first.photoUrl.isEmpty
+                      ? null
+                      : NetworkImage(first.photoUrl),
+                  child: first.photoUrl.isEmpty
+                      ? const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        )
+                      : null,
+                ),
+              ),
+              Positioned(
+                right: -6,
+                top: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Brand.primaryBlue,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Icon(Icons.arrow_drop_down_rounded, color: Brand.primaryBlue),
+        ],
+      ),
+    );
+  }
+}
+
+class _LearnerClusterDialog extends StatelessWidget {
+  const _LearnerClusterDialog({required this.learners});
+
+  final List<_LearnerMapEntry> learners;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = learners[0];
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 390, maxHeight: 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(18, 16, 10, 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Brand.primaryBlue, Brand.actionOrange],
+                ),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    _countryFlag(first.country),
+                    style: const TextStyle(fontSize: 26),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          first.city,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          first.country,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.82),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${learners.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                itemCount: learners.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final l = learners[index];
+                  return Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Brand.primaryBlue.withValues(alpha: 0.035),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Brand.primaryBlue.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Brand.primaryBlue,
+                          backgroundImage: l.photoUrl.isEmpty
+                              ? null
+                              : NetworkImage(l.photoUrl),
+                          child: l.photoUrl.isEmpty
+                              ? const Icon(Icons.person_rounded,
+                                  color: Colors.white)
+                              : null,
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                l.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Brand.primaryBlue,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${l.city}, ${l.country}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Brand.mainText.withValues(alpha: 0.64),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -1231,6 +1486,86 @@ class _GraduateClusterPin extends StatelessWidget {
               color: Brand.actionOrange,
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GraduateStackPin extends StatelessWidget {
+  const _GraduateStackPin({required this.graduates});
+
+  final List<_GraduateMapPerson> graduates;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = graduates[0];
+    final count = graduates.length;
+
+    Widget avatar = Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: CircleAvatar(
+        radius: 20,
+        backgroundColor: Brand.actionOrange,
+        backgroundImage:
+            first.photoUrl.isEmpty ? null : NetworkImage(first.photoUrl),
+        child: first.photoUrl.isEmpty
+            ? const Icon(Icons.person_rounded, color: Colors.white)
+            : null,
+      ),
+    );
+    if (first.blurPhoto) {
+      avatar = ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: avatar,
+      );
+    }
+
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => _ClusterDialog(graduates: graduates),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              avatar,
+              Positioned(
+                right: -6,
+                top: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Brand.actionOrange,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Icon(Icons.arrow_drop_down_rounded, color: Brand.actionOrange),
         ],
       ),
     );
