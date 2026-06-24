@@ -41,6 +41,7 @@ class _TeacherLearnerProfileScreenState
   List<String> _photoUrls = [];
   String? _profilePhotoUrl;
   bool _reportOpenedOnce = false;
+  bool _summaryExpanded = true;
 
   int _statCourses = 0;
   int _statAttendancePct = 0;
@@ -1391,16 +1392,44 @@ class _TeacherLearnerProfileScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Learning Summary',
-            style: TextStyle(
-              color: p.primary,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
+          InkWell(
+            onTap: () => setState(() => _summaryExpanded = !_summaryExpanded),
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                Text(
+                  'Learning Summary',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: _summaryExpanded ? 0.0 : -0.5,
+                  duration: const Duration(milliseconds: 250),
+                  child: Icon(
+                    Icons.keyboard_arrow_up_rounded,
+                    color: p.primary,
+                    size: 26,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          Container(
+          AnimatedCrossFade(
+            crossFadeState: _summaryExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 250),
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: p.primary.withValues(alpha: 0.04),
@@ -1477,6 +1506,10 @@ class _TeacherLearnerProfileScreenState
             value: '$_statHomeworkPending',
             tint: _statHomeworkPending > 0 ? const Color(0xFFEF4444) : p.accent,
           ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1522,6 +1555,85 @@ class _TeacherLearnerProfileScreenState
         ],
       ),
     );
+  }
+
+  Widget _buildImportantNotesCard(AppPalette p) {
+    final notes = _safeStr(_user['special_notes']);
+    final hasNotes = notes.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: hasNotes
+              ? const Color(0xFFEF4444).withValues(alpha: 0.40)
+              : p.border.withValues(alpha: 0.8),
+          width: hasNotes ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: hasNotes
+                ? const Color(0xFFEF4444).withValues(alpha: 0.06)
+                : Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                size: 22,
+                color: hasNotes
+                    ? const Color(0xFFEF4444)
+                    : p.text.withValues(alpha: 0.5),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Important Notes',
+                style: TextStyle(
+                  color: hasNotes
+                      ? const Color(0xFFEF4444)
+                      : p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            hasNotes ? notes : 'No important notes added.',
+            style: TextStyle(
+              color: hasNotes ? p.text : p.text.withValues(alpha: 0.55),
+              fontWeight: hasNotes ? FontWeight.w900 : FontWeight.w700,
+              height: 1.45,
+              fontSize: hasNotes ? 14 : 13,
+            ),
+            textDirection: _detectTextDirection(notes),
+          ),
+        ],
+      ),
+    );
+  }
+
+  TextDirection _detectTextDirection(String text) {
+    if (text.isEmpty) return TextDirection.ltr;
+    for (var i = 0; i < text.length; i++) {
+      final code = text.codeUnitAt(i);
+      if (code >= 0x0600 && code <= 0x06FF) return TextDirection.rtl;
+      if (code >= 0x0750 && code <= 0x077F) return TextDirection.rtl;
+      if (code >= 0x08A0 && code <= 0x08FF) return TextDirection.rtl;
+      if (code >= 0xFB50 && code <= 0xFDFF) return TextDirection.rtl;
+      if (code >= 0xFE70 && code <= 0xFEFF) return TextDirection.rtl;
+    }
+    return TextDirection.ltr;
   }
 
   Widget _buildAccountCard(AppPalette p) {
@@ -1661,24 +1773,26 @@ class _TeacherLearnerProfileScreenState
       body: teacherWebBodyFrame(
         context: context,
         maxWidth: 1240,
-        child: _busy
-            ? Center(child: CircularProgressIndicator(color: p.primary))
-            : _error != null
-            ? _buildErrorState(p)
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildMainProfileCard(p),
-                  const SizedBox(height: 14),
-                  _buildExtraPhotosCard(p),
-                  const SizedBox(height: 14),
-                  _buildSummaryCard(p),
-                  const SizedBox(height: 14),
-                  _buildAboutMeCard(p),
-                  const SizedBox(height: 14),
-                  _buildAccountCard(p),
-                ],
-              ),
+        child: SafeArea(
+          child: _busy
+              ? Center(child: CircularProgressIndicator(color: p.primary))
+              : _error != null
+              ? _buildErrorState(p)
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildMainProfileCard(p),
+                    const SizedBox(height: 14),
+                    _buildExtraPhotosCard(p),
+                    const SizedBox(height: 14),
+                    _buildAboutMeCard(p),
+                    const SizedBox(height: 14),
+                    _buildImportantNotesCard(p),
+                    const SizedBox(height: 14),
+                    _buildSummaryCard(p),
+                  ],
+                ),
+        ),
       ),
     );
   }

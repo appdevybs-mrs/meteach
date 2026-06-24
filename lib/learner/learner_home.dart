@@ -20,6 +20,7 @@ import 'learner_regulations_screen.dart';
 import 'learner_mail_screen.dart';
 import 'learner_homework_screen.dart' as hw;
 import 'learner_games_screen.dart';
+import 'learner_instructions_screen.dart';
 import 'learner_profile_screen.dart';
 import 'learner_reminders_list_screen.dart';
 import 'learner_booking_screen.dart';
@@ -591,9 +592,13 @@ class _LearnerHomeState extends State<LearnerHome> {
 
       final userMap = raw.map((k, v) => MapEntry(k.toString(), v));
       final missingFields = _missingProfileFields(userMap);
+      final specialNotesMissing = (userMap['special_notes'] ?? '').toString().trim().isEmpty;
       if (missingFields.isEmpty || !mounted) return;
 
-      final action = await _showProfileCompletionDialog(missingFields);
+      final action = await _showProfileCompletionDialog(
+        missingFields,
+        hasSuggestedNotes: specialNotesMissing,
+      );
       if (!mounted || action == null) return;
 
       if (action == _ProfilePromptAction.complete) {
@@ -607,8 +612,9 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 
   Future<_ProfilePromptAction?> _showProfileCompletionDialog(
-    List<String> missingFields,
-  ) {
+    List<String> missingFields, {
+    bool hasSuggestedNotes = false,
+  }) {
     final iconColors = {
       'Profile Photo': Icons.camera_alt_rounded,
       'Phone Number': Icons.phone_rounded,
@@ -618,6 +624,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       'Country': Icons.public_rounded,
       'Wilaya / City': Icons.location_city_rounded,
       'About Me': Icons.auto_stories_rounded,
+      'Important Notes': Icons.warning_amber_rounded,
     };
 
     return showDialog<_ProfilePromptAction>(
@@ -628,7 +635,7 @@ class _LearnerHomeState extends State<LearnerHome> {
           elevation: 0,
           backgroundColor: Colors.transparent,
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 460, maxHeight: 520),
+            constraints: const BoxConstraints(maxWidth: 460, maxHeight: 580),
             decoration: BoxDecoration(
               color: palette.cardBg,
               borderRadius: BorderRadius.circular(24),
@@ -711,8 +718,67 @@ class _LearnerHomeState extends State<LearnerHome> {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: missingFields.length,
+                      itemCount: missingFields.length + (hasSuggestedNotes ? 1 : 0),
                       itemBuilder: (ctx, index) {
+                        if (hasSuggestedNotes && index == missingFields.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: palette.soft.withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: palette.border.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.warning_amber_rounded,
+                                      size: 18,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Important Notes',
+                                          style: TextStyle(
+                                            color: palette.text.withValues(alpha: 0.7),
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        Text(
+                                          '(Optional)',
+                                          style: TextStyle(
+                                            color: palette.text.withValues(alpha: 0.45),
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
                         final field = missingFields[index];
                         final icon = iconColors[field] ??
                             Icons.fiber_manual_record_rounded;
@@ -907,6 +973,13 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
+  void _openInstructionsScreen() {
+    _openLearnerWindow(
+      AppWindowKeys.learnerInstructions,
+      () => _pushScreen(const LearnerInstructionsScreen()),
+    );
+  }
+
   Future<void> _refreshShell() async {
     if (!OfflineActionGuard.ensureOnline(context)) return;
     setState(() {
@@ -1047,6 +1120,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                 onOpenStudyCoach: _openStudyCoachScreen,
                 onOpenRegulations: _openRegulationsScreen,
                 onOpenSettings: _openSettingsSheet,
+                onOpenInstructions: _openInstructionsScreen,
                 onLogout: () => _logout(context),
               ),
 
@@ -1160,6 +1234,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                   onOpenGallery: _openGalleryScreen,
                   onOpenStories: _openStoriesScreen,
                   onOpenGames: _openGamesScreen,
+                  onOpenInstructions: _openInstructionsScreen,
                   onOpenCoach: _openStudyCoachScreen,
                   onOpenProfile: _openProfileScreen,
                   onLogout: () => _logout(context),
@@ -2745,7 +2820,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
                   );
                 },
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               // Second row: Homework, Mail, Reminders
               LayoutBuilder(
                 builder: (context, constraints) {
@@ -7418,6 +7493,7 @@ class _LearnerHomeWebRail extends StatelessWidget {
     required this.onOpenGallery,
     required this.onOpenStories,
     required this.onOpenGames,
+    required this.onOpenInstructions,
     required this.onOpenCoach,
     required this.onOpenProfile,
     required this.onLogout,
@@ -7431,6 +7507,7 @@ class _LearnerHomeWebRail extends StatelessWidget {
   final VoidCallback onOpenGallery;
   final VoidCallback onOpenStories;
   final VoidCallback onOpenGames;
+  final VoidCallback onOpenInstructions;
   final VoidCallback onOpenCoach;
   final VoidCallback onOpenProfile;
   final VoidCallback onLogout;
@@ -7503,6 +7580,12 @@ class _LearnerHomeWebRail extends StatelessWidget {
                     icon: LearnerIcons.games,
                     title: 'Games',
                     onTap: onOpenGames,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.instructions,
+                    title: 'Instructions',
+                    onTap: onOpenInstructions,
                   ),
                   _DrawerTile(
                     palette: palette,
@@ -7626,6 +7709,7 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenStudyCoach,
     required this.onOpenRegulations,
     required this.onOpenSettings,
+    required this.onOpenInstructions,
     required this.onLogout,
   });
 
@@ -7641,6 +7725,7 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenStudyCoach;
   final VoidCallback onOpenRegulations;
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenInstructions;
   final VoidCallback onLogout;
 
   @override
@@ -7788,6 +7873,16 @@ class _LearnerDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenRegulations();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.instructions,
+                    accent: const Color(0xFF6366F1),
+                    title: 'Instructions',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenInstructions();
                     },
                   ),
                   _DrawerTile(

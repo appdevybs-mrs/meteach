@@ -27,6 +27,7 @@ import '../services/backend_api.dart';
 import 'admin_learner_mail_topics_screen.dart';
 import 'admin_classes.dart';
 import '../teacher/take_attendance_screen.dart';
+import '../teacher/teacher_learner_profile_screen.dart';
 
 class AdminLearnersScreen extends StatefulWidget {
   const AdminLearnersScreen({super.key, this.initialSearch = ''});
@@ -1956,27 +1957,40 @@ class _LearnersListState extends State<_LearnersList>
                                 padding: EdgeInsets.all(dense ? 9 : 12),
                                 child: Row(
                                   children: [
-                                    Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        ProfileAvatar(
-                                          name: l.fullName,
-                                          photoUrl: l.primaryProfilePhoto,
-                                          radius: dense ? 17 : 20,
-                                          fallbackBg: avatarBg,
-                                          fallbackFg: avatarFg,
-                                          borderColor: avatarBg.withValues(
-                                            alpha: 0.45,
-                                          ),
-                                        ),
-                                        if (unread > 0)
-                                          Positioned(
-                                            right: -6,
-                                            top: -6,
-                                            child: _badge(unread),
-                                          ),
-                                      ],
-                                    ),
+                                     GestureDetector(
+                                       onTap: () {
+                                         Navigator.of(context).push(
+                                           MaterialPageRoute(
+                                             builder: (_) =>
+                                                 TeacherLearnerProfileScreen(
+                                               learnerUid: row.uid,
+                                               learnerName: l.fullName,
+                                             ),
+                                           ),
+                                         );
+                                       },
+                                       child: Stack(
+                                         clipBehavior: Clip.none,
+                                         children: [
+                                           ProfileAvatar(
+                                             name: l.fullName,
+                                             photoUrl: l.primaryProfilePhoto,
+                                             radius: dense ? 17 : 20,
+                                             fallbackBg: avatarBg,
+                                             fallbackFg: avatarFg,
+                                             borderColor: avatarBg.withValues(
+                                               alpha: 0.45,
+                                             ),
+                                           ),
+                                           if (unread > 0)
+                                             Positioned(
+                                               right: -6,
+                                               top: -6,
+                                               child: _badge(unread),
+                                             ),
+                                         ],
+                                       ),
+                                     ),
                                     SizedBox(width: dense ? 9 : 12),
                                     Expanded(
                                       child: Column(

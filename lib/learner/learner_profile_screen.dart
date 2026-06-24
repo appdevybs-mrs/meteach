@@ -120,6 +120,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   final _country = TextEditingController();
   final _city = TextEditingController();
   final _aboutMe = TextEditingController();
+  final _specialNotes = TextEditingController();
   final _facebookUrl = TextEditingController();
   final _linkedinUrl = TextEditingController();
   final _tiktokUrl = TextEditingController();
@@ -152,6 +153,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
   String _initialCountry = '';
   String _initialCity = '';
   String _initialAboutMe = '';
+  String _initialSpecialNotes = '';
   String _initialFacebookUrl = '';
   String _initialLinkedinUrl = '';
   String _initialTiktokUrl = '';
@@ -265,6 +267,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _country.dispose();
     _city.dispose();
     _aboutMe.dispose();
+    _specialNotes.dispose();
     _facebookUrl.dispose();
     _linkedinUrl.dispose();
     _tiktokUrl.dispose();
@@ -1329,6 +1332,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       final rawGender = (_user['gender'] ?? '').toString().trim();
       _gender = _genderOptions.contains(rawGender) ? rawGender : null;
       _aboutMe.text = (_user['about_me'] ?? '').toString();
+      _specialNotes.text = (_user['special_notes'] ?? '').toString();
       final socialLinks = _socialLinksFromRaw(_user['social_links']);
       _facebookUrl.text = (socialLinks['facebook'] ?? '').toString();
       _linkedinUrl.text = (socialLinks['linkedin'] ?? '').toString();
@@ -1419,6 +1423,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
         'lng': double.tryParse(_selectedLng),
         'gender': (_gender ?? '').trim(),
         'about_me': _aboutMe.text.trim(),
+        'special_notes': _specialNotes.text.trim(),
         'social_links': socialLinks,
         'profile_photo': _profilePhotoUrl ?? '',
         'profile_photos': _photoUrls.take(_maxExtraPhotos).toList(),
@@ -1484,6 +1489,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     _initialCity = _city.text.trim();
     _initialGender = (_gender ?? '').trim();
     _initialAboutMe = _aboutMe.text.trim();
+    _initialSpecialNotes = _specialNotes.text.trim();
     _initialFacebookUrl = _facebookUrl.text.trim();
     _initialLinkedinUrl = _linkedinUrl.text.trim();
     _initialTiktokUrl = _tiktokUrl.text.trim();
@@ -1508,6 +1514,7 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
     if (_city.text.trim() != _initialCity) return true;
     if ((_gender ?? '').trim() != _initialGender) return true;
     if (_aboutMe.text.trim() != _initialAboutMe) return true;
+    if (_specialNotes.text.trim() != _initialSpecialNotes) return true;
     if (_facebookUrl.text.trim() != _initialFacebookUrl) return true;
     if (_linkedinUrl.text.trim() != _initialLinkedinUrl) return true;
     if (_tiktokUrl.text.trim() != _initialTiktokUrl) return true;
@@ -3144,10 +3151,29 @@ class _LearnerProfileScreenState extends State<LearnerProfileScreen> {
       children: [
         _buildExtraPhotosCard(),
         const SizedBox(height: 16),
+        _buildImportantNotesCard(),
+        const SizedBox(height: 16),
         _buildAboutMeCard(),
         const SizedBox(height: 16),
         _buildSocialLinksCard(),
       ],
+    );
+  }
+
+  Widget _buildImportantNotesCard() {
+    final p = palette;
+
+    return _SectionCard(
+      palette: p,
+      title: 'Important Notes',
+      subtitle: 'Notes, e.g., Medical, Behavioral, Dietary / ملاحظات مثل: طبية، سلوكية، غذائية',
+      icon: Icons.warning_amber_rounded,
+      child: _field(
+        'Notes / ملاحظات',
+        _specialNotes,
+        hintText: 'e.g. allergies, medical conditions, learning needs... / مثال: حساسية، ظروف صحية، احتياجات تعليمية...',
+        maxLines: 4,
+      ),
     );
   }
 
