@@ -77,6 +77,7 @@ Future<void> main() async {
 
 Future<void> _bootstrapApp() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AppFlavor.init();
 
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
