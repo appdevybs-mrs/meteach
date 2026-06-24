@@ -71,6 +71,12 @@ class AppWindowKeys {
   static const adminJobApplications = 'job_applications';
   static const adminDiary = 'diary';
   static const adminTeacherSessionCount = 'teacher_session_count';
+  static const adminInstructions = 'instructions';
+  static const adminSplashScreen = 'splash_screen';
+
+  static const teacherInstructions = 'instructions';
+
+  static const learnerInstructions = 'instructions';
 }
 
 class AppWindowDefinition {
@@ -567,6 +573,32 @@ class WindowAccessService {
       labelEn: 'Diary',
       labelAr: 'اليومية',
       tab: 'Operations',
+      canClose: true,
+    ),
+    AppWindowDefinition(
+      role: AppWindowRole.admin,
+      key: AppWindowKeys.adminInstructions,
+      labelEn: 'Instructions',
+      labelAr: 'التعليمات',
+      tab: 'Operations',
+      canClose: true,
+    ),
+
+    AppWindowDefinition(
+      role: AppWindowRole.teacher,
+      key: AppWindowKeys.teacherInstructions,
+      labelEn: 'Instructions',
+      labelAr: 'التعليمات',
+      tab: 'Teaching',
+      canClose: true,
+    ),
+
+    AppWindowDefinition(
+      role: AppWindowRole.learner,
+      key: AppWindowKeys.learnerInstructions,
+      labelEn: 'Instructions',
+      labelAr: 'التعليمات',
+      tab: 'Learning',
       canClose: true,
     ),
   ];

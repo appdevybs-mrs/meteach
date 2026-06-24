@@ -107,6 +107,7 @@ class AdminIcons {
   static const jobApplications = FontAwesomeIcons.briefcase;
   static const adminTodo = Icons.task_alt_rounded;
   static const diary = FontAwesomeIcons.bookOpen;
+  static const instructions = FontAwesomeIcons.bookOpenReader;
 
   static const navLearners = Icons.people_alt_rounded;
   static const navPayments = FontAwesomeIcons.coins;
@@ -130,6 +131,7 @@ class LearnerIcons {
   static const theme = Icons.palette_rounded;
   static const logout = Icons.logout_rounded;
   static const menu = Icons.menu_rounded;
+  static const instructions = FontAwesomeIcons.bookOpenReader;
 
   static const recordedCourse = Icons.play_circle_fill_rounded;
   static const flexibleCourse = FontAwesomeIcons.wifi;
@@ -164,6 +166,7 @@ class TeacherIcons {
   static const shared = Icons.folder_shared_rounded;
   static const myPlatform = Icons.hub_rounded;
   static const theme = Icons.palette_rounded;
+  static const instructions = FontAwesomeIcons.bookOpenReader;
 
   static const mailStat = FontAwesomeIcons.envelope;
   static const homeworkStat = FontAwesomeIcons.bookOpen;

@@ -2751,7 +2751,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       firstDate: DateTime(1940),
       lastDate: DateTime(now.year + 1),
       helpText: 'Date of birth',
-      initialEntryMode: DatePickerEntryMode.input,
+      initialEntryMode: DatePickerEntryMode.calendar,
     );
 
     if (picked == null) return;

@@ -1982,15 +1982,59 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
     int totalLessons = 0;
     if (courseId.isNotEmpty) {
       try {
-        DatabaseReference syllabusRef = _db.child('syllabi/$courseId');
-        if (variantKey.isNotEmpty) {
-          syllabusRef = syllabusRef.child(variantKey);
+        final rootSyllabusRef = _db.child('syllabi/$courseId');
+
+        final List<String> variantCandidates = [];
+        void addCandidate(String v) {
+          final x = v.trim().toLowerCase();
+          if (x.isEmpty) return;
+          if (!variantCandidates.contains(x)) variantCandidates.add(x);
         }
 
-        final sSnap = await syllabusRef.get().timeout(
+        addCandidate(variantKey);
+        final classVariant = (cls['variantKey'] ?? cls['variant'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+        addCandidate(classVariant);
+        final deliveryKey = resolveCourseDeliveryKey(course);
+        addCandidate(deliveryKey);
+
+        final norm = deliveryKey;
+        if (norm == 'private') {
+          addCandidate('private');
+          addCandidate('online');
+          addCandidate('inclass');
+          addCandidate('in_class');
+        } else if (norm == 'flexible') {
+          addCandidate('flexible');
+          addCandidate('online');
+        } else if (norm == 'inclass') {
+          addCandidate('inclass');
+          addCandidate('in_class');
+        } else if (norm == 'recorded') {
+          addCandidate('recorded');
+        }
+
+        DataSnapshot? sSnap;
+        for (final key in variantCandidates) {
+          final testSnap = await rootSyllabusRef
+              .child(key)
+              .get()
+              .timeout(const Duration(seconds: 10));
+          if (testSnap.exists &&
+              testSnap.value != null &&
+              testSnap.value is Map) {
+            sSnap = testSnap;
+            break;
+          }
+        }
+
+        sSnap ??= await rootSyllabusRef.get().timeout(
           const Duration(seconds: 10),
         );
-        if (sSnap.exists && sSnap.value is Map) {
+
+        if (sSnap != null && sSnap.exists && sSnap.value is Map) {
           final s = Map<String, dynamic>.from(sSnap.value as Map);
           final modules = s['modules'];
           if (modules is List) {

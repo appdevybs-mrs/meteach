@@ -19,6 +19,7 @@ import 'admin_learners.dart';
 import 'admin_mail_inbox_screen.dart';
 import 'admin_staff.dart';
 import 'admin_file_manager.dart';
+import 'admin_instructions_screen.dart';
 import 'admin_teacher_reminders_screen.dart';
 import 'admin_classes.dart';
 import 'admin_public_gallery_screen.dart';
@@ -57,6 +58,7 @@ import 'admin_payment_summary_sync_service.dart';
 import 'admin_diary_screen.dart';
 import 'admin_international_teachers_screen.dart';
 import 'admin_graduates_map_screen.dart';
+import 'admin_splash_screen.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -693,6 +695,24 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       card(
+        'Instructions',
+        windowKey: AppWindowKeys.adminInstructions,
+        child: _DashCard(
+          title: 'Instructions',
+          icon: AdminIcons.instructions,
+          color: AdminHome.accentPurple,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminInstructions,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminInstructionsScreen(),
+              ),
+            ),
+          ),
+        ),
+      ),
+      card(
         'Shared Files',
         windowKey: AppWindowKeys.adminSharedFiles,
         child: KeyedSubtree(
@@ -710,6 +730,24 @@ class _AdminHomeState extends State<AdminHome> {
             () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const AdminPublicGalleryScreen(),
+              ),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Splash Screen',
+        windowKey: AppWindowKeys.adminSplashScreen,
+        child: _DashCard(
+          title: 'Splash Screen',
+          icon: Icons.tv_rounded,
+          color: AdminHome.accentAmber,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminSplashScreen,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminSplashScreen(),
               ),
             ),
           ),
@@ -4465,7 +4503,8 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
 
   // AVATAR state
   List<String> _avatarUrls = [];
-  bool _uploadingAvatar = false;
+  int _uploadingAvatarTotal = 0;
+  int _uploadingAvatarDone = 0;
 
   bool loading = true;
   bool saving = false;
@@ -4855,7 +4894,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   }
 
   Future<void> _uploadAvatar() async {
-    if (_uploadingAvatar) return;
+    if (_uploadingAvatarTotal > 0) return;
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       allowMultiple: true,
@@ -4863,13 +4902,19 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
     );
     if (result == null || result.files.isEmpty) return;
 
-    setState(() => _uploadingAvatar = true);
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) { setState(() => _uploadingAvatar = false); return; }
+    if (user == null) return;
+
+    setState(() {
+      _uploadingAvatarTotal = result.files.length;
+      _uploadingAvatarDone = 0;
+    });
 
     int successCount = 0;
     int failCount = 0;
-    final uploadedUrls = <String>[];
+    void _doneOne() {
+      if (mounted) setState(() => _uploadingAvatarDone++);
+    }
 
     for (int i = 0; i < result.files.length; i++) {
       if (!mounted) break;
@@ -4885,17 +4930,13 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
 
         if (kIsWeb) {
           final bytes = file.bytes;
-          if (bytes == null || bytes.isEmpty) {
-            failCount++; continue;
-          }
+          if (bytes == null || bytes.isEmpty) { failCount++; _doneOne(); continue; }
           request.files.add(
             http.MultipartFile.fromBytes('file', bytes, filename: file.name),
           );
         } else {
           final path = file.path;
-          if (path == null || path.trim().isEmpty) {
-            failCount++; continue;
-          }
+          if (path == null || path.trim().isEmpty) { failCount++; _doneOne(); continue; }
           request.files.add(
             await http.MultipartFile.fromPath('file', path, filename: file.name),
           );
@@ -4904,27 +4945,34 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
         final streamed = await request.send();
         final body = await streamed.stream.bytesToString();
         if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-          failCount++; continue;
+          failCount++; _doneOne(); continue;
         }
         final decoded = jsonDecode(body);
         if (decoded is! Map || decoded['success'] != true) {
-          failCount++; continue;
+          failCount++; _doneOne(); continue;
         }
         final url = (decoded['url'] ?? '').toString().trim();
-        if (url.isEmpty) { failCount++; continue; }
-        uploadedUrls.add(url);
+        if (url.isEmpty) { failCount++; _doneOne(); continue; }
+
         successCount++;
+        if (mounted) {
+          setState(() {
+            _avatarUrls = [..._avatarUrls, url];
+            _uploadingAvatarDone++;
+          });
+          await _autosaveAvatars();
+        }
       } catch (_) {
         failCount++;
+        if (mounted) setState(() => _uploadingAvatarDone++);
       }
     }
 
     if (!mounted) return;
     setState(() {
-      _avatarUrls = [..._avatarUrls, ...uploadedUrls];
-      _uploadingAvatar = false;
+      _uploadingAvatarTotal = 0;
+      _uploadingAvatarDone = 0;
     });
-    await _autosaveAvatars();
 
     final msg = failCount == 0
         ? '$successCount avatar${successCount == 1 ? '' : 's'} uploaded ✅'
@@ -5329,9 +5377,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'These avatars are shown to learners who choose not to upload a personal photo.',
-                style: TextStyle(
+              Text(
+                '${_avatarUrls.length} avatar${_avatarUrls.length == 1 ? '' : 's'} uploaded',
+                style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   color: softText,
                   fontSize: 12,
@@ -5482,8 +5530,8 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: _uploadingAvatar ? null : _uploadAvatar,
-                  icon: _uploadingAvatar
+                  onPressed: _uploadingAvatarTotal > 0 ? null : _uploadAvatar,
+                  icon: _uploadingAvatarTotal > 0
                       ? const SizedBox(
                           width: 16,
                           height: 16,
@@ -5491,7 +5539,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
                         )
                       : const Icon(Icons.add_photo_alternate_outlined),
                   label: Text(
-                    _uploadingAvatar ? 'Uploading...' : 'Upload Avatar Images',
+                    _uploadingAvatarTotal > 0
+                        ? 'Uploading $_uploadingAvatarDone/$_uploadingAvatarTotal...'
+                        : 'Upload Avatar Images',
                   ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: primaryBlue,
@@ -5506,19 +5556,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: appBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: uiBorder),
-          ),
-          child: const Text(
-            'Tap to preview  •  Long-press to delete  •  Arrows to reorder\nUpload multiple JPG or PNG images at once.',
-            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
-          ),
-        ),
+
       ],
     );
   }

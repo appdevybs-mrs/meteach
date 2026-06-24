@@ -22,6 +22,7 @@ import '../shared/teacher_web_layout.dart';
 import 'teacher_stories_screen.dart';
 import 'teacher_classes.dart';
 import 'teacher_games_screen.dart';
+import 'teacher_instructions_screen.dart';
 import 'teacher_mail.dart';
 import 'teacher_online_booking.dart';
 import 'teacher_homework_inbox_screen.dart';
@@ -1161,6 +1162,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
+  void _openInstructionsScreen() {
+    _openTeacherWindow(
+      AppWindowKeys.teacherInstructions,
+      () => _pushScreen(const TeacherInstructionsScreen()),
+    );
+  }
+
   void _openOnlineAvailabilityScreen() {
     _openTeacherWindow(
       AppWindowKeys.teacherOnlineAvailability,
@@ -1295,6 +1303,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 onOpenClasses: _openClassesScreen,
                 onOpenGames: _openGamesScreen,
                 onOpenStories: _openStoriesScreen,
+                onOpenInstructions: _openInstructionsScreen,
                 onOpenOnlineBooking: _openOnlineAvailabilityScreen,
                 onOpenOnlineCircle: _openOnlineCircleScreen,
                 onOpenMail: _openMailScreen,
@@ -2079,9 +2088,10 @@ class _TeacherDrawer extends StatefulWidget {
     required this.onOpenSyllabi,
     required this.onOpenShared,
     required this.onOpenMyPlatform,
-    required this.onLogout,
     required this.onOpenGames,
     required this.onOpenStories,
+    required this.onOpenInstructions,
+    required this.onLogout,
   });
 
   final String teacherUid;
@@ -2101,6 +2111,7 @@ class _TeacherDrawer extends StatefulWidget {
   final VoidCallback onOpenMyPlatform;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenStories;
+  final VoidCallback onOpenInstructions;
   final VoidCallback onLogout;
 
   @override
@@ -2115,6 +2126,7 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
     'gallery',
     'games',
     'stories',
+    'instructions',
     'online_booking',
     'online_circle',
     'mail',
@@ -2269,6 +2281,12 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
         icon: TeacherIcons.stories,
         title: 'Stories',
         onTap: widget.onOpenStories,
+      ),
+      _TeacherMenuEntry(
+        id: 'instructions',
+        icon: TeacherIcons.instructions,
+        title: 'Instructions',
+        onTap: widget.onOpenInstructions,
       ),
       _TeacherMenuEntry(
         id: 'online_booking',

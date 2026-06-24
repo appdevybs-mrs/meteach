@@ -11,6 +11,7 @@ import 'teacher_mail_thread_screen.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/teacher_web_layout.dart';
+import '../shared/study_variant.dart';
 
 class TeacherLearnerProfileScreen extends StatefulWidget {
   const TeacherLearnerProfileScreen({
@@ -47,6 +48,8 @@ class _TeacherLearnerProfileScreenState
   int _statAttendancePct = 0;
   int _statLessonsCovered = 0;
   int _statHomeworkPending = 0;
+  List<_TeacherCourseCardItem> _courseCards = [];
+  bool _loadingCourses = false;
 
   AppPalette get palette => appThemeController.palette;
 
@@ -85,13 +88,54 @@ class _TeacherLearnerProfileScreenState
     if (courseId.trim().isEmpty) return out;
 
     try {
-      DatabaseReference syllabusRef = _db.child('syllabi/$courseId');
-      if (variantKey.trim().isNotEmpty) {
-        syllabusRef = syllabusRef.child(variantKey.trim().toLowerCase());
+      final rootSyllabusRef = _db.child('syllabi/$courseId');
+
+      final List<String> candidates = [];
+      void addCandidate(String v) {
+        final x = v.trim().toLowerCase();
+        if (x.isEmpty) return;
+        if (!candidates.contains(x)) candidates.add(x);
       }
 
-      final snap = await syllabusRef.get();
-      if (!snap.exists || snap.value == null || snap.value is! Map) return out;
+      addCandidate(variantKey);
+      final nk = normalizeVariantKey(variantKey, fallback: '');
+      if (nk.isNotEmpty) addCandidate(nk);
+
+      final norm = nk.isNotEmpty ? nk : variantKey;
+      if (norm == 'private') {
+        addCandidate('private');
+        addCandidate('online');
+        addCandidate('inclass');
+        addCandidate('in_class');
+      } else if (norm == 'flexible') {
+        addCandidate('flexible');
+        addCandidate('online');
+      } else if (norm == 'inclass' || norm == 'in_class') {
+        addCandidate('inclass');
+        addCandidate('in_class');
+      } else if (norm == 'recorded') {
+        addCandidate('recorded');
+      }
+
+      DataSnapshot? snap;
+      for (final key in candidates) {
+        final testSnap = await rootSyllabusRef
+            .child(key)
+            .get()
+            .timeout(const Duration(seconds: 10));
+        if (testSnap.exists &&
+            testSnap.value != null &&
+            testSnap.value is Map) {
+          snap = testSnap;
+          break;
+        }
+      }
+
+      snap ??= await rootSyllabusRef.get().timeout(
+        const Duration(seconds: 10),
+      );
+
+      if (snap == null || !snap.exists || snap.value == null || snap.value is! Map) return out;
 
       final data = Map<String, dynamic>.from(snap.value as Map);
       final modules = data['modules'];
@@ -350,6 +394,7 @@ class _TeacherLearnerProfileScreenState
                 if (item is! Map) continue;
                 final rec = Map<String, dynamic>.from(item);
 
+                if (!rec.containsKey('present')) continue;
                 totalAttendance += 1;
                 final present = rec['present'] == true;
                 if (present) totalPresent += 1;
@@ -371,6 +416,167 @@ class _TeacherLearnerProfileScreenState
           ? 0
           : ((totalPresent / totalAttendance) * 100).round();
     } catch (_) {}
+  }
+
+  Future<void> _loadCourseCards() async {
+    _loadingCourses = true;
+    _courseCards = [];
+    try {
+      final snap = await _db
+          .child('users/${widget.learnerUid}/courses')
+          .get()
+          .timeout(const Duration(seconds: 10));
+      if (!snap.exists || snap.value is! Map) return;
+
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      final items = <_TeacherCourseCardItem>[];
+
+      for (final e in raw.entries) {
+        final key = e.key.toString();
+        if (e.value is! Map) continue;
+        final course = Map<String, dynamic>.from(e.value as Map);
+
+        final cls = (course['class'] is Map)
+            ? Map<String, dynamic>.from(course['class'] as Map)
+            : <String, dynamic>{};
+        final courseId =
+            (cls['course_id'] ?? course['id'] ?? '').toString().trim();
+        final title =
+            (course['title'] ?? course['course_title'] ?? 'Course')
+                .toString()
+                .trim();
+        final code = (course['course_code'] ?? '').toString().trim();
+        final variantKey =
+            (course['variantKey'] ?? course['variant'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
+
+        int totalLessons = 0;
+        if (courseId.isNotEmpty) {
+          try {
+            final rootRef = _db.child('syllabi/$courseId');
+            final List<String> candidates = [];
+
+            void addCandidate(String v) {
+              final x = v.trim().toLowerCase();
+              if (x.isEmpty || candidates.contains(x)) return;
+              candidates.add(x);
+            }
+
+            addCandidate(variantKey);
+            final cv = (cls['variantKey'] ?? cls['variant'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
+            addCandidate(cv);
+            final nk = normalizeVariantKey(variantKey, fallback: '');
+            if (nk.isNotEmpty) addCandidate(nk);
+
+            final norm = nk.isNotEmpty ? nk : variantKey;
+            if (norm == 'private') {
+              addCandidate('private');
+              addCandidate('online');
+              addCandidate('inclass');
+              addCandidate('in_class');
+            } else if (norm == 'flexible') {
+              addCandidate('flexible');
+              addCandidate('online');
+            } else if (norm == 'inclass' || norm == 'in_class') {
+              addCandidate('inclass');
+              addCandidate('in_class');
+            } else if (norm == 'recorded') {
+              addCandidate('recorded');
+            }
+
+            DataSnapshot? sSnap;
+            for (final c in candidates) {
+              final ts = await rootRef
+                  .child(c)
+                  .get()
+                  .timeout(const Duration(seconds: 10));
+              if (ts.exists &&
+                  ts.value != null &&
+                  ts.value is Map) {
+                sSnap = ts;
+                break;
+              }
+            }
+
+            sSnap ??= await rootRef.get().timeout(
+              const Duration(seconds: 10),
+            );
+
+            if (sSnap != null && sSnap.exists && sSnap.value is Map) {
+              final s =
+                  Map<String, dynamic>.from(sSnap.value as Map);
+              final modules = s['modules'];
+              if (modules is List) {
+                for (final m in modules) {
+                  if (m is! Map) continue;
+                  final mm = Map<String, dynamic>.from(m);
+                  final units = mm['units'];
+                  if (units is! List) continue;
+                  for (final u in units) {
+                    if (u is! Map) continue;
+                    final uu = Map<String, dynamic>.from(u);
+                    final lessons = uu['lessons'];
+                    if (lessons is List) {
+                      totalLessons += lessons.length;
+                    }
+                  }
+                }
+              } else {
+                final units = s['units'];
+                if (units is List) {
+                  for (final u in units) {
+                    if (u is! Map) continue;
+                    final uu = Map<String, dynamic>.from(u);
+                    final sessions = uu['sessions'];
+                    if (sessions is List) {
+                      totalLessons += sessions.length;
+                    }
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
+        final covered = await _coveredSessionIdsFromCourse(
+          learnerUid: widget.learnerUid,
+          course: course,
+        );
+
+        final total = totalLessons > 0 ? totalLessons : 0;
+        final completed = total > 0
+            ? covered.length.clamp(0, total)
+            : covered.length;
+        final progress = total > 0
+            ? (completed / total).clamp(0.0, 1.0)
+            : 0.0;
+
+        items.add(
+          _TeacherCourseCardItem(
+            courseKey: key,
+            title: title,
+            code: code,
+            variantKey: variantKey,
+            classType: variantKey,
+            completed: completed,
+            total: total,
+            progress: progress,
+            course: course,
+          ),
+        );
+      }
+
+      items.sort(
+        (a, b) => b.progress.compareTo(a.progress),
+      );
+      _courseCards = items;
+    } catch (_) {}
+    _loadingCourses = false;
   }
 
   Future<void> _load() async {
@@ -412,6 +618,7 @@ class _TeacherLearnerProfileScreenState
       }
 
       await _loadSmallStats();
+      await _loadCourseCards();
     } catch (e) {
       _error = toHumanError(e);
     } finally {
@@ -1515,6 +1722,191 @@ class _TeacherLearnerProfileScreenState
     );
   }
 
+  Widget _buildCourseCardsSection(AppPalette p) {
+    if (_courseCards.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: p.border.withValues(alpha: 0.8)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Enrolled Courses',
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: p.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${_courseCards.length}',
+                  style: TextStyle(
+                    color: p.accent,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_loadingCourses)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: p.primary,
+                  ),
+                ),
+              ),
+            )
+          else
+            ..._courseCards.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildCourseCard(p, item),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourseCard(AppPalette p, _TeacherCourseCardItem item) {
+    final percentText = (item.progress * 100).round();
+    final accent = item.progress >= 1.0
+        ? const Color(0xFF10B981)
+        : (item.progress > 0
+              ? p.accent
+              : p.text.withValues(alpha: 0.4));
+    final variantLabel = item.classType.isEmpty
+        ? ''
+        : item.classType.replaceAll('_', ' ').toUpperCase();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: p.primary.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: CircularProgressIndicator(
+                    value: item.progress.clamp(0.0, 1.0),
+                    strokeWidth: 5,
+                    backgroundColor: accent.withValues(alpha: 0.12),
+                    valueColor: AlwaysStoppedAnimation(accent),
+                  ),
+                ),
+                Text(
+                  '$percentText%',
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.primary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+                if (item.code.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    item.code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: p.text.withValues(alpha: 0.6),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  '${item.completed} / ${item.total} lessons',
+                  style: TextStyle(
+                    color: p.text.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (variantLabel.isNotEmpty)
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                variantLabel,
+                style: TextStyle(
+                  color: accent,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 9,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAboutMeCard(AppPalette p) {
     final aboutMe = _safeStr(_user['about_me']);
 
@@ -1790,12 +2182,38 @@ class _TeacherLearnerProfileScreenState
                     _buildImportantNotesCard(p),
                     const SizedBox(height: 14),
                     _buildSummaryCard(p),
+                    const SizedBox(height: 14),
+                    _buildCourseCardsSection(p),
                   ],
                 ),
         ),
       ),
     );
   }
+}
+
+class _TeacherCourseCardItem {
+  final String courseKey;
+  final String title;
+  final String code;
+  final String variantKey;
+  final String classType;
+  final int completed;
+  final int total;
+  final double progress;
+  final Map<String, dynamic> course;
+
+  _TeacherCourseCardItem({
+    required this.courseKey,
+    required this.title,
+    required this.code,
+    required this.variantKey,
+    required this.classType,
+    required this.completed,
+    required this.total,
+    required this.progress,
+    required this.course,
+  });
 }
 
 class _ReportCardDiagramV3 extends StatelessWidget {

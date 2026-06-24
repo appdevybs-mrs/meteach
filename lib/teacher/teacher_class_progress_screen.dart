@@ -763,6 +763,10 @@ class _TeacherClassProgressScreenState
                       children: [
                         _headerHeroCard(p),
                         const SizedBox(height: 12),
+                        if (!_hasLearnerSelected) ...[
+                          _allLearnersTable(p),
+                          const SizedBox(height: 12),
+                        ],
                         if (_sessionsToReview.isNotEmpty) ...[
                           _reviewBanner(p),
                           const SizedBox(height: 12),
@@ -965,6 +969,14 @@ class _TeacherClassProgressScreenState
       totalAbsent += s.absent;
     }
 
+    final totalSessionsHeld = _attendance.length;
+    final avgPresent = (totalSessionsHeld > 0 && !_hasLearnerSelected)
+        ? (totalPresent / totalSessionsHeld).toStringAsFixed(1)
+        : null;
+    final avgAbsent = (totalSessionsHeld > 0 && !_hasLearnerSelected)
+        ? (totalAbsent / totalSessionsHeld).toStringAsFixed(1)
+        : null;
+
     final displayPaid = _hasLearnerSelected ? stats.paid : totalPaid;
     final displayConsumed = _hasLearnerSelected ? stats.consumed : totalConsumed;
     final displayLeft = displayPaid > 0 ? (displayPaid - displayConsumed).clamp(0, displayPaid) : 0;
@@ -1086,37 +1098,168 @@ class _TeacherClassProgressScreenState
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _compactStat(
-                      label: _hasLearnerSelected ? 'Used' : 'Sessions',
-                      value: '$displayConsumed',
-                    ),
-                    if (displayPaid > 0) ...[
+                if (_hasLearnerSelected) ...[
+                  Row(
+                    children: [
+                      _compactStat(label: 'Used', value: '$displayConsumed'),
+                      if (displayPaid > 0) ...[
+                        const _DivDot(color: Colors.white54),
+                        _compactStat(label: 'Paid', value: '$displayPaid'),
+                        const _DivDot(color: Colors.white54),
+                        _compactStat(label: 'Left', value: '$displayLeft'),
+                      ],
                       const _DivDot(color: Colors.white54),
-                      _compactStat(
-                        label: 'Paid',
-                        value: '$displayPaid',
-                      ),
+                      _compactStat(label: 'Present', value: '$displayPresent'),
                       const _DivDot(color: Colors.white54),
-                      _compactStat(
-                        label: 'Left',
-                        value: '$displayLeft',
-                      ),
+                      _compactStat(label: 'Absent', value: '$displayAbsent'),
                     ],
-                    const _DivDot(color: Colors.white54),
-                    _compactStat(
-                      label: 'Present',
-                      value: '$displayPresent',
-                    ),
-                    const _DivDot(color: Colors.white54),
-                    _compactStat(
-                      label: 'Absent',
-                      value: '$displayAbsent',
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      _compactStat(label: 'Sessions', value: '$totalSessionsHeld'),
+                      if (avgPresent != null) ...[
+                        const _DivDot(color: Colors.white54),
+                        _compactStat(label: 'Avg present', value: avgPresent),
+                      ],
+                      if (avgAbsent != null) ...[
+                        const _DivDot(color: Colors.white54),
+                        _compactStat(label: 'Avg absent', value: avgAbsent),
+                      ],
+                    ],
+                  ),
+                  if (displayPaid > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _compactStat(label: 'Paid', value: '$displayPaid'),
+                        const _DivDot(color: Colors.white54),
+                        _compactStat(label: 'Used', value: '$displayConsumed'),
+                        const _DivDot(color: Colors.white54),
+                        _compactStat(label: 'Left', value: '$displayLeft'),
+                      ],
                     ),
                   ],
-                ),
+                ],
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _allLearnersTable(AppPalette p) {
+    final learnerUids = _learners.keys.map((e) => e.toString()).toList();
+    if (learnerUids.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: p.border.withValues(alpha: 0.85)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Each Learner',
+            style: TextStyle(
+              color: p.primary,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Attendance & progress breakdown.',
+            style: TextStyle(
+              color: p.text.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...learnerUids.map((uid) => _learnerProgressRow(p, uid)),
+        ],
+      ),
+    );
+  }
+
+  Widget _learnerProgressRow(AppPalette p, String uid) {
+    final stats = _statsForLearner(uid);
+    final covered = _computeCoveredForLearner(uid);
+    final pct = _totalSyllabusSessions <= 0
+        ? 0
+        : ((covered.length / _totalSyllabusSessions) * 100).round().clamp(0, 100);
+    final name = _learnerName(uid);
+    final color = _progressColor(pct);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: p.border.withValues(alpha: 0.5)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              name,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: p.text,
+                fontSize: 13,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'P ${stats.present} / A ${stats.absent}',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: p.text.withValues(alpha: 0.72),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: _totalSyllabusSessions <= 0
+                    ? 0
+                    : (covered.length / _totalSyllabusSessions).clamp(0, 1),
+                minHeight: 6,
+                backgroundColor: color.withValues(alpha: 0.12),
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 36,
+            child: Text(
+              '$pct%',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: color,
+                fontSize: 13,
+              ),
             ),
           ),
         ],

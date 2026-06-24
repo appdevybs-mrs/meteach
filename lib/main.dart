@@ -22,6 +22,7 @@ import 'services/fcm_service.dart';
 import 'services/app_launch_action_service.dart';
 import 'services/backend_api.dart';
 import 'services/course_feedback_service.dart';
+import 'services/splash_config_service.dart';
 import 'services/push_dispatch_service.dart';
 import 'services/recorded_progress_sync_service.dart';
 import 'firebase_options.dart';
@@ -193,11 +194,24 @@ class AppStartupGate extends StatefulWidget {
 class _AppStartupGateState extends State<AppStartupGate> {
   double _progress = 0;
   bool _ready = false;
+  SplashConfig _splashConfig = SplashConfig.empty;
+  VideoPlayerController? _videoController;
+  bool _videoInitialized = false;
 
   @override
   void initState() {
     super.initState();
+    _loadCachedConfig();
     _boot();
+  }
+
+  Future<void> _loadCachedConfig() async {
+    final cached = await SplashConfig.loadFromPrefs();
+    if (!mounted) return;
+    setState(() => _splashConfig = cached);
+    if (cached.isVideo && cached.url.isNotEmpty) {
+      _initVideo(cached.url);
+    }
   }
 
   Future<void> _boot() async {
@@ -206,6 +220,22 @@ class _AppStartupGateState extends State<AppStartupGate> {
       if (!mounted) return;
       setState(() => _progress = progress);
     }
+
+    await step(() async {
+      final fresh = await SplashConfigService.fetch();
+      if (!mounted) return;
+      await fresh.saveToPrefs();
+      if (fresh.url != _splashConfig.url) {
+        setState(() => _splashConfig = fresh);
+        if (fresh.isVideo && fresh.url.isNotEmpty) {
+          _initVideo(fresh.url);
+        } else {
+          _videoController?.dispose();
+          _videoController = null;
+          _videoInitialized = false;
+        }
+      }
+    }, 0.1);
 
     await step(
       () async => Future<void>.delayed(const Duration(milliseconds: 120)),
@@ -225,24 +255,141 @@ class _AppStartupGateState extends State<AppStartupGate> {
     );
 
     if (!mounted) return;
+    _videoController?.dispose();
+    _videoController = null;
+    _videoInitialized = false;
     setState(() => _ready = true);
+  }
+
+  void _initVideo(String url) {
+    _videoController?.dispose();
+    _videoInitialized = false;
+    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+    _videoController = controller;
+    controller.initialize().then((_) {
+      if (!mounted) return;
+      if (controller == _videoController) {
+        setState(() => _videoInitialized = true);
+        controller.play();
+      }
+    }).catchError((_) {});
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (_ready) return widget.child;
-    return _ProgressiveLogoSplash(progress: _progress);
+    return _ProgressiveLogoSplash(
+      progress: _progress,
+      splashConfig: _splashConfig,
+      videoController: _videoController,
+      videoInitialized: _videoInitialized,
+    );
   }
 }
 
 class _ProgressiveLogoSplash extends StatelessWidget {
-  const _ProgressiveLogoSplash({required this.progress});
+  const _ProgressiveLogoSplash({
+    required this.progress,
+    this.splashConfig = SplashConfig.empty,
+    this.videoController,
+    this.videoInitialized = false,
+  });
 
   final double progress;
+  final SplashConfig splashConfig;
+  final VideoPlayerController? videoController;
+  final bool videoInitialized;
 
   @override
   Widget build(BuildContext context) {
     final p = progress.clamp(0.0, 1.0).toDouble();
+    final bottomSafe = MediaQuery.of(context).padding.bottom;
+
+    if (splashConfig.hasMedia) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (splashConfig.isVideo && videoController != null && videoInitialized)
+              FittedBox(
+                fit: BoxFit.cover,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: videoController!.value.size.width,
+                  height: videoController!.value.size.height,
+                  child: VideoPlayer(videoController!),
+                ),
+              )
+            else if (splashConfig.isImage)
+              CachedNetworkImage(
+                imageUrl: splashConfig.url,
+                fit: BoxFit.cover,
+                errorWidget: (_, _, _) => Center(
+                  child: Icon(Icons.school_rounded, size: 78, color: Brand.primaryBlue),
+                ),
+              )
+            else
+              Center(
+                child: Icon(Icons.school_rounded, size: 78, color: Brand.primaryBlue),
+              ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 200,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.7),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 26,
+              right: 26,
+              bottom: bottomSafe + 40,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Preparing your learning space...',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      minHeight: 8,
+                      value: p,
+                      backgroundColor: Colors.white.withValues(alpha: 0.25),
+                      color: Brand.actionOrange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Brand.appBg,
       body: SafeArea(
