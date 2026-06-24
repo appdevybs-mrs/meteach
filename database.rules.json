@@ -353,6 +353,22 @@
       ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
     },
 
+    "public_learner_pins": {
+      ".read": true,
+      ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+      "$learnerUid": {
+        ".validate": "newData.hasChildren(['name','country','city','lat','lng'])",
+        "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
+        "country": { ".validate": "newData.isString()" },
+        "city": { ".validate": "newData.isString()" },
+        "lat": { ".validate": "newData.isNumber()" },
+        "lng": { ".validate": "newData.isNumber()" },
+        "photoUrl": { ".validate": "!newData.exists() || newData.isString()" },
+        "blurPhoto": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "$other": { ".validate": false }
+      }
+    },
+
     "learner_gallery": {
       ".read": true,
       ".write": "auth != null"

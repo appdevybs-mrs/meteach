@@ -333,11 +333,13 @@ class WorldGraduatesHome extends StatelessWidget {
                 }
 
                 return StreamBuilder<DatabaseEvent>(
-                  stream: FirebaseDatabase.instance.ref('users').onValue,
-                  builder: (context, usersSnapshot) {
-                    final users = usersSnapshot.data?.snapshot.value;
-                    final learners = _parseLearnersForMap(
-                      users is Map ? users.cast<String, dynamic>() : null,
+                  stream: FirebaseDatabase.instance
+                      .ref('public_learner_pins')
+                      .onValue,
+                  builder: (context, pinsSnapshot) {
+                    final pinsData = pinsSnapshot.data?.snapshot.value;
+                    final learners = _parseLearnerPins(
+                      pinsData is Map ? pinsData.cast<String, dynamic>() : null,
                     );
 
                     if (graduates.isEmpty && learners.isEmpty) {
@@ -488,14 +490,13 @@ class _LearnerMapEntry {
   final double lng;
 }
 
-List<_LearnerMapEntry> _parseLearnersForMap(Map<String, dynamic>? users) {
-  if (users == null) return [];
+List<_LearnerMapEntry> _parseLearnerPins(Map<String, dynamic>? pins) {
+  if (pins == null) return [];
   final learners = <_LearnerMapEntry>[];
-  for (final entry in users.entries) {
+  for (final entry in pins.entries) {
     final uid = entry.key;
     final data = entry.value;
     if (data is! Map) continue;
-    if (data['role'] != 'learner') continue;
     final lat = _GraduateMapPerson._toDouble(data['lat']);
     final lng = _GraduateMapPerson._toDouble(data['lng']);
     if (lat == null || lng == null) continue;

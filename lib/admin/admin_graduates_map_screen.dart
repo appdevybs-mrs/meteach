@@ -78,6 +78,12 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
 
     try {
       await _ref.child(item.id).remove();
+      if (item.learnerUid.isNotEmpty) {
+        await FirebaseDatabase.instance
+            .ref('public_learner_pins')
+            .child(item.learnerUid)
+            .remove();
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -968,6 +974,7 @@ class _GraduateMapAdminItem {
     required this.lng,
     required this.active,
     this.blurPhoto = false,
+    this.learnerUid = '',
   });
 
   final String id;
@@ -979,6 +986,7 @@ class _GraduateMapAdminItem {
   final double lng;
   final bool active;
   final bool blurPhoto;
+  final String learnerUid;
 
   static List<_GraduateMapAdminItem> fromSnapshot(dynamic value) {
     if (value is! Map) return const <_GraduateMapAdminItem>[];
@@ -997,6 +1005,7 @@ class _GraduateMapAdminItem {
           lng: _toDouble(m['lng']) ?? 0,
           active: m['active'] != false,
           blurPhoto: m['blurPhoto'] == true,
+          learnerUid: (m['learnerUid'] ?? '').toString().trim(),
         ),
       );
     });
@@ -1027,6 +1036,7 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
 
   final _usersRef = FirebaseDatabase.instance.ref('users');
   final _mapRef = FirebaseDatabase.instance.ref('graduate_world_map');
+  final _publicPinsRef = FirebaseDatabase.instance.ref('public_learner_pins');
 
   final List<_LearnerMapItem> _learners = [];
   final Set<String> _learnerUidsOnMap = {};
@@ -1175,6 +1185,15 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
         'createdByUid': user.uid,
         'updatedAt': ServerValue.timestamp,
         'updatedByUid': user.uid,
+      });
+      await _publicPinsRef.child(learner.uid).set({
+        'name': _mapName(learner),
+        'photoUrl': learner.photoUrl,
+        'country': country,
+        'city': city,
+        'lat': lat,
+        'lng': lng,
+        'blurPhoto': false,
       });
       if (!mounted) return;
       ScaffoldMessenger.of(
