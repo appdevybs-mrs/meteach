@@ -35,6 +35,7 @@ class AdminSubscriptionsScreen extends StatefulWidget {
 
 class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
   String _promoFilter = '';
+  bool _promoUsageExpanded = true;
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const actionOrange = Color(0xFFF98D28);
@@ -229,62 +230,75 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
                   fontSize: 12,
                 ),
               ),
+              IconButton(
+                icon: Icon(
+                  _promoUsageExpanded ? Icons.expand_less : Icons.expand_more,
+                ),
+                visualDensity: VisualDensity.compact,
+                onPressed: () =>
+                    setState(() => _promoUsageExpanded = !_promoUsageExpanded),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _filterChip('All', ''),
-              _filterChip('With promo ($withPromoCount)', '__with_promo__'),
-              for (final summary in summaries)
-                _filterChip('${summary.code} (${summary.count})', summary.code),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (summaries.isEmpty)
-            Text(
-              'No promo codes have been used yet.',
-              style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.65),
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowHeight: 36,
-                dataRowMinHeight: 38,
-                dataRowMaxHeight: 44,
-                columns: const [
-                  DataColumn(label: Text('Promo code')),
-                  DataColumn(label: Text('Used'), numeric: true),
-                  DataColumn(label: Text('Final total'), numeric: true),
-                  DataColumn(label: Text('Discount'), numeric: true),
-                ],
-                rows: [
-                  for (final summary in summaries)
-                    DataRow(
-                      selected: _promoFilter == summary.code,
-                      onSelectChanged: (_) {
-                        setState(() {
-                          _promoFilter = _promoFilter == summary.code
-                              ? ''
-                              : summary.code;
-                        });
-                      },
-                      cells: [
-                        DataCell(Text(summary.code)),
-                        DataCell(Text(summary.count.toString())),
-                        DataCell(Text(_money(summary.totalFinalFee))),
-                        DataCell(Text(_money(summary.totalDiscount))),
-                      ],
-                    ),
-                ],
-              ),
+          if (_promoUsageExpanded) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _filterChip('All', ''),
+                _filterChip('With promo ($withPromoCount)', '__with_promo__'),
+                for (final summary in summaries)
+                  _filterChip(
+                    '${summary.code} (${summary.count})',
+                    summary.code,
+                  ),
+              ],
             ),
+            const SizedBox(height: 10),
+            if (summaries.isEmpty)
+              Text(
+                'No promo codes have been used yet.',
+                style: TextStyle(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowHeight: 36,
+                  dataRowMinHeight: 38,
+                  dataRowMaxHeight: 44,
+                  columns: const [
+                    DataColumn(label: Text('Promo code')),
+                    DataColumn(label: Text('Used'), numeric: true),
+                    DataColumn(label: Text('Final total'), numeric: true),
+                    DataColumn(label: Text('Discount'), numeric: true),
+                  ],
+                  rows: [
+                    for (final summary in summaries)
+                      DataRow(
+                        selected: _promoFilter == summary.code,
+                        onSelectChanged: (_) {
+                          setState(() {
+                            _promoFilter = _promoFilter == summary.code
+                                ? ''
+                                : summary.code;
+                          });
+                        },
+                        cells: [
+                          DataCell(Text(summary.code)),
+                          DataCell(Text(summary.count.toString())),
+                          DataCell(Text(_money(summary.totalFinalFee))),
+                          DataCell(Text(_money(summary.totalDiscount))),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+          ],
         ],
       ),
     );
