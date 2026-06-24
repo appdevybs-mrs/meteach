@@ -1,230 +1,430 @@
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Your Bridge School</title>
-  <meta name="description" content="Your Bridge School offers premium English learning, teacher training, and a modern student experience.">
-  <link rel="stylesheet" href="/assets/css/styles.css">
+  <title>Your Bridge School – Learn English</title>
+  <meta name="description" content="Your Bridge School – Not for the certificate, for the skill.">
+  <link rel="stylesheet" href="/assets/css/style.css">
 </head>
 <body>
-  <header class="site-header">
-    <div class="container nav-shell">
-      <a class="brand" href="/" aria-label="Your Bridge School home">
-        <span class="brand-mark">YB</span>
-        <span class="brand-text" data-i18n="brand.name">Your Bridge School</span>
-      </a>
 
-      <button class="menu-toggle" type="button" data-menu-toggle aria-expanded="false" aria-controls="site-menu">Menu</button>
+<!-- ===== HEADER ===== -->
+<header class="header">
+  <div class="container header-inner">
+    <a href="#" class="logo">
+      <span class="logo-mark">YB</span>
+      <span class="logo-text">Your Bridge School</span>
+    </a>
+    <nav class="nav">
+      <a href="#courses">Courses</a>
+      <a href="#gallery">Gallery</a>
+      <a href="#world">World</a>
+    </nav>
+    <button class="btn-login" onclick="openLogin()">Login</button>
+  </div>
+</header>
 
-      <nav class="site-menu" id="site-menu" data-menu>
-        <a class="active" href="/" data-i18n="nav.home">Home</a>
-        <a href="/media/" data-i18n="nav.media">Media</a>
-        <a href="#gallery" data-i18n="nav.gallery">Gallery</a>
-        <a href="/training/" data-i18n="nav.training">Training</a>
-        <a class="login-link" href="https://www.yourbridgeschool.com/online" data-i18n="nav.login">Login</a>
-
-        <label class="lang-picker" aria-label="Language selector">
-          <select id="language-switcher" class="lang-select" aria-label="Language selector">
-            <option value="en">EN</option>
-            <option value="ar">AR</option>
-            <option value="fr">FR</option>
-          </select>
-        </label>
-      </nav>
-    </div>
-  </header>
-
-  <main>
-    <section class="hero section-pad" id="home">
-      <div class="container hero-grid">
-        <div class="hero-copy">
-          <span class="pill" data-i18n="hero.pill">Your path to English excellence</span>
-          <h1 class="hero-title">
-            <span data-i18n="hero.titleA">Build your future</span>
-            <br>
-            <span><span data-i18n="hero.titleBPrefix">with</span> <span class="accent" data-i18n="hero.titleBBrand">Your Bridge School</span></span>
-          </h1>
-          <p class="lead" data-i18n="hero.lead">Access training programs, certifications, career pathways, and international opportunities. Learn practical skills with expert mentors and flexible study options.</p>
-          <p class="slogan" data-i18n="hero.slogan">Not for the certificate, for the skill</p>
-
-          <div class="cta-row">
-            <a class="btn btn-primary" href="/courses/" data-i18n="hero.primaryCta">Start Learning Today</a>
-            <a class="btn btn-outline" href="#courses" data-i18n="hero.secondaryCta">Explore Courses</a>
-          </div>
-        </div>
-
-        <div class="teacher-panel card">
-          <h2 data-i18n="teacher.title">Meet the Teachers</h2>
-          <div class="teacher-layout">
-            <div class="teacher-list" aria-label="Teacher list">
-              <button class="teacher-chip is-active" type="button">Farah Chahrazed Bekai</button>
-              <button class="teacher-chip" type="button">Teacher</button>
-              <button class="teacher-chip" type="button">Nadir Tamri</button>
-              <button class="teacher-chip" type="button">Amel Djihane Hamidi</button>
-            </div>
-            <div class="teacher-video" role="img" aria-label="Teacher video preview">
-              <div class="video-play">▶</div>
-              <div class="video-bar"></div>
-              <div class="video-meta">
-                <strong>0:00</strong>
-                <span>Classroom preview</span>
-              </div>
-            </div>
-          </div>
-          <p class="panel-note" data-i18n="teacher.note">Hear directly from our teachers and discover their classroom approach.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="section-soft gallery-section" id="gallery">
-      <div class="container">
-        <div class="section-head center">
-          <h2 data-i18n="gallery.title">Our Gallery</h2>
-          <p data-i18n="gallery.lead">Discover moments from our students' learning journey</p>
-          <div class="gallery-quick-links">
-            <a class="gallery-quick-link" href="/gallery/#photos" data-i18n="gallery.viewPhotos">View Photos</a>
-            <a class="gallery-quick-link" href="/gallery/#videos" data-i18n="gallery.viewVideos">View Videos</a>
-          </div>
-        </div>
-
-        <div class="gallery-feed card gallery-feed-compact" data-public-gallery data-gallery-target="home">
-          <div class="gallery-carousel" data-gallery-carousel hidden>
-            <button class="gallery-arrow prev" type="button" data-gallery-prev aria-label="Previous gallery item">‹</button>
-            <div class="gallery-viewport">
-              <div class="gallery-track" data-gallery-track></div>
-            </div>
-            <button class="gallery-arrow next" type="button" data-gallery-next aria-label="Next gallery item">›</button>
-          </div>
-          <div class="gallery-dots" data-gallery-dots hidden></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section-pad" id="courses">
-      <div class="container">
-        <div class="section-head center">
-          <h2 data-i18n="courses.title">Our Courses</h2>
-          <p data-i18n="courses.lead">Browse learner programs and register directly from the website.</p>
-        </div>
-
-        <div class="courses-layout">
-          <div class="course-grid">
-            <article class="course-card course-highlight">
-              <div class="course-top badge-a0">A0</div>
-              <h3 data-i18n="courses.card1Title">Beginner English</h3>
-              <p data-i18n="courses.card1Text">Start from the basics with simple, structured lessons and practical speaking support.</p>
-              <div class="course-tags">
-                <span>A0</span><span data-i18n="courses.tag1">Basic</span><span>English</span>
-              </div>
-              <div class="course-footer">
-                <span data-i18n="courses.startingFrom">Starting from</span>
-                <strong>2000 DA</strong>
-              </div>
-            </article>
-
-            <article class="course-card">
-              <div class="course-top badge-a1">A1</div>
-              <h3 data-i18n="courses.card2Title">Starter English</h3>
-              <p data-i18n="courses.card2Text">Build everyday vocabulary, conversation habits, and learner confidence.</p>
-              <div class="course-tags">
-                <span>A1</span><span data-i18n="courses.tag2">Elementary</span><span>English</span>
-              </div>
-              <div class="course-footer">
-                <span data-i18n="courses.startingFrom">Starting from</span>
-                <strong>2000 DA</strong>
-              </div>
-            </article>
-
-            <article class="course-card">
-              <div class="course-top badge-a1p">A1+</div>
-              <h3 data-i18n="courses.card3Title">Upper Elementary</h3>
-              <p data-i18n="courses.card3Text">Improve fluency through focused speaking, reading, and teamwork activities.</p>
-              <div class="course-tags">
-                <span>A1+</span><span data-i18n="courses.tag3">English</span><span data-i18n="courses.tag4">Upper Elementary</span>
-              </div>
-              <div class="course-footer">
-                <span data-i18n="courses.startingFrom">Starting from</span>
-                <strong>2000 DA</strong>
-              </div>
-            </article>
-          </div>
-
-          <aside class="apply-panel">
-            <h3 data-i18n="courses.applyTitle">Apply in 1 minute</h3>
-            <p data-i18n="courses.applyText">Submit your details and our admissions team will contact you with the best next step.</p>
-            <a class="btn btn-primary wide" href="/training/" data-i18n="courses.applyButton">Want to be a teacher</a>
-
-            <div class="format-block">
-              <h4 data-i18n="courses.formatTitle">Choose Learning Format</h4>
-              <div class="format-grid">
-                <div class="format-pill is-active"><span>Online</span><small>4200 DA</small></div>
-                <div class="format-pill"><span>Flexible</span><small>4800 DA</small></div>
-                <div class="format-pill"><span>Private</span><small>9000 DA</small></div>
-                <div class="format-pill"><span>Recorded</span><small>2000 DA</small></div>
-              </div>
-            </div>
-
-            <div class="mock-form">
-              <label>
-                <span data-i18n="courses.formName">Full name</span>
-                <input type="text" placeholder="Enter your full name">
-              </label>
-              <label>
-                <span data-i18n="courses.formPhone">Phone</span>
-                <input type="tel" placeholder="+213...">
-              </label>
-              <label>
-                <span data-i18n="courses.formEmail">Email</span>
-                <input type="email" placeholder="you@example.com">
-              </label>
-              <label>
-                <span data-i18n="courses.formProgram">Program</span>
-                <input type="text" placeholder="A0 / A1 / Teacher Training">
-              </label>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container footer-grid">
-      <div>
-        <div class="footer-brand">
-          <span class="brand-mark">YB</span>
-          <strong data-i18n="brand.name">Your Bridge School</strong>
-        </div>
-        <p data-i18n="footer.mission">Your path to English excellence. Join a community that learns with confidence and purpose.</p>
-      </div>
-
-      <div>
-        <h4 data-i18n="footer.contact">Contact Us</h4>
-        <ul class="footer-list">
-          <li>+213 655 54 82 93</li>
-          <li>contact@yourbridgeschool.com</li>
-          <li>Bakouka 4236/42, Djelfa, Algeria</li>
-        </ul>
-      </div>
-
-      <div>
-        <h4 data-i18n="footer.explore">Explore</h4>
-        <ul class="footer-links">
-          <li><a href="/courses/" data-i18n="nav.courses">Courses</a></li>
-          <li><a href="/training/" data-i18n="nav.training">Teacher Training</a></li>
-          <li><a href="/media/" data-i18n="nav.media">Media Hub</a></li>
-          <li><a href="/community/" data-i18n="nav.community">Meet Community</a></li>
-          <li><a href="/privacy-policy/" data-i18n="nav.privacy">Privacy Policy</a></li>
-          <li><a href="/terms-of-service/" data-i18n="nav.terms">Terms of Service</a></li>
-          <li><a href="/jobs/" data-i18n="nav.jobs">Apply Jobs</a></li>
-        </ul>
+<!-- ===== HERO ===== -->
+<section class="hero">
+  <div class="container hero-grid">
+    <div class="hero-content">
+      <span class="hero-badge">Your path to English excellence</span>
+      <h1>Build your future<br>with <span class="text-orange">Your Bridge School</span></h1>
+      <p class="hero-text">Access training programs, certifications, career pathways, and international opportunities. Learn practical skills with expert mentors and flexible study options.</p>
+      <p class="hero-slogan">Not for the certificate, for the skill</p>
+      <div class="hero-btns">
+        <a href="#courses" class="btn btn-primary">Explore Courses</a>
+        <a href="#gallery" class="btn btn-outline">View Gallery</a>
       </div>
     </div>
+    <div class="hero-card">
+      <div class="hero-card-header">
+        <span class="hero-card-icon">🎓</span>
+        <span>Meet the Teachers</span>
+      </div>
+      <div class="hero-teachers">
+        <div class="teacher-chip active">Farah Chahrazed Bekai</div>
+        <div class="teacher-chip">Nadir Tamri</div>
+        <div class="teacher-chip">Amel Djihane Hamidi</div>
+        <div class="teacher-chip">Teacher</div>
+      </div>
+      <div class="hero-video">
+        <div class="hero-video-play">▶</div>
+        <div class="hero-video-bar"></div>
+        <div class="hero-video-meta"><strong>0:00</strong> <span>Classroom preview</span></div>
+      </div>
+      <p class="hero-card-note">Hear directly from our teachers and discover their classroom approach.</p>
+    </div>
+  </div>
+</section>
 
-    <div class="container footer-bottom" data-i18n="footer.rights">© 2026 Your Bridge School. All rights reserved.</div>
-  </footer>
+<!-- ===== COURSES ===== -->
+<section class="section" id="courses">
+  <div class="container">
+    <div class="section-head">
+      <h2>Our Courses</h2>
+      <p>Browse our programs and register directly from the website.</p>
+    </div>
+    <div class="courses-grid">
+      <div class="course-card" onclick="openCourse('general')">
+        <div class="course-thumb" style="background:linear-gradient(135deg,#1A2B48,#2E4A78)">📘</div>
+        <h3>General English</h3>
+        <p>Build a strong foundation in English with structured lessons, speaking practice, and real-world topics.</p>
+        <div class="course-tags">
+          <span>Beginner</span>
+          <span>English</span>
+          <span>General</span>
+        </div>
+        <div class="course-footer">
+          <span class="course-price-label">Starting from</span>
+          <span class="course-price">15,000 DA</span>
+        </div>
+      </div>
+      <div class="course-card" onclick="openCourse('business')">
+        <div class="course-thumb" style="background:linear-gradient(135deg,#F98D28,#E07A1A)">💼</div>
+        <h3>Business English</h3>
+        <p>Professional English for the workplace. Improve email writing, presentations, meetings, and negotiation skills.</p>
+        <div class="course-tags">
+          <span>Intermediate</span>
+          <span>Business</span>
+          <span>English</span>
+        </div>
+        <div class="course-footer">
+          <span class="course-price-label">Starting from</span>
+          <span class="course-price">25,000 DA</span>
+        </div>
+      </div>
+      <div class="course-card" onclick="openCourse('ielts')">
+        <div class="course-thumb" style="background:linear-gradient(135deg,#00D4FF,#00A8CC)">🎯</div>
+        <h3>IELTS Preparation</h3>
+        <p>Intensive course covering all IELTS modules. Mock tests, strategies, and personal feedback from certified trainers.</p>
+        <div class="course-tags">
+          <span>Advanced</span>
+          <span>IELTS</span>
+          <span>Exam</span>
+        </div>
+        <div class="course-footer">
+          <span class="course-price-label">Starting from</span>
+          <span class="course-price">35,000 DA</span>
+        </div>
+      </div>
+      <div class="course-card" onclick="openCourse('conversation')">
+        <div class="course-thumb" style="background:linear-gradient(135deg,#1A2B48,#F98D28)">🗣️</div>
+        <h3>Conversation Course</h3>
+        <p>Boost your speaking fluency with guided conversations, debates, pronunciation drills, and daily life scenarios.</p>
+        <div class="course-tags">
+          <span>All Levels</span>
+          <span>Speaking</span>
+          <span>Practice</span>
+        </div>
+        <div class="course-footer">
+          <span class="course-price-label">Starting from</span>
+          <span class="course-price">8,000 DA</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
-  <script src="/assets/js/main.js"></script>
+<!-- ===== GALLERY ===== -->
+<section class="section section-alt" id="gallery">
+  <div class="container">
+    <div class="section-head">
+      <h2>Gallery</h2>
+      <p>Moments from our students' learning journey.</p>
+    </div>
+    <div class="gallery-grid">
+      <div class="gallery-item" style="background:linear-gradient(145deg,#d7f1ff,#f1f6ff)">
+        <span class="gallery-icon">📸</span>
+      </div>
+      <div class="gallery-item" style="background:linear-gradient(145deg,#ffd7bc,#fbf7f1)">
+        <span class="gallery-icon">🎓</span>
+      </div>
+      <div class="gallery-item" style="background:linear-gradient(145deg,#d8e1ff,#f5f8ff)">
+        <span class="gallery-icon">🏆</span>
+      </div>
+      <div class="gallery-item" style="background:linear-gradient(145deg,#ffe7ad,#fff6ec)">
+        <span class="gallery-icon">📖</span>
+      </div>
+      <div class="gallery-item" style="background:linear-gradient(145deg,#b5e6ff,#f7fbff)">
+        <span class="gallery-icon">🌍</span>
+      </div>
+      <div class="gallery-item" style="background:linear-gradient(145deg,#f7d8ff,#fef7ef)">
+        <span class="gallery-icon">🎤</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== WORLD MAP ===== -->
+<section class="section" id="world">
+  <div class="container">
+    <div class="section-head">
+      <h2>YBS Around the World</h2>
+      <p>Our graduates and family members across the globe.</p>
+    </div>
+    <div class="world-wrapper">
+      <div class="world-map">
+        <div class="world-pin" style="top:38%;left:18%"><span class="pin-dot"></span><span class="pin-label">Algeria</span></div>
+        <div class="world-pin" style="top:22%;left:48%"><span class="pin-dot"></span><span class="pin-label">France</span></div>
+        <div class="world-pin" style="top:20%;left:22%"><span class="pin-dot"></span><span class="pin-label">Canada</span></div>
+        <div class="world-pin" style="top:30%;left:62%"><span class="pin-dot"></span><span class="pin-label">UAE</span></div>
+        <div class="world-pin" style="top:60%;left:35%"><span class="pin-dot"></span><span class="pin-label">Nigeria</span></div>
+        <div class="world-pin" style="top:42%;left:75%"><span class="pin-dot"></span><span class="pin-label">India</span></div>
+        <div class="world-pin" style="top:72%;left:50%"><span class="pin-dot"></span><span class="pin-label">South Africa</span></div>
+        <div class="world-pin" style="top:18%;left:78%"><span class="pin-dot"></span><span class="pin-label">China</span></div>
+        <div class="world-pin" style="top:55%;left:52%"><span class="pin-dot"></span><span class="pin-label">Libya</span></div>
+        <div class="world-pin" style="top:12%;left:15%"><span class="pin-dot"></span><span class="pin-label">USA</span></div>
+      </div>
+      <p class="world-note">Click a pin to see graduate details. <span class="text-orange">10 countries and growing!</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FOOTER ===== -->
+<footer class="footer">
+  <div class="container footer-grid">
+    <div>
+      <div class="footer-brand">
+        <span class="logo-mark">YB</span>
+        <strong>Your Bridge School</strong>
+      </div>
+      <p>Your path to English excellence. Join a community that learns with confidence and purpose.</p>
+    </div>
+    <div>
+      <h4>Contact Us</h4>
+      <ul>
+        <li>+213 655 54 82 93</li>
+        <li>contact@yourbridgeschool.com</li>
+        <li>Bakouka 4236/42, Djelfa, Algeria</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Quick Links</h4>
+      <ul>
+        <li><a href="#courses">Courses</a></li>
+        <li><a href="#gallery">Gallery</a></li>
+        <li><a href="#world">World Map</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="container footer-bottom">
+    &copy; 2026 Your Bridge School. All rights reserved.
+  </div>
+</footer>
+
+<!-- ===== LOGIN MODAL ===== -->
+<div class="modal-overlay" id="loginModal" onclick="closeModal('loginModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal('loginModal')">&times;</button>
+    <div class="modal-icon">🔐</div>
+    <h3>Sign In</h3>
+    <p class="modal-sub">Use your school email and password.</p>
+    <form onsubmit="return false">
+      <input type="email" placeholder="Email" required>
+      <input type="password" placeholder="Password" required>
+      <button type="submit" class="btn btn-primary btn-full" onclick="doLogin()">Sign In</button>
+    </form>
+    <p class="modal-footer-text">Forgot password? <a href="#">Contact support</a></p>
+  </div>
+</div>
+
+<!-- ===== COURSE MODAL ===== -->
+<div class="modal-overlay" id="courseModal" onclick="closeModal('courseModal')">
+  <div class="modal modal-wide" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal('courseModal')">&times;</button>
+    <div class="course-detail" id="courseDetail">
+      <!-- filled by JavaScript -->
+    </div>
+  </div>
+</div>
+
+<!-- ===== SUCCESS MODAL ===== -->
+<div class="modal-overlay" id="successModal" onclick="closeModal('successModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal('successModal')">&times;</button>
+    <div class="modal-icon" style="font-size:3rem">✅</div>
+    <h3>Registration Sent!</h3>
+    <p>Thank you! Our team will contact you soon with the next steps.</p>
+    <button class="btn btn-primary btn-full" onclick="closeModal('successModal')">Done</button>
+  </div>
+</div>
+
+<script>
+
+// ===== Course Data =====
+const courses = {
+  general: {
+    title: 'General English',
+    emoji: '📘',
+    level: 'Beginner',
+    duration: '3 months',
+    language: 'English',
+    category: 'General',
+    description: 'Build a strong foundation in English with structured lessons, speaking practice, and real-world topics. This course covers grammar, vocabulary, reading, writing, listening, and speaking skills from A0 to A2 level.',
+    options: [
+      { key: 'inclass', label: 'In-Class', price: 15000 },
+      { key: 'flexible', label: 'Flexible', price: 18000 },
+      { key: 'private', label: 'Private', price: 25000 },
+      { key: 'recorded', label: 'Recorded', price: 8000 }
+    ]
+  },
+  business: {
+    title: 'Business English',
+    emoji: '💼',
+    level: 'Intermediate',
+    duration: '4 months',
+    language: 'English',
+    category: 'Business',
+    description: 'Professional English for the workplace. Improve email writing, presentations, meetings, and negotiation skills. Designed for professionals and university students preparing for corporate careers.',
+    options: [
+      { key: 'inclass', label: 'In-Class', price: 25000 },
+      { key: 'flexible', label: 'Flexible', price: 28000 },
+      { key: 'private', label: 'Private', price: 35000 },
+      { key: 'recorded', label: 'Recorded', price: 12000 }
+    ]
+  },
+  ielts: {
+    title: 'IELTS Preparation',
+    emoji: '🎯',
+    level: 'Advanced',
+    duration: '3 months',
+    language: 'English',
+    category: 'Exam Prep',
+    description: 'Intensive course covering all IELTS modules (Listening, Reading, Writing, Speaking). Mock tests, strategies, time management, and personal feedback from certified IELTS trainers.',
+    options: [
+      { key: 'inclass', label: 'In-Class', price: 35000 },
+      { key: 'flexible', label: 'Flexible', price: 38000 },
+      { key: 'private', label: 'Private', price: 45000 },
+      { key: 'recorded', label: 'Recorded', price: 20000 }
+    ]
+  },
+  conversation: {
+    title: 'Conversation Course',
+    emoji: '🗣️',
+    level: 'All Levels',
+    duration: '2 months',
+    language: 'English',
+    category: 'Speaking',
+    description: 'Boost your speaking fluency with guided conversations, debates, pronunciation drills, and daily life scenarios. Perfect for learners who understand English but need more speaking confidence.',
+    options: [
+      { key: 'inclass', label: 'In-Class', price: 8000 },
+      { key: 'flexible', label: 'Flexible', price: 10000 },
+      { key: 'private', label: 'Private', price: 15000 },
+      { key: 'recorded', label: 'Recorded', price: 5000 }
+    ]
+  }
+};
+
+let selectedCourse = null;
+let selectedDelivery = null;
+
+function openCourse(id) {
+  selectedCourse = courses[id];
+  selectedDelivery = null;
+  renderCourseDetail();
+  document.getElementById('courseModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function renderCourseDetail() {
+  const c = selectedCourse;
+  if (!c) return;
+  let optionsHtml = c.options.map((o, i) => `
+    <label class="delivery-option ${i === 0 ? 'selected' : ''}" data-index="${i}" onclick="selectDelivery(${i})">
+      <input type="radio" name="delivery" ${i === 0 ? 'checked' : ''}>
+      <span class="delivery-label">${o.label}</span>
+      <span class="delivery-price">${o.price.toLocaleString()} DA</span>
+    </label>
+  `).join('');
+  selectedDelivery = c.options[0];
+
+  document.getElementById('courseDetail').innerHTML = `
+    <div class="cd-header">
+      <span class="cd-emoji">${c.emoji}</span>
+      <div>
+        <h3>${c.title}</h3>
+        <p class="cd-meta">${c.level} &middot; ${c.duration} &middot; ${c.language}</p>
+      </div>
+    </div>
+    <p class="cd-desc">${c.description}</p>
+    <div class="cd-section">
+      <h4>Choose Study Type</h4>
+      <div class="delivery-grid">
+        ${optionsHtml}
+      </div>
+    </div>
+    <div class="cd-section">
+      <h4>Your Information</h4>
+      <form id="enrollForm" onsubmit="return false">
+        <div class="form-row">
+          <input type="text" placeholder="Full Name" id="enrollName" required>
+          <input type="tel" placeholder="Phone" id="enrollPhone" required>
+        </div>
+        <div class="form-row">
+          <input type="email" placeholder="Email" id="enrollEmail" required>
+          <div class="gender-group">
+            <label class="gender-option" onclick="selectGender(this,'Male')">
+              <input type="radio" name="gender" value="Male">
+              <span>👨 Male</span>
+            </label>
+            <label class="gender-option" onclick="selectGender(this,'Female')">
+              <input type="radio" name="gender" value="Female">
+              <span>👩 Female</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-row">
+          <input type="date" placeholder="Date of Birth" id="enrollDob">
+          <input type="text" placeholder="Promo Code (optional)" id="enrollPromo">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" onclick="submitEnroll()">Register Now</button>
+      </form>
+    </div>
+  `;
+}
+
+function selectDelivery(index) {
+  selectedDelivery = selectedCourse.options[index];
+  document.querySelectorAll('.delivery-option').forEach((el, i) => {
+    el.classList.toggle('selected', i === index);
+    el.querySelector('input').checked = i === index;
+  });
+}
+
+function selectGender(el, value) {
+  document.querySelectorAll('.gender-option').forEach(g => g.classList.remove('selected'));
+  el.classList.add('selected');
+  el.querySelector('input').checked = true;
+}
+
+function submitEnroll() {
+  const name = document.getElementById('enrollName').value.trim();
+  const phone = document.getElementById('enrollPhone').value.trim();
+  const email = document.getElementById('enrollEmail').value.trim();
+  if (!name || !phone || !email) {
+    alert('Please fill in your name, phone, and email.');
+    return;
+  }
+  closeModal('courseModal');
+  document.getElementById('successModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function openLogin() {
+  document.getElementById('loginModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function doLogin() {
+  window.location.href = 'https://www.yourbridgeschool.com/online/';
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  document.body.style.overflow = '';
+}
+</script>
 </body>
 </html>

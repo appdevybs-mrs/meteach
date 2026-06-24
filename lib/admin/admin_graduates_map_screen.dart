@@ -128,20 +128,23 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          adminWebBodyFrame(
-            context: context,
-            maxWidth: 1100,
-            child: _buildGraduatesTab(),
-          ),
-          adminWebBodyFrame(
-            context: context,
-            maxWidth: 1100,
-            child: const _LearnersMapTab(),
-          ),
-        ],
+      body: SafeArea(
+        top: false,
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            adminWebBodyFrame(
+              context: context,
+              maxWidth: 1100,
+              child: _buildGraduatesTab(),
+            ),
+            adminWebBodyFrame(
+              context: context,
+              maxWidth: 1100,
+              child: const _LearnersMapTab(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -928,8 +931,6 @@ class _GraduateMapEditorDialogState extends State<_GraduateMapEditorDialog> {
   }
 }
 
-
-
 class _CompactChip extends StatelessWidget {
   const _CompactChip({required this.label, required this.color});
 
@@ -1059,21 +1060,29 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
           final m = value.map((k, v) => MapEntry(k.toString(), v));
           final role = (m['role'] ?? '').toString().trim().toLowerCase();
           if (role == 'learner') {
-            rows.add(_LearnerMapItem(
-              uid: uid,
-              firstName: (m['first_name'] ?? m['firstName'] ?? '').toString().trim(),
-              lastName: (m['last_name'] ?? m['lastName'] ?? '').toString().trim(),
-              photoUrl: _resolvePhoto(m),
-              country: (m['country'] ?? '').toString().trim(),
-              city: (m['city'] ?? '').toString().trim(),
-              lat: _parseDouble(m['lat']),
-              lng: _parseDouble(m['lng']),
-            ));
+            rows.add(
+              _LearnerMapItem(
+                uid: uid,
+                firstName: (m['first_name'] ?? m['firstName'] ?? '')
+                    .toString()
+                    .trim(),
+                lastName: (m['last_name'] ?? m['lastName'] ?? '')
+                    .toString()
+                    .trim(),
+                photoUrl: _resolvePhoto(m),
+                country: (m['country'] ?? '').toString().trim(),
+                city: (m['city'] ?? '').toString().trim(),
+                lat: _parseDouble(m['lat']),
+                lng: _parseDouble(m['lng']),
+              ),
+            );
           }
         }
       });
     }
-    rows.sort((a, b) => a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase()));
+    rows.sort(
+      (a, b) => a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase()),
+    );
     if (!mounted) return;
     setState(() {
       _learners
@@ -1095,9 +1104,11 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
       });
     }
     if (!mounted) return;
-    setState(() => _learnerUidsOnMap
-      ..clear()
-      ..addAll(uids));
+    setState(
+      () => _learnerUidsOnMap
+        ..clear()
+        ..addAll(uids),
+    );
   }
 
   String _resolvePhoto(Map<String, dynamic> m) {
@@ -1166,14 +1177,14 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
         'updatedByUid': user.uid,
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Learner added to map.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Learner added to map.')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(toHumanError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(toHumanError(e))));
     }
   }
 
@@ -1191,20 +1202,14 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.people_rounded,
-                  size: 48,
-                  color: _primaryBlue,
-                ),
+                const Icon(Icons.people_rounded, size: 48, color: _primaryBlue),
                 const SizedBox(height: 12),
                 const Text(
                   'No learners found.',
                   style: TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Create learners in the Learners section first.',
-                ),
+                const Text('Create learners in the Learners section first.'),
               ],
             ),
           ),

@@ -2550,6 +2550,18 @@ enum LearnerGender {
   }
 }
 
+const _sectionIcons = <IconData>[
+  Icons.person_rounded,
+  Icons.contact_phone_rounded,
+  Icons.toggle_on_rounded,
+];
+
+const _sectionColors = <Color>[
+  Color(0xFF1A2B48),
+  Color(0xFF0F766E),
+  Color(0xFFF98D28),
+];
+
 class LearnerEditorScreen extends StatefulWidget {
   const LearnerEditorScreen({
     super.key,
@@ -2591,6 +2603,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   LearnerGender? _gender;
   LearnerStatus _status = LearnerStatus.active;
   bool _saving = false;
+  int _currentStep = 0;
 
   Map<String, CityAssetMeta> _cityIndex = const {};
   List<CityOption> _countryCities = const [];
@@ -3240,31 +3253,41 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     }
   }
 
-  Widget _buildResponsiveSections(List<Widget> sections) {
-    final webWide = isWebDesktop(context, minWidth: 1200);
-    if (!webWide) {
-      return Column(
-        children: [
-          for (int i = 0; i < sections.length; i++) ...[
-            if (i > 0) const SizedBox(height: 12),
-            sections[i],
-          ],
-        ],
-      );
-    }
+  StepState _stepState(int index) {
+    if (_currentStep == index) return StepState.editing;
+    if (_currentStep > index) return StepState.complete;
+    return StepState.indexed;
+  }
 
-    return LayoutBuilder(
-      builder: (context, c) {
-        final itemWidth = ((c.maxWidth - 12) / 2).clamp(300.0, 620.0);
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final section in sections)
-              SizedBox(width: itemWidth, child: section),
-          ],
-        );
-      },
+  Widget _stepIconBuilder(int index, StepState state) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: state == StepState.complete
+            ? _sectionColors[index]
+            : (state == StepState.editing
+                ? _sectionColors[index].withValues(alpha: 0.12)
+                : Colors.transparent),
+        border: state == StepState.indexed
+            ? Border.all(color: Colors.grey.shade400, width: 2)
+            : null,
+      ),
+      child: state == StepState.complete
+          ? const Icon(Icons.check, color: Colors.white, size: 16)
+          : Center(
+              child: Text(
+                '${index + 1}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: state == StepState.editing
+                      ? _sectionColors[index]
+                      : Colors.grey.shade400,
+                ),
+              ),
+            ),
     );
   }
 
@@ -3273,455 +3296,494 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     final isEdit = widget.mode == EditorMode.edit;
 
     return Scaffold(
-      backgroundColor: AdminLearnersScreen.appBg,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        iconTheme: const IconThemeData(color: AdminLearnersScreen.primaryBlue),
-        title: Text(
-          isEdit ? 'Edit Learner' : 'Add Learner',
-          style: const TextStyle(
-            color: AdminLearnersScreen.primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        actions: [const SizedBox.shrink()],
+        title: Text(isEdit ? 'Edit Learner' : 'Add Learner'),
+        actions: const [SizedBox.shrink()],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-          child: FilledButton(
-            onPressed: _saving ? null : _save,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Text(
-                _saving
-                    ? 'Saving…'
-                    : (isEdit ? 'Save Changes' : 'Create Learner'),
-              ),
-            ),
-          ),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-        child: Form(
-          key: _formKey,
-          child: adminWebBodyFrame(
-            context: context,
-            maxWidth: 1380,
-            child: _buildResponsiveSections([
-              _SectionCard(
-                title: 'Personal details',
-                child: Column(
+      body: Form(
+        key: _formKey,
+        child: adminWebBodyFrame(
+          context: context,
+          maxWidth: 780,
+          child: Stepper(
+            currentStep: _currentStep,
+            type: StepperType.vertical,
+            connectorThickness: 1,
+            stepIconBuilder: _stepIconBuilder,
+            onStepTapped: (index) => setState(() => _currentStep = index),
+            controlsBuilder: (context, details) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 20),
+                child: Row(
                   children: [
-                    _TextField(
-                      controller: firstNameC,
-                      label: 'First name *',
-                      hint: 'First name',
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return 'First name is required';
-                        if (t.length < 2) return 'First name is too short';
-                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) {
-                          return 'First name has invalid characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: lastNameC,
-                      label: 'Last name *',
-                      hint: 'Last name',
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return 'Last name is required';
-                        if (t.length < 2) return 'Last name is too short';
-                        if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) {
-                          return 'Last name has invalid characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: dobC,
-                      readOnly: true,
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return 'Date of birth is required';
-                        if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(t)) {
-                          return 'Use format YYYY-MM-DD';
-                        }
-                        return null;
-                      },
-
-                      onTap: _pickDob,
-                      decoration: InputDecoration(
-                        labelText: 'Date of birth',
-                        hintText: 'Tap to pick a date',
-                        filled: true,
-                        fillColor: AdminLearnersScreen.appBg,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                        prefixIcon: const Icon(Icons.calendar_month_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<LearnerGender>(
-                      initialValue: _gender,
-                      decoration: InputDecoration(
-                        labelText: isEdit ? 'Gender' : 'Gender *',
-                        hintText: 'Select gender',
-                        filled: true,
-                        fillColor: AdminLearnersScreen.appBg,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                        prefixIcon: const Icon(Icons.wc_rounded),
-                      ),
-                      items: LearnerGender.values
-                          .map(
-                            (g) => DropdownMenuItem(
-                              value: g,
-                              child: Text(g.value),
-                            ),
-                          )
-                          .toList(),
-                      validator: (v) {
-                        if (!isEdit && v == null) {
-                          return 'Gender is required';
-                        }
-                        return null;
-                      },
-                      onChanged: (v) {
-                        setState(() => _gender = v);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    GestureDetector(
-                      onLongPress: () {
-                        setState(() => _serialUnlocked = true);
-                        _toast('Serial unlocked (you can edit it now).');
-                      },
-                      child: TextFormField(
-                        controller: serialC,
-                        readOnly: !_serialUnlocked,
-                        decoration: InputDecoration(
-                          labelText: 'Serial number',
-                          hintText: '🎓-000001',
-                          filled: true,
-                          fillColor: AdminLearnersScreen.appBg,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.confirmation_number_rounded,
-                          ),
-                          suffixIcon: _serialUnlocked
-                              ? IconButton(
-                                  tooltip: 'Lock',
-                                  icon: const Icon(Icons.lock_open_rounded),
-                                  onPressed: () {
-                                    setState(() => _serialUnlocked = false);
-                                    _toast('Serial locked ✅');
-                                  },
-                                )
-                              : const Icon(Icons.lock_rounded),
+                    FilledButton(
+                      onPressed: _saving
+                          ? null
+                          : () {
+                              if (_currentStep < 2) {
+                                setState(() => _currentStep++);
+                              } else {
+                                _save();
+                              }
+                            },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Text(
+                          _saving
+                              ? 'Saving…'
+                              : (_currentStep < 2
+                                  ? 'Next'
+                                  : (isEdit
+                                      ? 'Save Changes'
+                                      : 'Create Learner')),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _TextField(
-                      controller: nationalIdC,
-                      label: 'National ID number',
-                      hint: 'Optional',
-                    ),
+                    if (_currentStep > 0) ...[
+                      const SizedBox(width: 12),
+                      OutlinedButton(
+                        onPressed: () => setState(() => _currentStep--),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 6),
+                          child: Text('Back'),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-              ),
-              _SectionCard(
-                title: 'Contact',
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: phone1C,
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]')),
-                      ],
-                      validator: (v) {
-                        final t = (v ?? '').trim();
-                        if (t.isEmpty) return 'Phone number is required';
-                        final digits = t.replaceAll(RegExp(r'[^0-9]'), '');
-                        if (digits.length < 9) {
-                          return 'Phone number is too short';
-                        }
-                        return null;
-                      },
-
-                      decoration: InputDecoration(
-                        labelText: 'Phone 1',
-                        hintText: 'Example: 0550 00 00 00',
-                        filled: true,
-                        fillColor: AdminLearnersScreen.appBg,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                        prefixIcon: const Icon(Icons.phone_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: phone2C,
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[\d+\s-]')),
-                      ],
-                      decoration: InputDecoration(
-                        labelText: 'Phone 2',
-                        hintText: 'Optional',
-                        filled: true,
-                        fillColor: AdminLearnersScreen.appBg,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                        prefixIcon: const Icon(Icons.phone_rounded),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Autocomplete<String>(
-                      optionsBuilder: (_) => _countrySuggestions,
-                      initialValue: TextEditingValue(text: _countryC.text),
-                      fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
-                        _countryC.addListener(() {});
-                        return TextFormField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          decoration: InputDecoration(
-                            labelText: 'Country',
-                            hintText: 'Select country',
-                            filled: true,
-                            fillColor: AdminLearnersScreen.appBg,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide.none,
-                            ),
-                            prefixIcon: const Icon(Icons.public_rounded),
-                          ),
-                          onChanged: (v) {
-                            if (v != _selectedCountry &&
-                                _worldData.containsKey(v)) {
-                              _onCountrySelected(v);
-                            } else {
-                              _countryC.text = v;
-                              _countryC.selection = TextSelection.fromPosition(
-                                TextPosition(offset: v.length),
-                              );
-                            }
-                          },
-                        );
-                      },
-                      onSelected: (v) {
-                        _onCountrySelected(v);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Autocomplete<String>(
-                      key: ValueKey(_selectedCountry),
-                      optionsBuilder: (value) => _cityOptionsFor(value.text),
-                      optionsViewBuilder: (ctx, onSelected, options) {
-                        return Material(
-                          elevation: 8,
-                          borderRadius: BorderRadius.circular(6),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              maxHeight: 240,
-                              maxWidth: 400,
-                            ),
-                            child: ListView.builder(
-                              padding: EdgeInsets.zero,
-                              itemCount: options.length,
-                              itemBuilder: (ctx, i) {
-                                final name = options.elementAt(i);
-                                final city = _cityByName(name);
-                                final subtitle = city == null
-                                    ? ''
-                                    : city.ascii != city.name
-                                        ? '${city.ascii} • ${city.lat}, ${city.lng}'
-                                        : '${city.lat}, ${city.lng}';
-                                return ListTile(
-                                  dense: true,
-                                  title: Text(
-                                    name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  subtitle: subtitle.isNotEmpty
-                                      ? Text(
-                                          subtitle,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: const Color(
-                                              0xFF1A2B48,
-                                            ).withValues(alpha: 0.55),
-                                          ),
-                                        )
-                                      : null,
-                                  onTap: () => onSelected(name),
-                                );
+              );
+            },
+            steps: [
+              Step(
+                isActive: _currentStep >= 0,
+                state: _stepState(0),
+                title: const Text('Personal'),
+                content: _SectionCard(
+                  title: 'Personal details',
+                  icon: _sectionIcons[0],
+                  color: _sectionColors[0],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _TextField(
+                              controller: firstNameC,
+                              label: 'First name *',
+                              hint: 'First name',
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return 'Required';
+                                if (t.length < 2) return 'Too short';
+                                if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
+                                    .hasMatch(t)) {
+                                  return 'Invalid characters';
+                                }
+                                return null;
                               },
                             ),
                           ),
-                        );
-                      },
-                      initialValue: TextEditingValue(text: _cityC.text),
-                      fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
-                        return TextFormField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          decoration: InputDecoration(
-                            labelText: 'City',
-                            hintText: 'Select or type city',
-                            filled: true,
-                            fillColor: AdminLearnersScreen.appBg,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide.none,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _TextField(
+                              controller: lastNameC,
+                              label: 'Last name *',
+                              hint: 'Last name',
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return 'Required';
+                                if (t.length < 2) return 'Too short';
+                                if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
+                                    .hasMatch(t)) {
+                                  return 'Invalid characters';
+                                }
+                                return null;
+                              },
                             ),
-                            prefixIcon: const Icon(Icons.location_city_rounded),
-                            suffixIcon: _loadingCities
-                                ? const Padding(
-                                    padding: EdgeInsets.all(12),
-                                    child: SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                  )
-                                : null,
                           ),
-                          onChanged: _onCityChanged,
-                        );
-                      },
-                      onSelected: (v) {
-                        final city = _cityByName(v);
-                        if (city != null) _onCitySelected(city);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    if (isEdit)
+                        ],
+                      ),
+                      const SizedBox(height: 16),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: TextFormField(
-                              controller: emailC,
-                              enabled: false,
-                              maxLines: 1,
-                              decoration: InputDecoration(
-                                labelText: 'Email *',
-                                filled: true,
-                                fillColor: AdminLearnersScreen.appBg,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                  borderSide: BorderSide.none,
+                              controller: dobC,
+                              readOnly: true,
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return 'Required';
+                                if (!RegExp(r'^\d{4}-\d{2}-\d{2}$')
+                                    .hasMatch(t)) {
+                                  return 'Use YYYY-MM-DD';
+                                }
+                                return null;
+                              },
+                              onTap: _pickDob,
+                              decoration: const InputDecoration(
+                                labelText: 'Date of birth',
+                                hintText: 'Tap to pick',
+                                prefixIcon:
+                                    Icon(Icons.calendar_month_rounded),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<LearnerGender>(
+                              initialValue: _gender,
+                              decoration: const InputDecoration(
+                                labelText: 'Gender',
+                                hintText: 'Select',
+                                prefixIcon: Icon(Icons.wc_rounded),
+                              ),
+                              items: LearnerGender.values
+                                  .map(
+                                    (g) => DropdownMenuItem(
+                                      value: g,
+                                      child: Text(g.value),
+                                    ),
+                                  )
+                                  .toList(),
+                              validator: (v) {
+                                if (!isEdit && v == null) return 'Required';
+                                return null;
+                              },
+                              onChanged: (v) =>
+                                  setState(() => _gender = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onLongPress: () {
+                                setState(() => _serialUnlocked = true);
+                                _toast(
+                                    'Serial unlocked (you can edit it now).');
+                              },
+                              child: TextFormField(
+                                controller: serialC,
+                                readOnly: !_serialUnlocked,
+                                decoration: InputDecoration(
+                                  labelText: 'Serial number',
+                                  hintText: '🎓-000001',
+                                  prefixIcon: const Icon(
+                                      Icons.confirmation_number_rounded),
+                                  suffixIcon: _serialUnlocked
+                                      ? IconButton(
+                                          tooltip: 'Lock',
+                                          icon: const Icon(
+                                              Icons.lock_open_rounded),
+                                          onPressed: () {
+                                            setState(() =>
+                                                _serialUnlocked = false);
+                                            _toast('Serial locked ✅');
+                                          },
+                                        )
+                                      : const Icon(Icons.lock_rounded),
                                 ),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: IconButton(
-                              icon: const Icon(Icons.edit_outlined),
-                              color: AdminLearnersScreen.primaryBlue,
-                              tooltip: 'Change email',
-                              onPressed: _showChangeEmailDialog,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _TextField(
+                              controller: nationalIdC,
+                              label: 'National ID',
+                              hint: 'Optional',
                             ),
                           ),
                         ],
-                      )
-                    else
-                      GestureDetector(
-                        onLongPress: () async {
-                          final email = emailC.text.trim();
-                          if (email.isEmpty) return;
-                          await Clipboard.setData(ClipboardData(text: email));
-                          _toast('Email copied ✅');
-                        },
-                        child: _TextField(
-                          controller: emailC,
-                          label: 'Email *',
-                          hint: 'learner@email.com',
-                          keyboardType: TextInputType.emailAddress,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Step(
+                isActive: _currentStep >= 1,
+                state: _stepState(1),
+                title: const Text('Contact'),
+                content: _SectionCard(
+                  title: 'Contact',
+                  icon: _sectionIcons[1],
+                  color: _sectionColors[1],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: phone1C,
+                              keyboardType: TextInputType.phone,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                    RegExp(r'[\d+\s-]')),
+                              ],
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return 'Required';
+                                final digits =
+                                    t.replaceAll(RegExp(r'[^0-9]'), '');
+                                if (digits.length < 9) return 'Too short';
+                                return null;
+                              },
+                              decoration: const InputDecoration(
+                                labelText: 'Phone 1',
+                                hintText: '0550 00 00 00',
+                                prefixIcon: Icon(Icons.phone_rounded),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: phone2C,
+                              keyboardType: TextInputType.phone,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                    RegExp(r'[\d+\s-]')),
+                              ],
+                              decoration: const InputDecoration(
+                                labelText: 'Phone 2',
+                                hintText: 'Optional',
+                                prefixIcon: Icon(Icons.phone_rounded),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Autocomplete<String>(
+                              optionsBuilder: (_) => _countrySuggestions,
+                              initialValue:
+                                  TextEditingValue(text: _countryC.text),
+                              fieldViewBuilder:
+                                  (ctx, controller, focusNode, onSubmit) {
+                                _countryC.addListener(() {});
+                                return TextFormField(
+                                  controller: controller,
+                                  focusNode: focusNode,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Country',
+                                    hintText: 'Select country',
+                                    prefixIcon: Icon(Icons.public_rounded),
+                                  ),
+                                  onChanged: (v) {
+                                    if (v != _selectedCountry &&
+                                        _worldData.containsKey(v)) {
+                                      _onCountrySelected(v);
+                                    } else {
+                                      _countryC.text = v;
+                                      _countryC.selection =
+                                          TextSelection.fromPosition(
+                                        TextPosition(offset: v.length),
+                                      );
+                                    }
+                                  },
+                                );
+                              },
+                              onSelected: _onCountrySelected,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Autocomplete<String>(
+                              key: ValueKey(_selectedCountry),
+                              optionsBuilder: (value) =>
+                                  _cityOptionsFor(value.text),
+                              optionsViewBuilder:
+                                  (ctx, onSelected, options) {
+                                return Material(
+                                  elevation: 8,
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxHeight: 240,
+                                      maxWidth: 400,
+                                    ),
+                                    child: ListView.builder(
+                                      padding: EdgeInsets.zero,
+                                      itemCount: options.length,
+                                      itemBuilder: (ctx, i) {
+                                        final name = options.elementAt(i);
+                                        final city = _cityByName(name);
+                                        final subtitle = city == null
+                                            ? ''
+                                            : city.ascii != city.name
+                                                ? '${city.ascii} • ${city.lat}, ${city.lng}'
+                                                : '${city.lat}, ${city.lng}';
+                                        return ListTile(
+                                          dense: true,
+                                          title: Text(
+                                            name,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          subtitle: subtitle.isNotEmpty
+                                              ? Text(
+                                                  subtitle,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: _sectionColors[0]
+                                                        .withValues(
+                                                            alpha: 0.55),
+                                                  ),
+                                                )
+                                              : null,
+                                          onTap: () => onSelected(name),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                );
+                              },
+                              initialValue:
+                                  TextEditingValue(text: _cityC.text),
+                              fieldViewBuilder:
+                                  (ctx, controller, focusNode, onSubmit) {
+                                return TextFormField(
+                                  controller: controller,
+                                  focusNode: focusNode,
+                                  decoration: InputDecoration(
+                                    labelText: 'City',
+                                    hintText: 'Select or type',
+                                    prefixIcon: const Icon(
+                                        Icons.location_city_rounded),
+                                    suffixIcon: _loadingCities
+                                        ? const Padding(
+                                            padding: EdgeInsets.all(12),
+                                            child: SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child:
+                                                  CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  onChanged: _onCityChanged,
+                                );
+                              },
+                              onSelected: (v) {
+                                final city = _cityByName(v);
+                                if (city != null) _onCitySelected(city);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (isEdit)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: emailC,
+                                enabled: false,
+                                decoration: const InputDecoration(
+                                  labelText: 'Email *',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                tooltip: 'Change email',
+                                onPressed: _showChangeEmailDialog,
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        GestureDetector(
+                          onLongPress: () async {
+                            final email = emailC.text.trim();
+                            if (email.isEmpty) return;
+                            await Clipboard.setData(
+                                ClipboardData(text: email));
+                            _toast('Email copied ✅');
+                          },
+                          child: _TextField(
+                            controller: emailC,
+                            label: 'Email *',
+                            hint: 'learner@email.com',
+                            keyboardType: TextInputType.emailAddress,
+                            validator: (v) {
+                              final t = (v ?? '').trim();
+                              if (t.isEmpty) return 'Required';
+                              if (!t.contains('@')) return 'Invalid email';
+                              return null;
+                            },
+                          ),
+                        ),
+                      if (!isEdit) ...[
+                        const SizedBox(height: 16),
+                        _TextField(
+                          controller: passwordC,
+                          label: 'Password *',
+                          hint: 'Default: 12345678',
+                          obscureText: false,
                           validator: (v) {
                             final t = (v ?? '').trim();
                             if (t.isEmpty) return 'Required';
-                            if (!t.contains('@')) return 'Invalid email';
+                            if (t.length < 6) return 'At least 6 chars';
                             return null;
                           },
-                          enabled: true,
                         ),
-                      ),
-                    const SizedBox(height: 12),
-                    if (!isEdit)
-                      _TextField(
-                        controller: passwordC,
-                        label: 'Password *',
-                        hint: 'Default: 12345678 (you can change it)',
-                        obscureText: false,
-                        validator: (v) {
-                          final t = (v ?? '').trim();
-                          if (t.isEmpty) return 'Password is required';
-                          if (t.length < 6) {
-                            return 'Password must be at least 6 characters';
-                          }
-                          return null;
-                        },
-                      ),
-                  ],
-                ),
-              ),
-              _SectionCard(
-                title: 'Status',
-                child: DropdownButtonFormField<LearnerStatus>(
-                  initialValue: _status,
-                  decoration: InputDecoration(
-                    labelText: 'Status',
-                    filled: true,
-                    fillColor: AdminLearnersScreen.appBg,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
+                      ],
+                    ],
                   ),
-                  items: LearnerStatus.values
-                      .map(
-                        (s) => DropdownMenuItem(value: s, child: Text(s.label)),
-                      )
-                      .toList(),
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _status = v);
-                  },
                 ),
               ),
-            ]),
+              Step(
+                isActive: _currentStep >= 2,
+                state: _stepState(2),
+                title: const Text('Status'),
+                content: _SectionCard(
+                  title: 'Status',
+                  icon: _sectionIcons[2],
+                  color: _sectionColors[2],
+                  child: DropdownButtonFormField<LearnerStatus>(
+                    initialValue: _status,
+                    decoration: const InputDecoration(
+                      labelText: 'Status',
+                      prefixIcon: Icon(Icons.toggle_on_rounded),
+                    ),
+                    items: LearnerStatus.values
+                        .map(
+                          (s) =>
+                              DropdownMenuItem(value: s, child: Text(s.label)),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() => _status = v);
+                    },
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -3730,32 +3792,55 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
 }
 
 class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.child,
+  });
 
   final String title;
+  final IconData icon;
+  final Color color;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                color: AdminLearnersScreen.primaryBlue,
+      color: color.withValues(alpha: 0.04),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: color, width: 4)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 22),
+                  const SizedBox(width: 10),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            child,
-          ],
+              const SizedBox(height: 16),
+              child,
+            ],
+          ),
         ),
       ),
     );
@@ -3793,12 +3878,6 @@ class _TextField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        filled: true,
-        fillColor: AdminLearnersScreen.appBg,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
       ),
     );
   }

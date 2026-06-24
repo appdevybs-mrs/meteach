@@ -976,6 +976,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
                   icon: Icons.check_circle_rounded,
                   label:
                       'Total ${_moneyLabel(_effectiveFee(option))} | المجموع ${_effectiveFee(option).toStringAsFixed(0)} د.ج',
+                  accentColor: const Color(0xFF059669),
                 ),
               ],
             ),
@@ -1155,6 +1156,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                               TextFormField(
                                 controller: fullNameC,
                                 textInputAction: TextInputAction.next,
+                                scrollPadding: EdgeInsets.only(
+                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                ),
                                 decoration: _inputDeco(
                                   label: 'Full name | الاسم الكامل',
                                   icon: Icons.person_rounded,
@@ -1180,6 +1184,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 controller: phoneC,
                                 keyboardType: TextInputType.phone,
                                 textInputAction: TextInputAction.next,
+                                scrollPadding: EdgeInsets.only(
+                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                ),
                                 decoration: _inputDeco(
                                   label: 'Phone number | رقم الهاتف',
                                   icon: Icons.phone_rounded,
@@ -1206,6 +1213,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 readOnly: true,
                                 onTap: _pickDob,
                                 textInputAction: TextInputAction.next,
+                                scrollPadding: EdgeInsets.only(
+                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                ),
                                 decoration: _inputDeco(
                                   label: 'Date of birth | تاريخ الميلاد',
                                   icon: Icons.cake_rounded,
@@ -1325,6 +1335,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 controller: emailC,
                                 keyboardType: TextInputType.emailAddress,
                                 textInputAction: TextInputAction.done,
+                                scrollPadding: EdgeInsets.only(
+                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                ),
                                 decoration: _inputDeco(
                                   label:
                                       'Email (optional) | البريد الإلكتروني (اختياري)',
@@ -1848,29 +1861,33 @@ class _SelectedOptionSummary extends StatelessWidget {
 }
 
 class _PromoPricePill extends StatelessWidget {
-  const _PromoPricePill({required this.icon, required this.label});
+  const _PromoPricePill({required this.icon, required this.label, this.accentColor});
 
   final IconData icon;
   final String label;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
+    final useAccent = accentColor != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Brand.appBg,
+        color: useAccent ? accentColor!.withValues(alpha: 0.12) : Brand.appBg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Brand.uiBorder),
+        border: Border.all(
+          color: useAccent ? accentColor!.withValues(alpha: 0.4) : Brand.uiBorder,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Brand.primaryBlue),
+          Icon(icon, size: 14, color: useAccent ? accentColor : Brand.primaryBlue),
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
-              color: Brand.primaryBlue,
+            style: TextStyle(
+              color: useAccent ? accentColor : Brand.primaryBlue,
               fontWeight: FontWeight.w800,
               fontSize: 12,
             ),

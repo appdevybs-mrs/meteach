@@ -608,7 +608,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   }
 
   String _actingAdminName() {
-    return (FirebaseAuth.instance.currentUser?.email ?? 'Admin').trim();
+    return '';
   }
 
   List<String> _learnerNamesFor(Iterable<String> uids) {

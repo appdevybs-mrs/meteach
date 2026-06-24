@@ -4633,25 +4633,29 @@ class _CategoryGridCardState extends State<_CategoryGridCard> {
 }
 
 class _PrettyChip extends StatelessWidget {
-  const _PrettyChip({this.icon, required this.label});
+  const _PrettyChip({this.icon, required this.label, this.accentColor});
 
   final IconData? icon;
   final String label;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
+    final useAccent = accentColor != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Brand.appBg,
+        color: useAccent ? accentColor!.withValues(alpha: 0.12) : Brand.appBg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Brand.uiBorder),
+        border: Border.all(
+          color: useAccent ? accentColor!.withValues(alpha: 0.4) : Brand.uiBorder,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 14, color: Brand.primaryBlue),
+            Icon(icon, size: 14, color: useAccent ? accentColor : Brand.primaryBlue),
             const SizedBox(width: 6),
           ],
           Flexible(
@@ -4659,10 +4663,10 @@ class _PrettyChip extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
-                color: Brand.primaryBlue,
+                color: useAccent ? accentColor : Brand.primaryBlue,
               ),
             ),
           ),

@@ -331,10 +331,25 @@ class WorldGraduatesHome extends StatelessWidget {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (graduates.isEmpty) {
-                  return const _EmptyWorldGraduates();
-                }
-                return _GraduatesWorldMap(graduates: graduates);
+
+                return StreamBuilder<DatabaseEvent>(
+                  stream: FirebaseDatabase.instance.ref('users').onValue,
+                  builder: (context, usersSnapshot) {
+                    final users = usersSnapshot.data?.snapshot.value;
+                    final learners = _parseLearnersForMap(
+                      users is Map ? users.cast<String, dynamic>() : null,
+                    );
+
+                    if (graduates.isEmpty && learners.isEmpty) {
+                      return const _EmptyWorldGraduates();
+                    }
+
+                    return _GraduatesWorldMap(
+                      graduates: graduates,
+                      learners: learners,
+                    );
+                  },
+                );
               },
             ),
           ),
@@ -453,10 +468,57 @@ class _EmptyWorldGraduates extends StatelessWidget {
   }
 }
 
+class _LearnerMapEntry {
+  const _LearnerMapEntry({
+    required this.uid,
+    required this.name,
+    required this.photoUrl,
+    required this.country,
+    required this.city,
+    required this.lat,
+    required this.lng,
+  });
+
+  final String uid;
+  final String name;
+  final String photoUrl;
+  final String country;
+  final String city;
+  final double lat;
+  final double lng;
+}
+
+List<_LearnerMapEntry> _parseLearnersForMap(Map<String, dynamic>? users) {
+  if (users == null) return [];
+  final learners = <_LearnerMapEntry>[];
+  for (final entry in users.entries) {
+    final uid = entry.key;
+    final data = entry.value;
+    if (data is! Map) continue;
+    if (data['role'] != 'learner') continue;
+    final lat = _GraduateMapPerson._toDouble(data['lat']);
+    final lng = _GraduateMapPerson._toDouble(data['lng']);
+    if (lat == null || lng == null) continue;
+    learners.add(
+      _LearnerMapEntry(
+        uid: uid,
+        name: (data['name'] as String?) ?? '',
+        photoUrl: (data['photoUrl'] as String?) ?? '',
+        country: (data['country'] as String?) ?? '',
+        city: (data['city'] as String?) ?? '',
+        lat: lat,
+        lng: lng,
+      ),
+    );
+  }
+  return learners;
+}
+
 class _GraduatesWorldMap extends StatefulWidget {
-  const _GraduatesWorldMap({required this.graduates});
+  const _GraduatesWorldMap({required this.graduates, this.learners = const []});
 
   final List<_GraduateMapPerson> graduates;
+  final List<_LearnerMapEntry> learners;
 
   @override
   State<_GraduatesWorldMap> createState() => _GraduatesWorldMapState();
@@ -524,6 +586,19 @@ class _GraduatesWorldMapState extends State<_GraduatesWorldMap> {
           ),
         );
       }
+    }
+
+    for (final l in widget.learners) {
+      final point = LatLng(l.lat, l.lng);
+      if (!point.latitude.isFinite || !point.longitude.isFinite) continue;
+      markers.add(
+        Marker(
+          point: point,
+          width: 50,
+          height: 65,
+          child: _LearnerMapPin(learner: l),
+        ),
+      );
     }
 
     return ClipRRect(
@@ -605,6 +680,185 @@ class _GraduatePhotoPin extends StatelessWidget {
               child: _photoPin(),
             )
           : _photoPin(),
+    );
+  }
+}
+
+class _LearnerMapPin extends StatelessWidget {
+  const _LearnerMapPin({required this.learner});
+
+  final _LearnerMapEntry learner;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => showDialog<void>(
+        context: context,
+        builder: (_) => _LearnerProfileDialog(learner: learner),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: CircleAvatar(
+              radius: 14,
+              backgroundColor: Brand.primaryBlue,
+              backgroundImage: learner.photoUrl.isEmpty
+                  ? null
+                  : NetworkImage(learner.photoUrl),
+              child: learner.photoUrl.isEmpty
+                  ? const Icon(
+                      Icons.person_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    )
+                  : null,
+            ),
+          ),
+          const Icon(Icons.arrow_drop_down_rounded, color: Brand.primaryBlue),
+        ],
+      ),
+    );
+  }
+}
+
+class _LearnerProfileDialog extends StatelessWidget {
+  const _LearnerProfileDialog({required this.learner});
+
+  final _LearnerMapEntry learner;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 54),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Brand.primaryBlue, Brand.actionOrange],
+                ),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    _countryFlag(learner.country),
+                    style: const TextStyle(fontSize: 28),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      learner.country,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Transform.translate(
+              offset: const Offset(0, -42),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(22, 0, 22, 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircleAvatar(
+                      radius: 36,
+                      backgroundColor: Brand.primaryBlue,
+                      backgroundImage: learner.photoUrl.isEmpty
+                          ? null
+                          : NetworkImage(learner.photoUrl),
+                      child: learner.photoUrl.isEmpty
+                          ? const Icon(
+                              Icons.person_rounded,
+                              color: Colors.white,
+                              size: 36,
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      learner.name,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Brand.primaryBlue,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 20,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Brand.primaryBlue.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.location_on_rounded,
+                            size: 16,
+                            color: Brand.actionOrange,
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              '${learner.city.isNotEmpty ? '${learner.city}, ' : ''}${learner.country}',
+                              style: TextStyle(
+                                color: Brand.primaryBlue,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
