@@ -83,6 +83,8 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
   dynamic _learnerCache;
   dynamic _teacherCache;
 
+  List<Map<String, dynamic>>? _mergedCache;
+
   StreamSubscription<DatabaseEvent>? _publicSub;
   StreamSubscription<DatabaseEvent>? _learnerSub;
   StreamSubscription<DatabaseEvent>? _teacherSub;
@@ -97,20 +99,29 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
 
     _publicSub =
         _db.child('public_gallery_teasers').onValue.asBroadcastStream().listen(
-              (e) {
-            if (mounted) setState(() => _publicCache = e.snapshot.value);
+          (e) {
+            if (!mounted) return;
+            _publicCache = e.snapshot.value;
+            _mergedCache = null;
+            setState(() {});
           },
         );
     _learnerSub =
         _db.child('learner_gallery').onValue.asBroadcastStream().listen(
-              (e) {
-            if (mounted) setState(() => _learnerCache = e.snapshot.value);
+          (e) {
+            if (!mounted) return;
+            _learnerCache = e.snapshot.value;
+            _mergedCache = null;
+            setState(() {});
           },
         );
     _teacherSub =
         _db.child('website/teachers').onValue.asBroadcastStream().listen(
-              (e) {
-            if (mounted) setState(() => _teacherCache = e.snapshot.value);
+          (e) {
+            if (!mounted) return;
+            _teacherCache = e.snapshot.value;
+            _mergedCache = null;
+            setState(() {});
           },
         );
   }
@@ -191,7 +202,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
     return out;
   }
 
-  List<Map<String, dynamic>> _merged() {
+  List<Map<String, dynamic>> _computeMerged() {
     final result = <Map<String, dynamic>>[];
 
     if (_publicCache is Map) {
@@ -281,6 +292,10 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       (a, b) => _toInt(b['createdAt']).compareTo(_toInt(a['createdAt'])),
     );
     return result;
+  }
+
+  List<Map<String, dynamic>> _merged() {
+    return _mergedCache ??= _computeMerged();
   }
 
   List<Map<String, dynamic>> _filtered(String type) {
@@ -377,6 +392,43 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
     );
   }
 
+  List<int> _counts() {
+    final all = _merged();
+    var photos = 0;
+    var videos = 0;
+    var public = 0;
+    var learner = 0;
+    var teacher = 0;
+    for (final item in all) {
+      final type = (item['type'] ?? '').toString().trim().toLowerCase();
+      final source = (item['_source'] ?? '').toString().trim();
+      if (type == 'photo') photos++;
+      if (type == 'video') videos++;
+      if (source == 'public') public++;
+      else if (source == 'learner') learner++;
+      else if (source == 'teacher') teacher++;
+    }
+    return [all.length, photos, videos, public, learner, teacher];
+  }
+
+  Widget _buildStats() {
+    final c = _counts();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: Text(
+        'All: ${c[0]}  ·  Photos: ${c[1]}  ·  Videos: ${c[2]}'
+        '    │    Public: ${c[3]}  ·  Learner: ${c[4]}  ·  Teacher: ${c[5]}',
+        style: TextStyle(
+          color: mainText.withValues(alpha: 0.65),
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+          height: 1.3,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -411,14 +463,21 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
         child: SafeArea(
           child: !_hasAnyData
               ? const Center(child: CircularProgressIndicator())
-              : TabBarView(
-            controller: _tab,
-            children: [
-              _buildGrid('all'),
-              _buildGrid('video'),
-              _buildGrid('photo'),
-            ],
-          ),
+              : Column(
+                  children: [
+                    _buildStats(),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tab,
+                        children: [
+                          _buildGrid('all'),
+                          _buildGrid('video'),
+                          _buildGrid('photo'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ),
     );
@@ -433,8 +492,8 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
           filterType == 'all'
               ? 'No media items found.'
               : filterType == 'video'
-              ? 'No videos found.'
-              : 'No photos found.',
+                  ? 'No videos found.'
+                  : 'No photos found.',
           style: const TextStyle(
             color: mainText,
             fontWeight: FontWeight.w800,
@@ -445,7 +504,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
     }
 
     return GridView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       itemCount: items.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
