@@ -13,6 +13,17 @@ import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/media_download.dart';
 
+enum _SortOrder { newest, oldest }
+
+String _teacherAbbr(String name) {
+  if (name.isEmpty) return '';
+  final parts = name.trim().split(RegExp(r'\s+'));
+  if (parts.length >= 2) {
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+  }
+  return name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase();
+}
+
 String _coursesRelativePathFromUrl(String rawUrl) {
   final trimmed = rawUrl.trim();
   if (trimmed.isEmpty) return '';
@@ -84,6 +95,8 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
   dynamic _teacherCache;
 
   List<Map<String, dynamic>>? _mergedCache;
+
+  _SortOrder _sort = _SortOrder.newest;
 
   StreamSubscription<DatabaseEvent>? _publicSub;
   StreamSubscription<DatabaseEvent>? _learnerSub;
@@ -288,9 +301,10 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       });
     }
 
-    result.sort(
-      (a, b) => _toInt(b['createdAt']).compareTo(_toInt(a['createdAt'])),
-    );
+    result.sort((a, b) {
+      final cmp = _toInt(a['createdAt']).compareTo(_toInt(b['createdAt']));
+      return _sort == _SortOrder.newest ? -cmp : cmp;
+    });
     return result;
   }
 
@@ -392,33 +406,25 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
     );
   }
 
-  List<int> _counts() {
+  (int, int, int) _counts() {
     final all = _merged();
     var photos = 0;
     var videos = 0;
-    var public = 0;
-    var learner = 0;
-    var teacher = 0;
     for (final item in all) {
       final type = (item['type'] ?? '').toString().trim().toLowerCase();
-      final source = (item['_source'] ?? '').toString().trim();
-      if (type == 'photo') photos++;
-      if (type == 'video') videos++;
-      if (source == 'public') public++;
-      else if (source == 'learner') learner++;
-      else if (source == 'teacher') teacher++;
+      if (type == 'photo') { photos++; }
+      else if (type == 'video') { videos++; }
     }
-    return [all.length, photos, videos, public, learner, teacher];
+    return (all.length, photos, videos);
   }
 
   Widget _buildStats() {
-    final c = _counts();
+    final (total, photos, videos) = _counts();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
       child: Text(
-        'All: ${c[0]}  ·  Photos: ${c[1]}  ·  Videos: ${c[2]}'
-        '    │    Public: ${c[3]}  ·  Learner: ${c[4]}  ·  Teacher: ${c[5]}',
+        'All: $total  ·  Photos: $photos  ·  Videos: $videos',
         style: TextStyle(
           color: mainText.withValues(alpha: 0.65),
           fontWeight: FontWeight.w800,
@@ -438,12 +444,47 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
         elevation: 0,
         surfaceTintColor: Colors.white,
         iconTheme: const IconThemeData(color: primaryBlue),
-        title: const Text(
-          'Gallery',
-          style: TextStyle(
-            color: primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+        title: Row(
+          children: [
+            const Text(
+              'Gallery',
+              style: TextStyle(
+                color: primaryBlue,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _sort = _SortOrder.newest;
+                  _mergedCache = null;
+                });
+              },
+              child: Icon(
+                Icons.arrow_downward_rounded,
+                size: 18,
+                color: _sort == _SortOrder.newest
+                    ? primaryBlue
+                    : primaryBlue.withValues(alpha: 0.3),
+              ),
+            ),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _sort = _SortOrder.oldest;
+                  _mergedCache = null;
+                });
+              },
+              child: Icon(
+                Icons.arrow_upward_rounded,
+                size: 18,
+                color: _sort == _SortOrder.oldest
+                    ? primaryBlue
+                    : primaryBlue.withValues(alpha: 0.3),
+              ),
+            ),
+          ],
         ),
         bottom: TabBar(
           controller: _tab,
@@ -507,10 +548,10 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       itemCount: items.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1,
+        crossAxisCount: 4,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+        childAspectRatio: 0.9,
       ),
       itemBuilder: (context, index) {
         final item = items[index];
@@ -521,6 +562,17 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
             (item['thumbnailUrl'] ?? '').toString().trim();
         final sourceLabel =
             (item['_sourceLabel'] ?? '').toString().trim();
+        final uploaderName =
+            (item['uploadedByName'] ?? '').toString().trim();
+        final teacherName =
+            (item['teacherName'] ?? '').toString().trim();
+        final displayName = uploaderName.isNotEmpty
+            ? uploaderName
+            : teacherName.isNotEmpty
+            ? teacherName
+            : '';
+        final abbr = _teacherAbbr(displayName);
+        final dateLabel = _fmtDate(item['createdAt']);
 
         return InkWell(
           borderRadius: BorderRadius.circular(18),
@@ -547,7 +599,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
                     CachedNetworkImage(
                       imageUrl: url,
                       fit: BoxFit.cover,
-                      memCacheWidth: 440,
+                      memCacheWidth: 220,
                       placeholder: (_, _) => Container(
                         color: Colors.grey.shade100,
                         alignment: Alignment.center,
@@ -567,41 +619,30 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
                         ),
                       ),
                     ),
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.58),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            type == 'video'
-                                ? Icons.play_circle_fill_rounded
-                                : Icons.photo_rounded,
+                  if (abbr.isNotEmpty)
+                    Positioned(
+                      left: 8,
+                      bottom: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.58),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          dateLabel != '-' ? '$abbr · $dateLabel' : abbr,
+                          style: const TextStyle(
                             color: Colors.white,
-                            size: 14,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 9,
+                            height: 1.2,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            type == 'video' ? 'Video' : 'Photo',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
                   Positioned(
                     top: 8,
                     right: 8,
@@ -635,6 +676,15 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       },
     );
   }
+
+  String _fmtDate(dynamic ts) {
+    final ms = _toInt(ts);
+    if (ms <= 0) return '-';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.year}-${_two(d.month)}-${_two(d.day)}  ${_two(d.hour)}:${_two(d.minute)}';
+  }
+
+  static String _two(int n) => n < 10 ? '0$n' : '$n';
 }
 
 class _AdminGalleryVideoTile extends StatefulWidget {
@@ -707,7 +757,7 @@ class _AdminGalleryVideoTileState extends State<_AdminGalleryVideoTile> {
           CachedNetworkImage(
             imageUrl: widget.thumbnailUrl!,
             fit: BoxFit.cover,
-            memCacheWidth: 440,
+            memCacheWidth: 220,
             errorWidget: (_, _, _) => const SizedBox.shrink(),
           ),
           Container(color: Colors.black.withValues(alpha: 0.18)),
@@ -1189,11 +1239,7 @@ class _AdminGalleryViewerScreenState
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      sourceLabel.isNotEmpty
-                          ? '$sourceLabel  ·  ${isVideo ? 'Video' : 'Photo'}'
-                          : isVideo
-                          ? 'Video'
-                          : 'Photo',
+                      sourceLabel.isNotEmpty ? sourceLabel : (isVideo ? 'Video' : 'Photo'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
@@ -1202,26 +1248,16 @@ class _AdminGalleryViewerScreenState
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Uploaded by: $displayUploader',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                        height: 1.2,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Added: $createdAt',
+                      displayUploader != 'Admin'
+                          ? '${_teacherAbbr(displayUploader)} · $createdAt'
+                          : createdAt,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white60,
                         fontWeight: FontWeight.w700,
-                        fontSize: 10,
-                        height: 1.15,
+                        fontSize: 11,
+                        height: 1.2,
                       ),
                     ),
                   ],

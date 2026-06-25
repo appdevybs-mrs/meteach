@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -75,16 +76,16 @@ class AdminHome extends StatefulWidget {
   static const softText = Color(0xFF5E6B70);
 
   // vivid accents for cards
-  static const accentBlue = Color(0xFF3B82F6);
-  static const accentTeal = Color(0xFF14B8A6);
-  static const accentPurple = Color(0xFF8B5CF6);
-  static const accentAmber = Color(0xFFF59E0B);
-  static const accentSky = Color(0xFF38BDF8);
-  static const accentRose = Color(0xFFEF4444);
-  static const accentIndigo = Color(0xFF6366F1);
-  static const accentSlate = Color(0xFF64748B);
-  static const accentCyan = Color(0xFF06B6D4);
-  static const accentGreen = Color(0xFF22C55E);
+  static const accentBlue = Color(0xFF2563EB);
+  static const accentTeal = Color(0xFF0D9488);
+  static const accentPurple = Color(0xFF7C3AED);
+  static const accentAmber = Color(0xFFD97706);
+  static const accentSky = Color(0xFF0284C7);
+  static const accentRose = Color(0xFFDC2626);
+  static const accentIndigo = Color(0xFF4F46E5);
+  static const accentSlate = Color(0xFF475569);
+  static const accentCyan = Color(0xFF0891B2);
+  static const accentGreen = Color(0xFF16A34A);
 
   @override
   State<AdminHome> createState() => _AdminHomeState();
@@ -107,15 +108,18 @@ class _AdminHomeState extends State<AdminHome> {
   bool _isAdminMode = true;
   bool _loadingRole = true;
   bool _loadingReceptionistWindows = true;
-  bool _showSearch = false;
   String _homeSearch = '';
   int _learnerPaymentRefreshTick = 0;
   final TextEditingController _homeSearchController = TextEditingController();
   Map<String, bool> _receptionistWindowEnabled = const <String, bool>{};
 
-  Map<String, int> _cardUsage = <String, int>{};
-  bool _sortByUsage = true;
-  bool _usageLoaded = false;
+  bool _allToolsExpanded = false;
+  List<String> _pinnedCardTitles = [];
+  static const _defaultPinnedCards = [
+    'Learners', 'Classes', 'Payments', 'Courses',
+    'Online Booking', 'Priority Alerts', 'Admin Mail', 'Subscriptions',
+  ];
+  static const _pinnedPrefKey = 'pinned_cards_';
 
   @override
   void initState() {
@@ -125,7 +129,7 @@ class _AdminHomeState extends State<AdminHome> {
     );
     _homeSearchController.text = _homeSearch;
     _loadSavedRoleMode();
-    unawaited(_loadCardUsage());
+    unawaited(_loadPinnedCards());
     unawaited(_loadReceptionistWindowAccess());
     _listenToReceptionistWindowAccess();
     unawaited(WebsiteMirrorBackfillService.runOnceForAdminLogin());
@@ -167,32 +171,44 @@ class _AdminHomeState extends State<AdminHome> {
     }
   }
 
-  Future<void> _loadCardUsage() async {
+  Future<void> _loadPinnedCards() async {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('card_usage_$uid');
+      final raw = prefs.getString('$_pinnedPrefKey$uid');
       if (raw != null) {
-        final decoded = json.decode(raw) as Map<String, dynamic>;
-        _cardUsage = decoded.map((k, v) => MapEntry(k, v as int));
+        final decoded = json.decode(raw) as List<dynamic>;
+        _pinnedCardTitles = decoded.cast<String>();
+      } else {
+        _pinnedCardTitles = List.from(_defaultPinnedCards);
       }
-    } catch (_) {}
-    _usageLoaded = true;
+    } catch (_) {
+      _pinnedCardTitles = List.from(_defaultPinnedCards);
+    }
   }
 
-  Future<void> _saveCardUsage() async {
+  Future<void> _savePinnedCards() async {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('card_usage_$uid', json.encode(_cardUsage));
+      await prefs.setString(
+        '$_pinnedPrefKey$uid',
+        json.encode(_pinnedCardTitles),
+      );
     } catch (_) {}
   }
 
-  void _incrementUsage(String title) {
-    _cardUsage.update(title, (v) => v + 1, ifAbsent: () => 1);
-    unawaited(_saveCardUsage());
+  void _togglePin(String title) {
+    setState(() {
+      if (_pinnedCardTitles.contains(title)) {
+        _pinnedCardTitles.remove(title);
+      } else {
+        _pinnedCardTitles.add(title);
+      }
+    });
+    unawaited(_savePinnedCards());
   }
 
   Future<void> _setRoleMode(bool isAdmin) async {
@@ -355,11 +371,39 @@ class _AdminHomeState extends State<AdminHome> {
       String? windowKey,
       bool adminOnly = false,
     }) {
+      final isPinned = _pinnedCardTitles.contains(title);
       return _HomeCardItem(
         title: title,
-        child: Listener(
-          onPointerDown: (_) => _incrementUsage(title),
-          child: child,
+        child: Stack(
+          children: [
+            child,
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _togglePin(title),
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: isPinned
+                          ? Colors.blue.withValues(alpha: 0.9)
+                          : Colors.black.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      Icons.push_pin_rounded,
+                      size: 14,
+                      color: isPinned ? Colors.white : Colors.black54,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
         windowKey: windowKey,
         adminOnly: adminOnly,
@@ -859,31 +903,42 @@ class _AdminHomeState extends State<AdminHome> {
       ),
     ];
 
-    if (_usageLoaded) {
-      if (_sortByUsage) {
-        allCards.sort((a, b) =>
-          (_cardUsage[b.title] ?? 0).compareTo(_cardUsage[a.title] ?? 0));
-      } else {
-        allCards.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-      }
+    final q = _homeSearch.trim().toLowerCase();
+    bool filterCard(_HomeCardItem c) {
+      final matchesSearch =
+          q.isEmpty ||
+          c.title.toLowerCase().contains(q);
+      if (!matchesSearch) return false;
+      if (_isAdminMode) return true;
+      if (c.adminOnly) return false;
+      if (_loadingReceptionistWindows) return false;
+      final windowKey = c.windowKey;
+      if (windowKey == null || windowKey.isEmpty) return true;
+      return _receptionistWindowEnabled[windowKey] ?? true;
     }
 
-    final q = _homeSearch.trim().toLowerCase();
-    final visibleCards = allCards
-        .where((c) {
-          final matchesSearch =
-              q.isEmpty ||
-              c.title.toLowerCase().contains(q);
-          if (!matchesSearch) return false;
-          if (_isAdminMode) return true;
-          if (c.adminOnly) return false;
-          if (_loadingReceptionistWindows) return false;
-          final windowKey = c.windowKey;
-          if (windowKey == null || windowKey.isEmpty) return true;
-          return _receptionistWindowEnabled[windowKey] ?? true;
-        })
-        .map((c) => c.child)
-        .toList();
+    final filteredCards = allCards.where(filterCard).toList();
+
+    List<_HomeCardItem> pinnedItems = [];
+    List<_HomeCardItem> otherItems = [];
+    for (final c in filteredCards) {
+      if (_pinnedCardTitles.contains(c.title)) {
+        pinnedItems.add(c);
+      } else {
+        otherItems.add(c);
+      }
+    }
+    pinnedItems.sort((a, b) {
+      final ai = _pinnedCardTitles.indexOf(a.title);
+      final bi = _pinnedCardTitles.indexOf(b.title);
+      return ai.compareTo(bi);
+    });
+    otherItems.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+
+    // auto-expand all tools when search is active
+    if (q.isNotEmpty && otherItems.isNotEmpty) {
+      _allToolsExpanded = true;
+    }
 
     final dashboardPanel = webPageFrame(
       context: context,
@@ -895,45 +950,33 @@ class _AdminHomeState extends State<AdminHome> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const OfflineNoticeBanner(),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              height: _showSearch ? 56 : 0,
-              curve: Curves.easeOutCubic,
-              child: _showSearch
-                  ? Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: TextField(
-                        controller: _homeSearchController,
-                        onChanged: (v) => setState(() => _homeSearch = v),
-                        decoration: InputDecoration(
-                          hintText: 'Search dashboard tools...',
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          suffixIcon: _homeSearch.trim().isEmpty
-                              ? null
-                              : IconButton(
-                                  tooltip: 'Clear search',
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                  ),
-                                  onPressed: () {
-                                    _homeSearchController.clear();
-                                    setState(() => _homeSearch = '');
-                                  },
-                                ),
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 0,
-                          ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: TextField(
+                controller: _homeSearchController,
+                onChanged: (v) => setState(() => _homeSearch = v),
+                decoration: InputDecoration(
+                  hintText: 'Search dashboard tools...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _homeSearch.trim().isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Clear search',
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () {
+                            _homeSearchController.clear();
+                            setState(() => _homeSearch = '');
+                          },
                         ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                ),
+              ),
             ),
             _AdminTodoHomeCard(
               isReceptionistStyle: !_isAdminMode,
@@ -955,7 +998,7 @@ class _AdminHomeState extends State<AdminHome> {
                 key: _cardsGridKey,
                 child: !_isAdminMode && _loadingReceptionistWindows
                     ? const Center(child: CircularProgressIndicator())
-                    : visibleCards.isEmpty
+                    : filteredCards.isEmpty
                     ? Center(
                         child: Text(
                           'No tools matched "$q"',
@@ -967,13 +1010,52 @@ class _AdminHomeState extends State<AdminHome> {
                       )
                     : RefreshIndicator(
                         onRefresh: _refreshHome,
-                        child: GridView.count(
+                        child: ListView(
                           physics: const AlwaysScrollableScrollPhysics(),
-                          crossAxisCount: crossAxisCount,
-                          mainAxisSpacing: gridGap,
-                          crossAxisSpacing: gridGap,
-                          childAspectRatio: cardRatio,
-                          children: visibleCards,
+                          children: [
+                            if (pinnedItems.isNotEmpty) ...[
+                              _SectionHeader(
+                                title: 'Pinned',
+                                count: pinnedItems.length,
+                                total: filteredCards.length,
+                                icon: Icons.push_pin_rounded,
+                              ),
+                              GridView.count(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                crossAxisCount: crossAxisCount,
+                                mainAxisSpacing: gridGap,
+                                crossAxisSpacing: gridGap,
+                                childAspectRatio: cardRatio,
+                                children: pinnedItems.map((c) => c.child).toList(),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+                            _SectionHeader(
+                              title: 'All Tools',
+                              count: otherItems.length,
+                              total: filteredCards.length,
+                              icon: _allToolsExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
+                              onTap: () => setState(
+                                () => _allToolsExpanded = !_allToolsExpanded,
+                              ),
+                            ),
+                            if (_allToolsExpanded && otherItems.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: GridView.count(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  crossAxisCount: crossAxisCount,
+                                  mainAxisSpacing: gridGap,
+                                  crossAxisSpacing: gridGap,
+                                  childAspectRatio: cardRatio,
+                                  children: otherItems.map((c) => c.child).toList(),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
               ),
@@ -1159,28 +1241,6 @@ class _AdminHomeState extends State<AdminHome> {
             ),
           ),
           actions: [
-            IconButton(
-              tooltip: _sortByUsage ? 'Sort A–Z' : 'Sort by usage',
-              icon: Icon(_sortByUsage
-                  ? Icons.sort_by_alpha
-                  : Icons.trending_up),
-              onPressed: () {
-                setState(() => _sortByUsage = !_sortByUsage);
-              },
-            ),
-            IconButton(
-              tooltip: _showSearch ? 'Hide search' : 'Search tools',
-              icon: const Icon(Icons.search_rounded),
-              onPressed: () {
-                setState(() {
-                  if (_showSearch) {
-                    _homeSearch = '';
-                    _homeSearchController.clear();
-                  }
-                  _showSearch = !_showSearch;
-                });
-              },
-            ),
             const SizedBox.shrink(),
             Padding(
               padding: const EdgeInsets.only(right: 10, top: 8, bottom: 8),
@@ -1269,6 +1329,88 @@ class _HomeCardItem {
   final Widget child;
   final String? windowKey;
   final bool adminOnly;
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    required this.count,
+    required this.total,
+    this.icon,
+    this.onTap,
+  });
+
+  final String title;
+  final int count;
+  final int total;
+  final IconData? icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          child: Row(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: AdminHome.primaryBlue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Icon(
+                  icon ?? Icons.grid_view_rounded,
+                  size: 12,
+                  color: AdminHome.primaryBlue,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title.toUpperCase(),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 11,
+                  color: AdminHome.primaryBlue,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AdminHome.primaryBlue.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count / $total',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 10,
+                    color: AdminHome.primaryBlue,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (onTap != null)
+                Icon(
+                  icon != null && icon != Icons.push_pin_rounded
+                      ? icon
+                      : Icons.keyboard_arrow_down_rounded,
+                  size: 18,
+                  color: AdminHome.softText,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _AdminPasswordDialog extends StatefulWidget {
@@ -3202,11 +3344,11 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
               Expanded(
                 child: Stack(
                   children: [
-                    _CardArtPanel(
-                      icon: AdminIcons.payments,
+                    _CardBlobArt(
                       color: isReceptionistStyle
                           ? AdminHome.actionOrange
                           : AdminHome.accentBlue,
+                      seed: 'Payments',
                       isMobile: isMobileCard,
                     ),
                     if (loading)
@@ -3884,9 +4026,9 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
             Expanded(
               child: Stack(
                 children: [
-                  _CardArtPanel(
-                    icon: AdminIcons.learners,
+                  _CardBlobArt(
                     color: AdminHome.accentPurple,
+                    seed: 'Learners',
                     isMobile: isMobileCard,
                   ),
                   if (loading)
@@ -4244,60 +4386,78 @@ class _StatusLabel extends StatelessWidget {
   }
 }
 
-class _CardArtPanel extends StatelessWidget {
-  final IconData icon;
+class _CardBlobArt extends StatelessWidget {
   final Color color;
+  final String seed;
   final bool isMobile;
 
-  const _CardArtPanel({
-    required this.icon,
+  const _CardBlobArt({
     required this.color,
+    required this.seed,
     required this.isMobile,
   });
 
   @override
   Widget build(BuildContext context) {
-    final iconSize = (isMobile ? 32 : 38).toDouble();
-    return Stack(
-      children: [
-        Positioned(
-          right: isMobile ? -4 : -8,
-          top: isMobile ? -4 : -8,
-          child: Container(
-            width: isMobile ? 50 : 65,
-            height: isMobile ? 50 : 65,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withValues(alpha: 0.08),
-            ),
-          ),
-        ),
-        Positioned(
-          left: isMobile ? -2 : -4,
-          bottom: isMobile ? -2 : -4,
-          child: Container(
-            width: isMobile ? 30 : 40,
-            height: isMobile ? 30 : 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withValues(alpha: 0.06),
-            ),
-          ),
-        ),
-        Center(
-          child: Container(
-            width: iconSize + 14,
-            height: iconSize + 14,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, size: iconSize, color: color),
-          ),
-        ),
-      ],
+    return SizedBox.expand(
+      child: CustomPaint(
+        painter: _BlobPainter(color: color, seed: seed),
+      ),
     );
   }
+}
+
+class _BlobPainter extends CustomPainter {
+  final Color color;
+  final String seed;
+
+  _BlobPainter({required this.color, required this.seed});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final hash = seed.hashCode;
+    final rng = Random(hash);
+
+    final w = size.width;
+    final h = size.height;
+    if (w <= 0 || h <= 0) return;
+
+    for (int i = 0; i < 6; i++) {
+      final cx = w * (0.1 + rng.nextDouble() * 0.8);
+      final cy = h * (0.1 + rng.nextDouble() * 0.8);
+      final r = w * (0.15 + rng.nextDouble() * 0.30);
+      final opacity = 0.04 + rng.nextDouble() * 0.10;
+
+      final hslColor = HSLColor.fromColor(color);
+      final shifted = hslColor.withLightness(
+        (hslColor.lightness + (rng.nextDouble() - 0.5) * 0.15).clamp(0.0, 1.0),
+      ).toColor();
+
+      final paint = Paint()
+        ..color = shifted.withValues(alpha: opacity)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16);
+
+      canvas.drawCircle(Offset(cx, cy), r, paint);
+    }
+
+    // accent circle top-right
+    final accentSize = w * 0.55;
+    canvas.drawCircle(
+      Offset(w * 0.82, h * 0.18),
+      accentSize * 0.5,
+      Paint()..color = color.withValues(alpha: 0.07),
+    );
+
+    // accent circle bottom-left
+    canvas.drawCircle(
+      Offset(w * 0.15, h * 0.85),
+      accentSize * 0.3,
+      Paint()..color = color.withValues(alpha: 0.05),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_BlobPainter oldDelegate) => oldDelegate.seed != seed;
 }
 
 // ===================== GENERIC DASH CARD =====================
@@ -4377,9 +4537,9 @@ class _DashCard extends StatelessWidget {
               Expanded(
                 child: Stack(
                   children: [
-                    _CardArtPanel(
-                      icon: icon,
+                    _CardBlobArt(
                       color: color,
+                      seed: title,
                       isMobile: isMobileCard,
                     ),
                     if (badgeCount > 0)
@@ -5426,7 +5586,8 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   }
 
   Widget _buildAvatarsTab() {
-    return ListView(
+    return SafeArea(
+      child: ListView(
       padding: const EdgeInsets.all(12),
       children: [
         Container(
@@ -5629,6 +5790,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
         ),
 
       ],
+      ),
     );
   }
 

@@ -9,3 +9,19 @@
 -keepclassmembers class **.R$raw {
     public static int ybs_notify;
 }
+
+# Firebase - needed to prevent release build crashes
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }
+
+# Flutter engine
+-keep class io.flutter.** { *; }
+-keep class io.flutter.embedding.** { *; }
+
+# JSON serialization / Gson
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.google.gson.** { *; }
+
+# Facebook SDK
+-keep class com.facebook.** { *; }

@@ -15,7 +15,6 @@ import '../shared/offline_action_guard.dart';
 import '../shared/payment_status.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/admin_web_layout.dart';
-import '../shared/ybs_busy_logo.dart';
 import '../shared/name_formatting.dart';
 
 import 'payment_dialog_shared.dart';
@@ -170,24 +169,34 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
 
     int removedFromClasses = 0;
     int removedClassesCount = 0;
-    if (removeFromClasses) {
-      final cleanup = await _removeLearnerFromAllClasses(uid);
-      removedFromClasses = cleanup.removedFromClasses;
-      removedClassesCount = cleanup.deletedClasses;
-    }
 
     final data = learner.toMap()
       ..addAll({
         'movedAt': ServerValue.timestamp,
         'movedFrom': _usersPath,
-
-        // ✅ NEW flags for self-delete flow
         'deleteAuth': true,
         'selfDeleteDone': false,
       });
 
-    await _deletedRef.child(uid).set(data);
-    await _usersRef.child(uid).remove();
+    await ProgressDialog.run(
+      context,
+      message: 'Moving learner to deleted…',
+      total: removeFromClasses ? 3 : 2,
+      task: (report) async {
+        if (removeFromClasses) {
+          final cleanup = await _removeLearnerFromAllClasses(uid);
+          removedFromClasses = cleanup.removedFromClasses;
+          removedClassesCount = cleanup.deletedClasses;
+          report(1);
+        }
+
+        await _deletedRef.child(uid).set(data);
+        report(removeFromClasses ? 2 : 1);
+
+        await _usersRef.child(uid).remove();
+        report(removeFromClasses ? 3 : 2);
+      },
+    );
 
     if (removeFromClasses) {
       _toast(
@@ -256,17 +265,28 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     final data = learner.toMap()
       ..addAll({'movedAt': ServerValue.timestamp, 'movedFrom': _usersPath});
 
-    await _blockedRef.child(uid).set(data);
-    await _usersRef.child(uid).remove();
-    // ✅ ALSO block by email (so admin cannot create same email again)
     final email = learner.email.trim().toLowerCase();
-    final emailKey = email.replaceAll('.', ','); // RTDB safe key
-    if (email.isNotEmpty) {
-      await _db.ref('blocked_emails/$emailKey').set({
-        'blockedAt': ServerValue.timestamp,
-        'uid': uid,
-      });
-    }
+    final emailKey = email.replaceAll('.', ',');
+    final hasEmail = email.isNotEmpty;
+
+    await ProgressDialog.run(
+      context,
+      message: 'Blocking learner…',
+      total: hasEmail ? 3 : 2,
+      task: (report) async {
+        await _blockedRef.child(uid).set(data);
+        report(1);
+        await _usersRef.child(uid).remove();
+        report(2);
+        if (hasEmail) {
+          await _db.ref('blocked_emails/$emailKey').set({
+            'blockedAt': ServerValue.timestamp,
+            'uid': uid,
+          });
+          report(3);
+        }
+      },
+    );
 
     _toast('Moved to blocked ⛔');
   }
@@ -324,44 +344,28 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     );
     if (!ok) return;
 
-    var loadingShown = false;
     try {
-      if (mounted) {
-        loadingShown = true;
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => const PopScope(
-            canPop: false,
-            child: AlertDialog(
-              content: Row(
-                children: [
-                  YbsBusyLogo(size: 28),
-                  SizedBox(width: 12),
-                  Expanded(child: Text('Deleting learner...')),
-                ],
-              ),
-            ),
-          ),
-        );
-      }
-
-      await _deleteAuthUserOnServer(uid);
-      await fromRef.child(uid).remove();
-
-      await _usersRef.child(uid).remove();
-      await _deletedRef.child(uid).remove();
-      await _blockedRef.child(uid).remove();
+      await ProgressDialog.run(
+        context,
+        message: 'Deleting learner permanently…',
+        total: 5,
+        task: (report) async {
+          await _deleteAuthUserOnServer(uid);
+          report(1);
+          await fromRef.child(uid).remove();
+          report(2);
+          await _usersRef.child(uid).remove();
+          report(3);
+          await _deletedRef.child(uid).remove();
+          report(4);
+          await _blockedRef.child(uid).remove();
+          report(5);
+        },
+      );
 
       _toast('Deleted permanently ✅');
     } catch (e) {
       _toast(toHumanError(e));
-    } finally {
-      if (loadingShown && mounted) {
-        try {
-          Navigator.of(context, rootNavigator: true).pop();
-        } catch (_) {}
-      }
     }
   }
 

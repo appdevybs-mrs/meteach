@@ -1747,7 +1747,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       children: [
         _buildCompactStatusCard(),
         const SizedBox(height: 10),
-        _buildVideoArea(isLandscape: false),
+        Stack(
+          children: [
+            _buildVideoArea(isLandscape: false),
+            _buildNotesFab(bottom: 16),
+          ],
+        ),
         const SizedBox(height: 10),
         _buildCompactActionPanel(isLandscape: false),
         const SizedBox(height: 10),
@@ -2140,6 +2145,31 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     );
   }
 
+  Widget _buildNotesFab({double right = 16, double bottom = 70}) {
+    return Positioned(
+      right: right,
+      bottom: bottom,
+      child: Tooltip(
+        message: 'Notes & Comments',
+        child: Material(
+          elevation: 4,
+          shape: const CircleBorder(),
+          color: const Color(0xFFFF8C00),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _openFeaturesBottomSheet,
+            child: Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              child: const Icon(Icons.note_alt_rounded, color: Colors.white, size: 24),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildFullscreenLayout() {
     final orientation = MediaQuery.of(context).orientation;
     final isLandscape = orientation == Orientation.landscape;
@@ -2161,6 +2191,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             child: _buildVideoArea(isLandscape: isLandscape),
           ),
           if (kIsWeb) _buildWebFullscreenOverlay(title),
+          _buildNotesFab(),
         ],
       ),
     );
@@ -2206,11 +2237,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
-                tooltip: 'Features',
-                onPressed: _openFeaturesBottomSheet,
-              ),
+
             ],
           ),
         ),

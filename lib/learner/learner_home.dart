@@ -41,6 +41,7 @@ import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
 import '../services/learner_notification_settings_service.dart';
 import '../services/notification_service.dart';
+import '../services/study_streak_service.dart';
 import '../services/learner_join_signal_service.dart';
 import '../services/story_preload_service.dart';
 import '../services/window_access_service.dart';
@@ -2729,6 +2730,19 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
           }
         }
 
+        int streak = 0;
+        int weeklySessions = 0;
+        if (variantKey == 'recorded') {
+          try {
+            final streakData = await StudyStreakService.instance.getStreakData(
+              uid: uid,
+              courseKey: key,
+            );
+            streak = (streakData['currentStreak'] as num?)?.toInt() ?? 0;
+            weeklySessions = (streakData['weeklySessions'] as num?)?.toInt() ?? 0;
+          } catch (_) {}
+        }
+
         out.add(
           _CourseProgressItem(
             courseKey: key,
@@ -2747,6 +2761,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
             sessionDurationMinutes: sessionDurationMinutes,
             meetUrl: meetUrl,
             teacherUid: teacherUid,
+            streak: streak,
+            weeklySessions: weeklySessions,
           ),
         );
       }
@@ -2969,16 +2985,22 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
                             ? 3
                             : 2;
 
-                        return GridView.builder(
+                          final hasRecorded = items.any(
+                            (e) => e.variantKey == 'recorded' && e.completed > 0,
+                          );
+
+                          return GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: items.length,
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: crossAxisCount,
-                                childAspectRatio: hasJoinCards
-                                    ? (useSingle ? 0.92 : 0.86)
-                                    : 1,
+                                childAspectRatio: hasRecorded
+                                    ? (useSingle ? 0.78 : 0.72)
+                                    : (hasJoinCards
+                                        ? (useSingle ? 0.92 : 0.86)
+                                        : 1),
                                 mainAxisSpacing: 10,
                                 crossAxisSpacing: 10,
                               ),
@@ -3095,6 +3117,8 @@ class _CourseProgressItem {
   final int sessionDurationMinutes;
   final String meetUrl;
   final String teacherUid;
+  final int streak;
+  final int weeklySessions;
 
   const _CourseProgressItem({
     required this.courseKey,
@@ -3113,6 +3137,8 @@ class _CourseProgressItem {
     required this.sessionDurationMinutes,
     required this.meetUrl,
     required this.teacherUid,
+    this.streak = 0,
+    this.weeklySessions = 0,
   });
 }
 
@@ -3493,6 +3519,8 @@ class _ProgressCard extends StatelessWidget {
     final completedAll = item.total > 0 && item.completed >= item.total;
     final textScale = MediaQuery.textScalerOf(context).scale(1);
     final hasMeet = item.meetUrl.trim().isNotEmpty;
+    final isRecorded = item.variantKey == 'recorded';
+    final showMotivation = isRecorded && hasProgress;
 
     return Material(
       color: Colors.transparent,
@@ -3504,13 +3532,13 @@ class _ProgressCard extends StatelessWidget {
           builder: (context, constraints) {
             final side = constraints.biggest.shortestSide;
             final compact = side < 180 || textScale > 1.15;
-            final iconSize = compact ? 34.0 : 38.0;
-            final ringSize = compact ? 64.0 : 84.0;
+            final iconSize = compact ? 28.0 : 34.0;
+            final ringSize = compact ? 44.0 : 56.0;
             final cardStart = variantAccent;
             final cardEnd = Color.lerp(variantAccent, Colors.white, 0.48)!;
 
             return Container(
-              padding: EdgeInsets.all(compact ? 10 : 12),
+              padding: EdgeInsets.all(compact ? 8 : 10),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: completedAll || hasProgress
@@ -3541,7 +3569,7 @@ class _ProgressCard extends StatelessWidget {
                         height: iconSize,
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.28),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: Colors.white.withValues(alpha: 0.34),
                           ),
@@ -3549,116 +3577,129 @@ class _ProgressCard extends StatelessWidget {
                         child: Icon(
                           variantIcon,
                           color: hasProgress ? Colors.white : variantAccent,
-                          size: compact ? 18 : 20,
+                          size: compact ? 14 : 18,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           item.title,
-                          maxLines: compact ? 1 : 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: hasProgress
                                 ? Colors.white
                                 : const Color(0xFF101B4D),
                             fontWeight: FontWeight.w900,
-                            fontSize: compact ? 12 : 14,
+                            fontSize: compact ? 11 : 13,
                             height: 1.1,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.24),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.30),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.24),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.30),
+                          ),
+                        ),
+                        child: Text(
+                          variantBadge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: hasProgress ? Colors.white : variantAccent,
+                            fontWeight: FontWeight.w900,
+                            fontSize: compact ? 8 : 9,
+                          ),
+                        ),
                       ),
-                    ),
-                    child: Text(
-                      variantBadge,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: hasProgress ? Colors.white : variantAccent,
-                        fontWeight: FontWeight.w900,
-                        fontSize: compact ? 9 : 10,
-                      ),
-                    ),
+                      if (examMode) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.purple.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Colors.purple.withValues(alpha: 0.28),
+                            ),
+                          ),
+                          child: Text(
+                            'Exam Mode',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: hasProgress ? Colors.white : Colors.purple,
+                              fontWeight: FontWeight.w900,
+                              fontSize: compact ? 8 : 9,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (examMode) ...[
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.purple.withValues(alpha: 0.28),
-                        ),
-                      ),
-                      child: Text(
-                        'Exam Mode',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: hasProgress ? Colors.white : Colors.purple,
-                          fontWeight: FontWeight.w900,
-                          fontSize: compact ? 9 : 10,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 6),
-                  Expanded(
-                    child: Center(
-                      child: _CourseProgressRing(
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      _CourseProgressRing(
                         progress: item.total > 0 ? item.progress : 0,
                         label: '$percentText%',
                         palette: palette,
                         accent: variantAccent,
                         size: ringSize,
                       ),
-                    ),
-                  ),
-                  Text(
-                    item.classType,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: hasProgress
-                          ? Colors.white.withValues(alpha: 0.90)
-                          : palette.text.withValues(alpha: 0.70),
-                      fontWeight: FontWeight.w700,
-                      fontSize: compact ? 10 : 11,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _schedulePreviewText(item),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: hasProgress
-                          ? Colors.white.withValues(alpha: 0.82)
-                          : palette.text.withValues(alpha: 0.64),
-                      fontWeight: FontWeight.w700,
-                      fontSize: compact ? 9 : 10,
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              item.classType,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: hasProgress
+                                    ? Colors.white.withValues(alpha: 0.90)
+                                    : palette.text.withValues(alpha: 0.70),
+                                fontWeight: FontWeight.w700,
+                                fontSize: compact ? 9 : 10,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _schedulePreviewText(item),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: hasProgress
+                                    ? Colors.white.withValues(alpha: 0.82)
+                                    : palette.text.withValues(alpha: 0.64),
+                                fontWeight: FontWeight.w700,
+                                fontSize: compact ? 8 : 9,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   if (item.isPrivateOnline) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     StreamBuilder<int>(
                       stream: Stream.periodic(
                         const Duration(seconds: 20),
@@ -3689,13 +3730,13 @@ class _ProgressCard extends StatelessWidget {
                           width: double.infinity,
                           child: FilledButton(
                             style: FilledButton.styleFrom(
-                              minimumSize: Size.fromHeight(compact ? 34 : 38),
+                              minimumSize: Size.fromHeight(compact ? 28 : 34),
                               backgroundColor: canJoin
                                   ? palette.accent
                                   : palette.text.withValues(alpha: 0.34),
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(10),
                               ),
                             ),
                             onPressed: canJoin
@@ -3712,12 +3753,28 @@ class _ProgressCard extends StatelessWidget {
                               joinLabel,
                               style: TextStyle(
                                 fontWeight: FontWeight.w900,
-                                fontSize: compact ? 11 : 12,
+                                fontSize: compact ? 10 : 11,
                               ),
                             ),
                           ),
                         );
                       },
+                    ),
+                  ],
+                  if (showMotivation) ...[
+                    const SizedBox(height: 4),
+                    Divider(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.30),
+                    ),
+                    const SizedBox(height: 4),
+                    _MotivationBar(
+                      streak: item.streak,
+                      weeklySessions: item.weeklySessions,
+                      compact: compact,
+                      textColor: hasProgress
+                          ? Colors.white
+                          : palette.text,
                     ),
                   ],
                 ],
@@ -3726,6 +3783,78 @@ class _ProgressCard extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+class _MotivationBar extends StatelessWidget {
+  const _MotivationBar({
+    required this.streak,
+    required this.weeklySessions,
+    required this.compact,
+    required this.textColor,
+  });
+
+  final int streak;
+  final int weeklySessions;
+  final bool compact;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final starColor = const Color(0xFFFFB800);
+    final inactiveStar = textColor.withValues(alpha: 0.20);
+
+    return Row(
+      children: [
+        Icon(Icons.local_fire_department_rounded,
+          size: compact ? 14 : 16,
+          color: streak > 0
+              ? const Color(0xFFFF6B35)
+              : textColor.withValues(alpha: 0.30),
+        ),
+        const SizedBox(width: 3),
+        Text(
+          '$streak',
+          style: TextStyle(
+            color: streak > 0
+                ? const Color(0xFFFF6B35)
+                : textColor.withValues(alpha: 0.30),
+            fontWeight: FontWeight.w900,
+            fontSize: compact ? 11 : 12,
+          ),
+        ),
+        const SizedBox(width: 2),
+        Text(
+          streak == 1 ? 'day' : 'days',
+          style: TextStyle(
+            color: textColor.withValues(alpha: 0.70),
+            fontWeight: FontWeight.w700,
+            fontSize: compact ? 9 : 10,
+          ),
+        ),
+        const Spacer(),
+        ...List.generate(5, (i) {
+          final filled = i < weeklySessions;
+          return Padding(
+            padding: EdgeInsets.only(right: compact ? 1 : 2),
+            child: Icon(
+              filled ? Icons.star_rounded : Icons.star_outline_rounded,
+              size: compact ? 14 : 16,
+              color: filled ? starColor : inactiveStar,
+            ),
+          );
+        }),
+        const SizedBox(width: 3),
+        Text(
+          '$weeklySessions/5',
+          style: TextStyle(
+            color: textColor.withValues(alpha: 0.70),
+            fontWeight: FontWeight.w700,
+            fontSize: compact ? 8 : 9,
+          ),
+        ),
+      ],
     );
   }
 }

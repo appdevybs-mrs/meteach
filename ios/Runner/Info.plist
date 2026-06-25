@@ -86,6 +86,14 @@
 			<array>
 				<string>fb2503982553366513</string>
 			</array>
+	<!-- Photo Library Access -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app requires photo library access to pick and share images.</string>
+
+	<!-- Photo Library Save -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app requires photo library access to save images to your gallery.</string>
+
 		</dict>
 	</array>
 
@@ -96,6 +104,14 @@
 		<string>fbauth2</string>
 		<string>fbshareextension</string>
 	</array>
+
+	<!-- Photo Library Access -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app requires photo library access to pick and share images.</string>
+
+	<!-- Photo Library Save -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app requires photo library access to save images to your gallery.</string>
 
 </dict>
 </plist>

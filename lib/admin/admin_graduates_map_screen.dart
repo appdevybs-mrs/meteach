@@ -31,6 +31,10 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
       FirebaseDatabase.instance.ref('graduate_world_map');
 
   late final TabController _tabController;
+  bool _showSearch = false;
+  final _searchController = TextEditingController();
+
+  String get _searchQuery => _searchController.text.trim().toLowerCase();
 
   @override
   void initState() {
@@ -44,6 +48,7 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -109,7 +114,16 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
         ),
         iconTheme: const IconThemeData(color: _primaryBlue),
         actions: [
-          if (_tabController.index == 0)
+          if (_tabController.index == 0) ...[
+            IconButton(
+              icon: Icon(_showSearch ? Icons.close_rounded : Icons.search_rounded),
+              onPressed: () {
+                setState(() {
+                  _showSearch = !_showSearch;
+                  if (!_showSearch) _searchController.clear();
+                });
+              },
+            ),
             Padding(
               padding: const EdgeInsets.only(right: 10),
               child: FilledButton.icon(
@@ -122,6 +136,7 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
                 label: const Text('Add'),
               ),
             ),
+          ],
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -162,9 +177,21 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        final items = _GraduateMapAdminItem.fromSnapshot(
+        final allItems = _GraduateMapAdminItem.fromSnapshot(
           snapshot.data?.snapshot.value,
         );
+        final items =
+            allItems.where((item) => item.learnerUid.isEmpty).toList();
+        final filtered = _searchQuery.isEmpty
+            ? items
+            : items
+                .where(
+                  (item) =>
+                      item.name.toLowerCase().contains(_searchQuery) ||
+                      item.country.toLowerCase().contains(_searchQuery) ||
+                      item.city.toLowerCase().contains(_searchQuery),
+                )
+                .toList();
         if (items.isEmpty) {
           return Center(
             child: Card(
@@ -200,12 +227,55 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
           );
         }
 
-        return ListView.separated(
-          padding: const EdgeInsets.all(14),
-          itemCount: items.length,
+        return Column(
+          children: [
+            if (_showSearch)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Search by name, country, or city...',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No results match "$_searchQuery".',
+                        style: TextStyle(
+                          color: _primaryBlue.withValues(alpha: 0.55),
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(14),
+                      itemCount: filtered.length,
           separatorBuilder: (_, _) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
-            final item = items[index];
+            final item = filtered[index];
             return Card(
               color: Colors.white,
               elevation: 0.5,
@@ -302,7 +372,10 @@ class _AdminGraduatesMapScreenState extends State<AdminGraduatesMapScreen>
               ),
             );
           },
-        );
+        ),
+      ),
+    ],
+  );
       },
     );
   }
@@ -1040,6 +1113,7 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
 
   final List<_LearnerMapItem> _learners = [];
   final Set<String> _learnerUidsOnMap = {};
+  final Set<String> _adminRemovedUids = {};
   bool _loading = true;
 
   StreamSubscription<DatabaseEvent>? _usersSub;
@@ -1100,6 +1174,7 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
         ..addAll(rows);
       _loading = false;
     });
+    _autoAddNewLearners();
   }
 
   void _onMapChanged(DatabaseEvent event) {
@@ -1126,6 +1201,7 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
     for (final learner in _learners) {
       if (learner.lat == null || learner.lng == null) continue;
       if (_learnerUidsOnMap.contains(learner.uid)) continue;
+      if (_adminRemovedUids.contains(learner.uid)) continue;
       _addToMap(learner);
     }
   }
@@ -1205,6 +1281,7 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
         'blurPhoto': false,
       });
       if (!mounted) return;
+      setState(() => _adminRemovedUids.remove(learner.uid));
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Learner added to map.')));
@@ -1231,6 +1308,7 @@ class _LearnersMapTabState extends State<_LearnersMapTab> {
       }
       await _publicPinsRef.child(learner.uid).remove();
       if (!mounted) return;
+      setState(() => _adminRemovedUids.add(learner.uid));
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Learner removed from map.')),
       );

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/file_ops.php';
 
-require_auth(['admin', 'teacher']);
+$auth = require_auth(['admin', 'teacher']);
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];

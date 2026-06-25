@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:confetti/confetti.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -22,6 +23,7 @@ import '../services/course_feedback_service.dart';
 import '../services/recorded_course_offline_cache_service.dart';
 import '../services/recorded_offline_video_service.dart';
 import '../services/recorded_progress_sync_service.dart';
+import '../services/study_streak_service.dart';
 import '../services/storage_existence.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_connectivity.dart';
@@ -137,6 +139,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     duration: const Duration(seconds: 4),
   );
   bool _celebrated = false;
+  final Set<String> _celebratedMilestones = <String>{};
 
   @override
   void initState() {
@@ -146,6 +149,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         .toString();
     _offlineVideos.addListener(_onOfflineVideosChanged);
     unawaited(_offlineVideos.ensureLoaded());
+    unawaited(_loadMilestonesFromPrefs());
     _loadAll();
   }
 
@@ -781,6 +785,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<void> _markMaterialsCompleted(_RecordedSession session) async {
     _debug('markMaterialsCompleted sessionId=${session.id}');
     if (_progressOf(session.id).materialsCompleted) return;
+    unawaited(StudyStreakService.instance.updateStreak(
+      uid: _uid,
+      courseKey: widget.courseKey,
+    ));
     final current = _progressOf(session.id);
     final updated = current.copyWith(
       materialsCompleted: true,
@@ -817,6 +825,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<void> _markVideoCompletedManually(_RecordedSession session) async {
     _debug('markVideoCompletedManually sessionId=${session.id}');
     if (_progressOf(session.id).videoCompleted) return;
+    unawaited(StudyStreakService.instance.updateStreak(
+      uid: _uid,
+      courseKey: widget.courseKey,
+    ));
     final current = _progressOf(session.id);
     final updated = current.copyWith(
       videoCompleted: true,
@@ -2096,7 +2108,33 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     setState: setState,
   );
 
+  Future<void> _loadMilestonesFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('rc_mstones_${widget.courseKey}') ?? '';
+      if (raw.isNotEmpty) {
+        _celebratedMilestones.addAll(raw.split(','));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveMilestone(String milestone) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _celebratedMilestones.add(milestone);
+      await prefs.setString(
+        'rc_mstones_${widget.courseKey}',
+        _celebratedMilestones.join(','),
+      );
+    } catch (_) {}
+  }
+
   void _celebrateIfComplete() {
+    if (_totalSessions <= 0) return;
+
+    final milestones = [25, 50, 75];
+    final pct = (_progressValue * 100).round();
+
     if (!_celebrated &&
         _completedSessions == _totalSessions &&
         _totalSessions > 0) {
@@ -2105,6 +2143,23 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       Future.delayed(const Duration(milliseconds: 600), () {
         if (mounted) _confettiController.play();
       });
+      return;
+    }
+
+    for (final m in milestones) {
+      final key = 'm$m';
+      if (pct >= m && !_celebratedMilestones.contains(key)) {
+        _confettiController.play();
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) _confettiController.play();
+        });
+        unawaited(_saveMilestone(key));
+        if (mounted) {
+          _notice('🎉 $m% complete! Keep going!',
+              tone: LearnerNoticeTone.success);
+        }
+        break;
+      }
     }
   }
 
