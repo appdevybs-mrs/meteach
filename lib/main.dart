@@ -11,9 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'enroll_screen.dart';
@@ -198,6 +200,7 @@ class AppStartupGate extends StatefulWidget {
 class _AppStartupGateState extends State<AppStartupGate> {
   double _progress = 0;
   bool _ready = false;
+  bool _skipping = false;
   SplashConfig _splashConfig = SplashConfig.empty;
   VideoPlayerController? _videoController;
   bool _videoInitialized = false;
@@ -209,12 +212,22 @@ class _AppStartupGateState extends State<AppStartupGate> {
     _boot();
   }
 
+  void _skip() {
+    if (_skipping || _ready) return;
+    _skipping = true;
+    _videoController?.pause();
+    _videoController?.dispose();
+    _videoController = null;
+    _videoInitialized = false;
+    setState(() => _ready = true);
+  }
+
   Future<void> _loadCachedConfig() async {
     final cached = await SplashConfig.loadFromPrefs();
     if (!mounted) return;
     setState(() => _splashConfig = cached);
     if (cached.isVideo && cached.url.isNotEmpty) {
-      _initVideo(cached.url);
+      await _initVideo(cached.url, cachedFile: cached.hasCachedFile ? cached.cachedFilePath : null);
     }
   }
 
@@ -228,17 +241,16 @@ class _AppStartupGateState extends State<AppStartupGate> {
     await step(() async {
       final fresh = await SplashConfigService.fetch();
       if (!mounted) return;
-      await fresh.saveToPrefs();
       if (fresh.url != _splashConfig.url) {
+        _videoController?.dispose();
+        _videoController = null;
+        _videoInitialized = false;
         setState(() => _splashConfig = fresh);
         if (fresh.isVideo && fresh.url.isNotEmpty) {
-          _initVideo(fresh.url);
-        } else {
-          _videoController?.dispose();
-          _videoController = null;
-          _videoInitialized = false;
+          await _downloadAndCacheVideo(fresh);
         }
       }
+      await fresh.saveToPrefs();
     }, 0.1);
 
     await step(
@@ -258,19 +270,21 @@ class _AppStartupGateState extends State<AppStartupGate> {
       1.0,
     );
 
-    if (_splashConfig.isVideo && _splashConfig.url.isNotEmpty) {
+    if (_skipping) return;
+
+    if (_splashConfig.isVideo && _splashConfig.url.isNotEmpty && !_skipping) {
       if (!_videoInitialized && _videoController != null) {
         try {
           await Future.doWhile(() async {
             await Future.delayed(const Duration(milliseconds: 100));
-            return mounted && !_videoInitialized;
+            return mounted && !_videoInitialized && !_skipping;
           }).timeout(const Duration(seconds: 8));
         } catch (_) {}
       }
-      if (mounted && _videoController != null && _videoInitialized) {
+      if (mounted && _videoController != null && _videoInitialized && !_skipping) {
         final completer = Completer<void>();
         void listener() {
-          if (!mounted) {
+          if (!mounted || _skipping) {
             if (!completer.isCompleted) completer.complete();
             return;
           }
@@ -289,25 +303,48 @@ class _AppStartupGateState extends State<AppStartupGate> {
       }
     }
 
-    if (!mounted) return;
+    if (!mounted || _skipping) return;
     _videoController?.dispose();
     _videoController = null;
     _videoInitialized = false;
     setState(() => _ready = true);
   }
 
-  void _initVideo(String url) {
+  Future<void> _downloadAndCacheVideo(SplashConfig config) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final ext = config.url.split('.').last.split('?').first;
+      final filePath = '${dir.path}/splash_video.$ext';
+      final file = File(filePath);
+      if (file.existsSync()) await file.delete();
+      final response = await http.get(Uri.parse(config.url));
+      if (response.statusCode == 200) {
+        await file.writeAsBytes(response.bodyBytes);
+        final cached = config.copyWithCachedFile(filePath);
+        setState(() => _splashConfig = cached);
+        await _initVideo(config.url, cachedFile: filePath);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _initVideo(String url, {String? cachedFile}) async {
     _videoController?.dispose();
     _videoInitialized = false;
-    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+    final VideoPlayerController controller;
+    if (cachedFile != null && File(cachedFile).existsSync()) {
+      controller = VideoPlayerController.file(File(cachedFile));
+    } else {
+      controller = VideoPlayerController.networkUrl(Uri.parse(url));
+    }
     _videoController = controller;
-    controller.initialize().then((_) {
+    try {
+      await controller.initialize();
       if (!mounted) return;
       if (controller == _videoController) {
         setState(() => _videoInitialized = true);
         controller.play();
       }
-    }).catchError((_) {});
+    } catch (_) {}
   }
 
   @override
@@ -319,11 +356,20 @@ class _AppStartupGateState extends State<AppStartupGate> {
   @override
   Widget build(BuildContext context) {
     if (_ready) return widget.child;
-    return _ProgressiveLogoSplash(
-      progress: _progress,
-      splashConfig: _splashConfig,
-      videoController: _videoController,
-      videoInitialized: _videoInitialized,
+    return Stack(
+      children: [
+        AnimatedOpacity(
+          opacity: _ready ? 0.0 : 1.0,
+          duration: const Duration(milliseconds: 350),
+          child: _ready ? const SizedBox.shrink() : _ProgressiveLogoSplash(
+            progress: _progress,
+            splashConfig: _splashConfig,
+            videoController: _videoController,
+            videoInitialized: _videoInitialized,
+            onSkip: _skip,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -334,17 +380,18 @@ class _ProgressiveLogoSplash extends StatelessWidget {
     this.splashConfig = SplashConfig.empty,
     this.videoController,
     this.videoInitialized = false,
+    this.onSkip,
   });
 
   final double progress;
   final SplashConfig splashConfig;
   final VideoPlayerController? videoController;
   final bool videoInitialized;
+  final VoidCallback? onSkip;
 
   @override
   Widget build(BuildContext context) {
     final p = progress.clamp(0.0, 1.0).toDouble();
-    final bottomSafe = MediaQuery.of(context).padding.bottom;
 
     Widget mediaContent;
 
@@ -362,7 +409,14 @@ class _ProgressiveLogoSplash extends StatelessWidget {
       mediaContent = Stack(
         fit: StackFit.expand,
         children: [
-          Container(color: Colors.black),
+          if (splashConfig.thumbnailUrl.isNotEmpty)
+            CachedNetworkImage(
+              imageUrl: splashConfig.thumbnailUrl,
+              fit: BoxFit.cover,
+              errorWidget: (_, _, _) => Container(color: Colors.black),
+            )
+          else
+            Container(color: Colors.black),
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -403,63 +457,32 @@ class _ProgressiveLogoSplash extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: splashConfig.hasMedia ? Colors.black : Brand.appBg,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          mediaContent,
-          if (splashConfig.hasMedia) ...[
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 200,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.7),
-                    ],
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onSkip,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            mediaContent,
+            if (splashConfig.isVideo && videoInitialized)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 8,
+                right: 16,
+                child: TextButton(
+                  onPressed: onSkip,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white.withValues(alpha: 0.7),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    textStyle: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
+                  child: const Text('Skip \u2192'),
                 ),
               ),
-            ),
           ],
-          Positioned(
-            left: 26,
-            right: 26,
-            bottom: bottomSafe + 40,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Preparing your learning space...',
-                  style: TextStyle(
-                    color: splashConfig.hasMedia
-                        ? Colors.white.withValues(alpha: 0.9)
-                        : Brand.primaryBlue,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    minHeight: 8,
-                    value: p,
-                    backgroundColor: splashConfig.hasMedia
-                        ? Colors.white.withValues(alpha: 0.25)
-                        : Brand.uiBorder,
-                    color: Brand.actionOrange,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -6,24 +6,36 @@ class SplashConfig {
   final String url;
   final String thumbnailUrl;
   final int updatedAt;
+  final String cachedFilePath;
 
   const SplashConfig({
     this.type = 'none',
     this.url = '',
     this.thumbnailUrl = '',
     this.updatedAt = 0,
+    this.cachedFilePath = '',
   });
 
   static const _prefsTypeKey = 'cached_splash_type';
   static const _prefsUrlKey = 'cached_splash_url';
   static const _prefsThumbKey = 'cached_splash_thumb';
   static const _prefsUpdatedKey = 'cached_splash_updated';
+  static const _prefsCachePathKey = 'cached_splash_file_path';
 
   static const SplashConfig empty = SplashConfig();
 
   bool get hasMedia => type == 'image' || type == 'video';
   bool get isVideo => type == 'video';
   bool get isImage => type == 'image' || type == 'gif';
+  bool get hasCachedFile => cachedFilePath.isNotEmpty;
+
+  SplashConfig copyWithCachedFile(String path) => SplashConfig(
+        type: type,
+        url: url,
+        thumbnailUrl: thumbnailUrl,
+        updatedAt: updatedAt,
+        cachedFilePath: path,
+      );
 
   factory SplashConfig.fromSnapshot(DataSnapshot? snap) {
     if (snap?.value == null || snap!.value is! Map) return SplashConfig.empty;
@@ -42,8 +54,15 @@ class SplashConfig {
     final url = prefs.getString(_prefsUrlKey) ?? '';
     final thumb = prefs.getString(_prefsThumbKey) ?? '';
     final updated = prefs.getInt(_prefsUpdatedKey) ?? 0;
+    final cachePath = prefs.getString(_prefsCachePathKey) ?? '';
     if (url.isEmpty) return SplashConfig.empty;
-    return SplashConfig(type: type, url: url, thumbnailUrl: thumb, updatedAt: updated);
+    return SplashConfig(
+      type: type,
+      url: url,
+      thumbnailUrl: thumb,
+      updatedAt: updated,
+      cachedFilePath: cachePath,
+    );
   }
 
   Future<void> saveToPrefs() async {
@@ -52,6 +71,7 @@ class SplashConfig {
     await prefs.setString(_prefsUrlKey, url);
     await prefs.setString(_prefsThumbKey, thumbnailUrl);
     await prefs.setInt(_prefsUpdatedKey, updatedAt);
+    await prefs.setString(_prefsCachePathKey, cachedFilePath);
   }
 
   static Future<void> clearPrefs() async {
@@ -60,6 +80,7 @@ class SplashConfig {
     await prefs.remove(_prefsUrlKey);
     await prefs.remove(_prefsThumbKey);
     await prefs.remove(_prefsUpdatedKey);
+    await prefs.remove(_prefsCachePathKey);
   }
 }
 
