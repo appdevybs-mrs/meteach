@@ -322,6 +322,7 @@ class _AdminSplashScreenState extends State<AdminSplashScreen> {
         title: const Text('Splash Screen'),
         backgroundColor: _primaryBlue,
         foregroundColor: Colors.white,
+        titleTextStyle: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
         elevation: 1,
       ),
       body: adminWebBodyFrame(context: context, child: body),

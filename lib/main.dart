@@ -258,6 +258,37 @@ class _AppStartupGateState extends State<AppStartupGate> {
       1.0,
     );
 
+    if (_splashConfig.isVideo && _splashConfig.url.isNotEmpty) {
+      if (!_videoInitialized && _videoController != null) {
+        try {
+          await Future.doWhile(() async {
+            await Future.delayed(const Duration(milliseconds: 100));
+            return mounted && !_videoInitialized;
+          }).timeout(const Duration(seconds: 8));
+        } catch (_) {}
+      }
+      if (mounted && _videoController != null && _videoInitialized) {
+        final completer = Completer<void>();
+        void listener() {
+          if (!mounted) {
+            if (!completer.isCompleted) completer.complete();
+            return;
+          }
+          final v = _videoController!;
+          if (v.value.isInitialized &&
+              v.value.duration > Duration.zero &&
+              v.value.position >= v.value.duration) {
+            if (!completer.isCompleted) completer.complete();
+          }
+        }
+        _videoController!.addListener(listener);
+        try {
+          await completer.future.timeout(const Duration(seconds: 15));
+        } catch (_) {}
+        if (mounted) _videoController?.removeListener(listener);
+      }
+    }
+
     if (!mounted) return;
     _videoController?.dispose();
     _videoController = null;
@@ -315,34 +346,68 @@ class _ProgressiveLogoSplash extends StatelessWidget {
     final p = progress.clamp(0.0, 1.0).toDouble();
     final bottomSafe = MediaQuery.of(context).padding.bottom;
 
-    if (splashConfig.hasMedia) {
-      return Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (splashConfig.isVideo && videoController != null && videoInitialized)
-              FittedBox(
-                fit: BoxFit.cover,
-                clipBehavior: Clip.hardEdge,
-                child: SizedBox(
-                  width: videoController!.value.size.width,
-                  height: videoController!.value.size.height,
-                  child: VideoPlayer(videoController!),
+    Widget mediaContent;
+
+    if (splashConfig.isVideo && videoController != null && videoInitialized) {
+      mediaContent = FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: videoController!.value.size.width,
+          height: videoController!.value.size.height,
+          child: VideoPlayer(videoController!),
+        ),
+      );
+    } else if (splashConfig.isVideo) {
+      mediaContent = Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(color: Colors.black),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: _logoBox(p, showReveal: false),
                 ),
-              )
-            else if (splashConfig.isImage)
-              CachedNetworkImage(
-                imageUrl: splashConfig.url,
-                fit: BoxFit.cover,
-                errorWidget: (_, _, _) => Center(
-                  child: Icon(Icons.school_rounded, size: 78, color: Brand.primaryBlue),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
                 ),
-              )
-            else
-              Center(
-                child: Icon(Icons.school_rounded, size: 78, color: Brand.primaryBlue),
-              ),
+              ],
+            ),
+          ),
+        ],
+      );
+    } else if (splashConfig.isImage) {
+      mediaContent = CachedNetworkImage(
+        imageUrl: splashConfig.url,
+        fit: BoxFit.cover,
+        placeholder: (_, _) => Container(color: Colors.black),
+        errorWidget: (_, _, _) => Center(child: _logoBox(p)),
+      );
+    } else {
+      mediaContent = Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 26),
+          child: _logoBox(p),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: splashConfig.hasMedia ? Colors.black : Brand.appBg,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          mediaContent,
+          if (splashConfig.hasMedia) ...[
             Positioned(
               left: 0,
               right: 0,
@@ -361,99 +426,20 @@ class _ProgressiveLogoSplash extends StatelessWidget {
                 ),
               ),
             ),
-            Positioned(
-              left: 26,
-              right: 26,
-              bottom: bottomSafe + 40,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Preparing your learning space...',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      minHeight: 8,
-                      value: p,
-                      backgroundColor: Colors.white.withValues(alpha: 0.25),
-                      color: Brand.actionOrange,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
-        ),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: Brand.appBg,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 26),
+          Positioned(
+            left: 26,
+            right: 26,
+            bottom: bottomSafe + 40,
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 184,
-                  height: 184,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: Brand.uiBorder),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(26),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Opacity(
-                          opacity: 0.12,
-                          child: Image.asset(
-                            'assets/images/ybs_logo.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        ClipRect(
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            heightFactor: p,
-                            child: Image.asset(
-                              'assets/images/ybs_logo.png',
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, _, _) => const Icon(
-                                Icons.school_rounded,
-                                size: 78,
-                                color: Brand.primaryBlue,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
                 Text(
                   'Preparing your learning space...',
                   style: TextStyle(
-                    color: Brand.primaryBlue,
+                    color: splashConfig.hasMedia
+                        ? Colors.white.withValues(alpha: 0.9)
+                        : Brand.primaryBlue,
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
                   ),
@@ -464,13 +450,82 @@ class _ProgressiveLogoSplash extends StatelessWidget {
                   child: LinearProgressIndicator(
                     minHeight: 8,
                     value: p,
-                    backgroundColor: Brand.uiBorder,
+                    backgroundColor: splashConfig.hasMedia
+                        ? Colors.white.withValues(alpha: 0.25)
+                        : Brand.uiBorder,
                     color: Brand.actionOrange,
                   ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _logoBox(double p, {bool showReveal = true}) {
+    return Container(
+      width: 184,
+      height: 184,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: showReveal ? Brand.uiBorder : Colors.white24,
+        ),
+        boxShadow: showReveal
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ]
+            : [],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Opacity(
+              opacity: 0.12,
+              child: Image.asset(
+                'assets/images/ybs_logo.png',
+                fit: BoxFit.contain,
+              ),
+            ),
+            if (showReveal)
+              ClipRect(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  heightFactor: p,
+                  child: Image.asset(
+                    'assets/images/ybs_logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.school_rounded,
+                      size: 78,
+                      color: Brand.primaryBlue,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Image.asset(
+                  'assets/images/ybs_logo.png',
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const Icon(
+                    Icons.school_rounded,
+                    size: 52,
+                    color: Brand.primaryBlue,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
