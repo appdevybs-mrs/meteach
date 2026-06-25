@@ -14,6 +14,8 @@ import 'app_feedback.dart';
 import 'web_download.dart';
 
 class MediaDownload {
+  static bool _downloadInProgress = false;
+
   static Future<void> downloadUrl(
     BuildContext context, {
     required String url,
@@ -21,6 +23,15 @@ class MediaDownload {
     bool askFolder = true,
     bool isVideo = false,
   }) async {
+    if (_downloadInProgress) {
+      if (!context.mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('A download is already in progress.')),
+      );
+      return;
+    }
+
     final cleanedUrl = url.trim();
     if (cleanedUrl.isEmpty) {
       AppToast.fromSnackBar(
@@ -30,6 +41,7 @@ class MediaDownload {
       return;
     }
 
+    _downloadInProgress = true;
     try {
       final bytes = await _downloadWithProgress(
         context,
@@ -70,6 +82,8 @@ class MediaDownload {
         context,
         SnackBar(content: Text('Download failed: $e')),
       );
+    } finally {
+      _downloadInProgress = false;
     }
   }
 

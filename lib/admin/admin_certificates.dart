@@ -3599,9 +3599,37 @@ class _CertificateViewSheet extends StatelessWidget {
   }
 
   Future<void> _sharePdf(BuildContext context) async {
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: const AlertDialog(
+          content: SizedBox(
+            width: 220,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(height: 16),
+                Text(
+                  'Generating PDF...',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
       final bytes = await _pdfService.generateCertificatePdfBytes(certificate);
       final fileName = CertificatePdfService.buildPdfFileName(certificate);
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       if (kIsWeb) {
         downloadBytes(bytes, fileName);
       } else {
@@ -3619,6 +3647,9 @@ class _CertificateViewSheet extends StatelessWidget {
         type: AppToastType.success,
       );
     } catch (_) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       if (!context.mounted) return;
       AppToast.show(
         context,

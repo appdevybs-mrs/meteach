@@ -1142,18 +1142,50 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                   icon: const Icon(Icons.download_rounded),
                   label: const Text('Export'),
                   onPressed: () async {
+                    final filtered = _applyExportFilters(
+                      all: all,
+                      month: pickedMonth,
+                      learnerUid: pickedUid,
+                    );
+
+                    if (filtered.isEmpty) {
+                      _toast('No payments match selected filters.');
+                      return;
+                    }
+
+                    if (!mounted) return;
+                    if (dialogCtx.mounted &&
+                        Navigator.of(dialogCtx).canPop()) {
+                      Navigator.pop(dialogCtx);
+                    }
+
+                    if (!mounted) return;
+                    // ignore: use_build_context_synchronously
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => PopScope(
+                        canPop: false,
+                        child: const AlertDialog(
+                          content: SizedBox(
+                            width: 220,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(strokeWidth: 2),
+                                SizedBox(height: 16),
+                                Text(
+                                  'Generating export...',
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+
                     try {
-                      final filtered = _applyExportFilters(
-                        all: all,
-                        month: pickedMonth,
-                        learnerUid: pickedUid,
-                      );
-
-                      if (filtered.isEmpty) {
-                        _toast('No payments match selected filters.');
-                        return;
-                      }
-
                       final monthTag = _safeFilePart(
                         pickedMonth ?? 'all_months',
                       );
@@ -1192,9 +1224,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                           downloadBytes(b, '$prefix.pdf');
                         }
                         if (!mounted) return;
-                        if (dialogCtx.mounted &&
-                            Navigator.of(dialogCtx).canPop()) {
-                          Navigator.pop(dialogCtx);
+                        if (context.mounted) {
+                          Navigator.of(context, rootNavigator: true).pop();
                         }
                         _toast('Downloading export file(s)...');
                       } else {
@@ -1208,6 +1239,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         }
 
                         if ((dirPath ?? '').trim().isEmpty) {
+                          if (context.mounted) {
+                            Navigator.of(context, rootNavigator: true).pop();
+                          }
                           _toast('Export cancelled: no folder selected.');
                           return;
                         }
@@ -1253,15 +1287,17 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         }
 
                         if (!mounted) return;
-                        if (dialogCtx.mounted &&
-                            Navigator.of(dialogCtx).canPop()) {
-                          Navigator.pop(dialogCtx);
+                        if (context.mounted) {
+                          Navigator.of(context, rootNavigator: true).pop();
                         }
                         _toast(
                           'Exported ${savedPaths.length} file(s) to ${dir.path}',
                         );
                       }
                     } catch (e) {
+                      if (context.mounted) {
+                        Navigator.of(context, rootNavigator: true).pop();
+                      }
                       _toast(toHumanError(e, fallback: 'Export failed.'));
                     }
                   },

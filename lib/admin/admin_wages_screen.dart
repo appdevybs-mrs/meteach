@@ -580,7 +580,7 @@ class AdminWagesScreen extends StatelessWidget {
             icon: const Icon(Icons.file_download_outlined),
             onPressed: () async {
               try {
-                await AdminWagesExcelExporter.exportAndShareExcel();
+                await AdminWagesExcelExporter.exportAndShareExcel(context);
                 if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,

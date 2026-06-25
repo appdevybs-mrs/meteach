@@ -168,9 +168,37 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
       return;
     }
 
+    if (!mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: const AlertDialog(
+          content: SizedBox(
+            width: 220,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(height: 16),
+                Text(
+                  'Generating PDF...',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     try {
       final bytes = await _pdfService.generateCertificatePdfBytes(cert);
       final fileName = CertificatePdfService.buildPdfFileName(cert);
+      if (navigator.context.mounted) navigator.pop();
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(bytes, flush: true);
@@ -178,6 +206,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
         XFile(file.path, mimeType: 'application/pdf', name: fileName),
       ]);
     } catch (_) {
+      if (navigator.context.mounted) navigator.pop();
       if (!mounted) return;
       AppToast.show(
         context,

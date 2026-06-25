@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -42,7 +43,34 @@ class AdminWagesExcelExporter {
   /// 1) Learners: Number, Full Name, Serial
   /// 2) Payments: detailed columns (no UID column)
   /// 3) Summary: Number, Full Name, Date of Payment, Date of Start, Amount, Teacher, Course/Level
-  static Future<void> exportAndShareExcel() async {
+  static Future<void> exportAndShareExcel(BuildContext context) async {
+    if (!context.mounted) return;
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: const AlertDialog(
+          content: SizedBox(
+            width: 220,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(strokeWidth: 2),
+                SizedBox(height: 16),
+                Text(
+                  'Generating Excel export...',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
     final db = FirebaseDatabase.instance;
 
     // Read all at once (isolated from UI streams)
@@ -283,8 +311,11 @@ class AdminWagesExcelExporter {
     // Save to temp and share
     final bytes = excel.encode();
     if (bytes == null) {
+      if (navigator.context.mounted) navigator.pop();
       throw Exception('Excel encoding failed');
     }
+
+    if (navigator.context.mounted) navigator.pop();
 
     if (kIsWeb) {
       downloadBytes(Uint8List.fromList(bytes), 'wages_export.xlsx');
