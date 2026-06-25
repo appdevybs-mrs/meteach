@@ -732,7 +732,7 @@ class _RecordedLessonCommentsScreenState
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF4F46E5),
                     foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(40),
+                    minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -761,8 +761,8 @@ class _RecordedLessonCommentsScreenState
       style: FilledButton.styleFrom(
         backgroundColor: color.withValues(alpha: 0.12),
         foregroundColor: color,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        minimumSize: const Size(0, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        minimumSize: const Size.fromHeight(48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         textStyle: const TextStyle(fontWeight: FontWeight.w800),
       ),
@@ -914,8 +914,8 @@ class _RecordedLessonCommentsScreenState
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFFFEE2E2),
                     foregroundColor: const Color(0xFFB91C1C),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(999),
                     ),
@@ -941,7 +941,8 @@ class _RecordedLessonCommentsScreenState
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
                     foregroundColor: const Color(0xFF334155),
-                    minimumSize: const Size(0, 36),
+                    minimumSize: const Size.fromHeight(48),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(999),
                     ),

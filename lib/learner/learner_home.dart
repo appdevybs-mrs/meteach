@@ -3730,7 +3730,8 @@ class _ProgressCard extends StatelessWidget {
                           width: double.infinity,
                           child: FilledButton(
                             style: FilledButton.styleFrom(
-                              minimumSize: Size.fromHeight(compact ? 28 : 34),
+                              minimumSize: const Size.fromHeight(48),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
                               backgroundColor: canJoin
                                   ? palette.accent
                                   : palette.text.withValues(alpha: 0.34),

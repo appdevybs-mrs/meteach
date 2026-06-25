@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -46,7 +48,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     if (message.notification != null) return;
 
     await FCMService.I._showFromRemoteMessage(message);
-  } catch (_) {}
+  } catch (e) {
+    FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+  }
 }
 
 class FCMService {
@@ -179,7 +183,9 @@ class FCMService {
         'updatedAt': ServerValue.timestamp,
       });
       await PushDispatchService.syncCurrentDeviceTokenV2(token);
-    } catch (_) {}
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
   }
 
   Future<void> _logTapFailure({
@@ -442,12 +448,15 @@ class FCMService {
       final claimRole = token?.claims?['role'];
       final normalizedClaimRole = _normalizeRole(claimRole);
       if (normalizedClaimRole.isNotEmpty) return normalizedClaimRole;
-    } catch (_) {}
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
 
     try {
       final snap = await FirebaseDatabase.instance.ref('users/$uid/role').get();
       return _normalizeRole(snap.value);
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       return '';
     }
   }
@@ -461,7 +470,9 @@ class FCMService {
           .get();
       final threadSubject = (threadSnap.value ?? '').toString().trim();
       if (threadSubject.isNotEmpty) return threadSubject;
-    } catch (_) {}
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
 
     final myUid = FirebaseAuth.instance.currentUser?.uid;
     if (myUid == null || myUid.trim().isEmpty) return '';
@@ -471,7 +482,8 @@ class FCMService {
           .ref('mail_index/$myUid/$threadId/subject')
           .get();
       return (indexSnap.value ?? '').toString().trim();
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       return '';
     }
   }
@@ -493,7 +505,8 @@ class FCMService {
 
       final email = (m['email'] ?? '').toString().trim();
       return email;
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       return '';
     }
   }
@@ -510,7 +523,8 @@ class FCMService {
       if (v is! Map) return null;
 
       return Map<String, dynamic>.from(v);
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       return null;
     }
   }
@@ -980,7 +994,9 @@ class FCMService {
           );
           return;
         }
-      } catch (_) {}
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+      }
 
       nav.push(MaterialPageRoute(builder: (_) => const TeacherSchedule()));
       return;

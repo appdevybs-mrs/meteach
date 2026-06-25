@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -184,7 +187,7 @@ class MediaDownload {
     final client = http.Client();
     try {
       final request = http.Request('GET', Uri.parse(url.trim()));
-      final streamedResponse = await client.send(request);
+      final streamedResponse = await client.send(request).timeout(const Duration(minutes: 5));
 
       if (streamedResponse.statusCode < 200 ||
           streamedResponse.statusCode >= 300) {
@@ -230,7 +233,9 @@ class MediaDownload {
       final seg = uri.pathSegments.isEmpty ? '' : uri.pathSegments.last;
       final i = seg.lastIndexOf('.');
       if (i > 0 && i < seg.length - 1) return seg.substring(i + 1);
-    } catch (_) {}
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
     return 'bin';
   }
 
@@ -266,12 +271,15 @@ class MediaDownload {
           if (await d.exists()) return d.path;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
 
     try {
       final docs = await getApplicationDocumentsDirectory();
       return docs.path;
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       return null;
     }
   }
@@ -296,7 +304,9 @@ class MediaDownload {
           await testFile.writeAsBytes([0]);
           await testFile.delete();
           return File('${publicDir.path}/$fileName');
-        } catch (_) {}
+        } catch (e) {
+          FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+        }
       }
       final appDir = await getApplicationDocumentsDirectory();
       final downloadsDir = Directory('${appDir.path}/downloads');

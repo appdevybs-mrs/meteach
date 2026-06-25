@@ -1718,7 +1718,8 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                                   ),
                                   label: const Text('Generate'),
                                   style: FilledButton.styleFrom(
-                                    minimumSize: const Size(0, 44),
+                                    minimumSize: const Size.fromHeight(48),
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
                                   ),
                                 ),
                               ],

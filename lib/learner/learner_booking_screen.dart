@@ -7574,9 +7574,10 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                       ? const Color(0xFF1F8A49)
                                       : primaryBlue,
                                   foregroundColor: Colors.white,
-                                  minimumSize: const Size(0, 34),
+                                  minimumSize: const Size.fromHeight(48),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 10,
+                                    vertical: 8,
                                   ),
                                   visualDensity: VisualDensity.compact,
                                 ),

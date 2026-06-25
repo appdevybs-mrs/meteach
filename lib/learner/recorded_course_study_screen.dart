@@ -1254,9 +1254,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFF1E293B),
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      minimumSize: Size(0, isNarrow ? 32 : 34),
+                      minimumSize: const Size.fromHeight(48),
                       padding: EdgeInsets.symmetric(
                         horizontal: isNarrow ? 8 : 10,
+                        vertical: 8,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -2437,7 +2438,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                           foregroundColor: Colors.white,
                           disabledBackgroundColor: const Color(0xFFE5E7EB),
                           disabledForegroundColor: const Color(0xFF9CA3AF),
-                          minimumSize: const Size.fromHeight(46),
+                          minimumSize: const Size.fromHeight(48),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -2599,8 +2600,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               foregroundColor: isDone
                   ? const Color(0xFF16A34A)
                   : const Color(0xFF4F46E5),
-              minimumSize: const Size(0, 34),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size.fromHeight(48),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             ),
             icon: Icon(
               isDone ? Icons.delete_outline_rounded : Icons.download_rounded,

@@ -1237,8 +1237,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 label: Text(_notesExpanded ? 'Collapse' : 'Expand'),
                 style: TextButton.styleFrom(
                   foregroundColor: accent,
-                  minimumSize: const Size(0, 34),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   textStyle: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 12.5,
@@ -1251,8 +1251,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  minimumSize: const Size(0, 34),
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1863,8 +1863,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 label: Text(_commentsExpanded ? 'Collapse' : 'Expand'),
                 style: TextButton.styleFrom(
                   foregroundColor: accent,
-                  minimumSize: const Size(0, 34),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   textStyle: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 12.5,
@@ -1877,8 +1877,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  minimumSize: const Size(0, 34),
+                  minimumSize: const Size.fromHeight(48),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2039,7 +2039,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                   style: FilledButton.styleFrom(
                     backgroundColor: accent,
                     foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(40),
+                    minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -2129,8 +2129,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       onPressed: _openCommentsScreen,
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF4F46E5),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        minimumSize: const Size(0, 34),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        minimumSize: const Size.fromHeight(48),
                         textStyle: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                       child: const Text('Reply in comments'),

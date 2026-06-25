@@ -1380,7 +1380,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                       horizontal: 12,
                       vertical: 10,
                     ),
-                    minimumSize: const Size(0, 38),
+                    minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),

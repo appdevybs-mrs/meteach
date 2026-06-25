@@ -4684,7 +4684,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.clip,
-                  textScaler: const TextScaler.linear(1.0),
                   softWrap: true,
                   style: TextStyle(
                     color: UiK.mainText,
@@ -4699,7 +4698,6 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.clip,
-                  textScaler: const TextScaler.linear(1.0),
                   softWrap: true,
                   style: TextStyle(
                     color: UiK.mainText.withValues(alpha: 0.65),

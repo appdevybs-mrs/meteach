@@ -22,6 +22,7 @@ import 'enroll_screen.dart';
 import 'course_reviews_screen.dart';
 import 'services/fcm_service.dart';
 import 'services/app_launch_action_service.dart';
+import 'services/app_check_service.dart';
 import 'services/backend_api.dart';
 import 'services/course_feedback_service.dart';
 import 'services/splash_config_service.dart';
@@ -80,6 +81,8 @@ Future<void> main() async {
 
 Future<void> _bootstrapApp() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await AppCheckService.I.activate();
 
   FirebaseDatabase.instance.setPersistenceEnabled(true);
   FirebaseDatabase.instance.setPersistenceCacheSizeBytes(100 * 1024 * 1024);
@@ -204,6 +207,7 @@ class _AppStartupGateState extends State<AppStartupGate> {
   SplashConfig _splashConfig = SplashConfig.empty;
   VideoPlayerController? _videoController;
   bool _videoInitialized = false;
+  bool _videoInitInProgress = false;
 
   @override
   void initState() {
@@ -279,7 +283,9 @@ class _AppStartupGateState extends State<AppStartupGate> {
             await Future.delayed(const Duration(milliseconds: 100));
             return mounted && !_videoInitialized && !_skipping;
           }).timeout(const Duration(seconds: 8));
-        } catch (_) {}
+        } catch (e) {
+          FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+        }
       }
       if (mounted && _videoController != null && _videoInitialized && !_skipping) {
         final completer = Completer<void>();
@@ -298,7 +304,9 @@ class _AppStartupGateState extends State<AppStartupGate> {
         _videoController!.addListener(listener);
         try {
           await completer.future.timeout(const Duration(seconds: 15));
-        } catch (_) {}
+        } catch (e) {
+          FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+        }
         if (mounted) _videoController?.removeListener(listener);
       }
     }
@@ -324,27 +332,38 @@ class _AppStartupGateState extends State<AppStartupGate> {
         setState(() => _splashConfig = cached);
         await _initVideo(config.url, cachedFile: filePath);
       }
-    } catch (_) {}
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
   }
 
   Future<void> _initVideo(String url, {String? cachedFile}) async {
-    _videoController?.dispose();
-    _videoInitialized = false;
-    final VideoPlayerController controller;
-    if (cachedFile != null && File(cachedFile).existsSync()) {
-      controller = VideoPlayerController.file(File(cachedFile));
-    } else {
-      controller = VideoPlayerController.networkUrl(Uri.parse(url));
-    }
-    _videoController = controller;
+    if (_videoInitInProgress) return;
+    _videoInitInProgress = true;
     try {
-      await controller.initialize();
-      if (!mounted) return;
-      if (controller == _videoController) {
-        setState(() => _videoInitialized = true);
-        controller.play();
+      _videoController?.dispose();
+      _videoController = null;
+      _videoInitialized = false;
+      final VideoPlayerController controller;
+      if (cachedFile != null && File(cachedFile).existsSync()) {
+        controller = VideoPlayerController.file(File(cachedFile));
+      } else {
+        controller = VideoPlayerController.networkUrl(Uri.parse(url));
       }
-    } catch (_) {}
+      _videoController = controller;
+      try {
+        await controller.initialize();
+        if (!mounted) return;
+        if (controller == _videoController) {
+          setState(() => _videoInitialized = true);
+          controller.play();
+        }
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+      }
+    } finally {
+      _videoInitInProgress = false;
+    }
   }
 
   @override
@@ -685,7 +704,9 @@ class SimpleTopBar extends StatelessWidget {
         final snap = await db.ref(path).get();
         final parsed = _parseCompanyInfo(snap.value);
         if (parsed != null) return parsed;
-      } catch (_) {}
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+      }
     }
     return null;
   }
@@ -1309,7 +1330,8 @@ class _JoinOnlineCircleEntryButtonState
         final resolved = fromWebsite.isNotEmpty ? fromWebsite : fallback;
         _teacherPhotoCache[uid] = resolved;
         return resolved;
-      } catch (_) {
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
         _teacherPhotoCache[uid] = fallback;
         return fallback;
       } finally {
@@ -1361,7 +1383,8 @@ class _JoinOnlineCircleEntryButtonState
         _teacherPhotosCache[uid] = resolved;
         if (resolved.isNotEmpty) _teacherPhotoCache[uid] = resolved.first;
         return resolved;
-      } catch (_) {
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
         final resolved = fallback.isEmpty
             ? const <String>[]
             : <String>[fallback];
@@ -1620,8 +1643,10 @@ class _JoinOnlineCircleEntryButtonState
             size: broken ? 42 : 52,
           ),
         ),
-      );
-    }
+      ),
+    ),
+  );
+}
 
     Widget liveTeacherImage(String photoUrl) {
       final liveUrl = photoUrl.trim();
@@ -3403,7 +3428,8 @@ class _PublicGalleryVideoTileState extends State<_PublicGalleryVideoTile> {
         _ready = true;
         _failed = false;
       });
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       if (!mounted) return;
       setState(() {
         _failed = true;
@@ -3667,7 +3693,8 @@ class _PublicGalleryViewerVideoState extends State<_PublicGalleryViewerVideo> {
         _ready = true;
         _failed = false;
       });
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       if (!mounted) return;
       setState(() {
         _failed = true;
@@ -4702,7 +4729,8 @@ class _CategoryGridCardState extends State<_CategoryGridCard> {
 
       if (count == 0) return null;
       return Color.fromRGBO(r ~/ count, g ~/ count, b ~/ count, 1);
-    } catch (_) {
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
       return null;
     } finally {
       stream.removeListener(listener);
@@ -5591,23 +5619,27 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     final compact = MediaQuery.sizeOf(context).width < 390;
     final tone = _deliveryTone(option);
     final tone2 = _deliveryTone2(option);
-    return GestureDetector(
-      onTap: saving || !option.isSelectable
-          ? null
-          : () {
-              final index = deliveryOptions.indexOf(option);
-              setState(() {
-                _currentDeliveryIndex = index;
-                selectedDeliveryKey = option.key;
-                _clearPromo();
-              });
-              _deliveryPageController.animateToPage(
-                index,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-              );
-            },
-      child: AnimatedContainer(
+    return Semantics(
+      label: option.label,
+      button: true,
+      enabled: saving == false && option.isSelectable,
+      child: GestureDetector(
+        onTap: saving || !option.isSelectable
+            ? null
+            : () {
+                final index = deliveryOptions.indexOf(option);
+                setState(() {
+                  _currentDeliveryIndex = index;
+                  selectedDeliveryKey = option.key;
+                  _clearPromo();
+                });
+                _deliveryPageController.animateToPage(
+                  index,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                );
+              },
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         margin: EdgeInsets.symmetric(horizontal: 6, vertical: selected ? 1 : 8),
         padding: EdgeInsets.all(compact ? 10 : 12),
