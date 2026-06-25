@@ -51,12 +51,14 @@ class RecordedCourseStudyScreen extends StatefulWidget {
     required this.courseData,
     this.embedded = false,
     this.showOverviewCard = true,
+    this.onProgressChanged,
   });
 
   final String courseKey;
   final Map<String, dynamic> courseData;
   final bool embedded;
   final bool showOverviewCard;
+  final VoidCallback? onProgressChanged;
 
   @override
   State<RecordedCourseStudyScreen> createState() =>
@@ -352,6 +354,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _ensureSelectedUnits();
     });
     _celebrateIfComplete();
+    widget.onProgressChanged?.call();
   }
 
   Map<String, _RecordedProgress> _parseProgress(dynamic raw) {
@@ -805,6 +808,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _progressBySessionId[session.id] = updated.copyWith(completed: completed);
     });
     _celebrateIfComplete();
+    widget.onProgressChanged?.call();
     _debug(
       'markMaterialsCompleted done sessionId=${session.id} completed=$completed',
     );
@@ -844,6 +848,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       _progressBySessionId[session.id] = updated.copyWith(completed: completed);
     });
     _celebrateIfComplete();
+    widget.onProgressChanged?.call();
     _debug(
       'markVideoCompletedManually done sessionId=${session.id} completed=$completed',
     );

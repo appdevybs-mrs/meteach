@@ -73,6 +73,7 @@ class AppWindowKeys {
   static const adminTeacherSessionCount = 'teacher_session_count';
   static const adminInstructions = 'instructions';
   static const adminSplashScreen = 'splash_screen';
+  static const adminGallery = 'gallery';
 
   static const teacherInstructions = 'instructions';
 

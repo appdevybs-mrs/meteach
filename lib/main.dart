@@ -78,6 +78,10 @@ Future<void> main() async {
 
 Future<void> _bootstrapApp() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  FirebaseDatabase.instance.setPersistenceEnabled(true);
+  FirebaseDatabase.instance.setPersistenceCacheSizeBytes(100 * 1024 * 1024);
+
   await AppFlavor.init();
 
   FlutterError.onError = (FlutterErrorDetails details) {

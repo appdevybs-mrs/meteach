@@ -491,10 +491,185 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       _savedDurationMs = durationMs;
     });
 
-    AppToast.show(
-      context,
-      'Video completed. This session video is now marked done.',
-      type: AppToastType.success,
+    _showCompletionDialog();
+  }
+
+  Future<void> _showCompletionDialog() async {
+    if (!mounted) return;
+    final nextSession = _sessionAtOffset(1);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return Dialog(
+          elevation: 16,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
+          backgroundColor: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 380),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(26),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFFFFFF), Color(0xFFF0FDF4)],
+                ),
+                border: Border.all(
+                  color: const Color(0xFFBBF7D0).withValues(alpha: 0.6),
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x2E000000),
+                    blurRadius: 24,
+                    offset: Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -28,
+                      top: -30,
+                      child: Container(
+                        width: 116,
+                        height: 116,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: const Color(0xFF16A34A).withValues(alpha: 0.09),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(26, 26, 26, 20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 68,
+                            height: 68,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF16A34A).withValues(alpha: 0.13),
+                              border: Border.all(
+                                color: const Color(0xFF16A34A).withValues(alpha: 0.28),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.check_circle_rounded,
+                              color: Color(0xFF16A34A),
+                              size: 38,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Lesson Completed!',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF0F172A),
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.sessionTitle.trim().isEmpty
+                                ? 'This session'
+                                : widget.sessionTitle.trim(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF16A34A),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          if (nextSession != null) ...[
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF16A34A),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  size: 22,
+                                ),
+                                label: const Text(
+                                  'Watch Next Lesson',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  _navigateToSession(
+                                    sessionId: nextSession['id']!,
+                                    sessionTitle:
+                                        nextSession['title'] ?? 'Next Lesson',
+                                    videoUrl: nextSession['videoUrl']!,
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF0F172A),
+                                side: const BorderSide(
+                                  color: Color(0xFFCBD5E1),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.arrow_back_rounded,
+                                size: 20,
+                              ),
+                              label: const Text(
+                                'Back to Course',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.of(ctx).pop();
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

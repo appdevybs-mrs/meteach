@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -29,46 +30,31 @@ class MediaDownload {
       return;
     }
 
-    if (kIsWeb) {
-      try {
-        final res = await http.get(Uri.parse(cleanedUrl));
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          throw Exception('Download failed (${res.statusCode})');
-        }
-        final fileName = _safeName(
-          suggestedName,
-          fallbackExt: _extFromUrl(cleanedUrl),
-        );
-        downloadBytes(res.bodyBytes, fileName);
+    try {
+      final bytes = await _downloadWithProgress(
+        context,
+        url: cleanedUrl,
+        label: 'Downloading file...',
+      );
+
+      final fileName = _safeName(
+        suggestedName,
+        fallbackExt: _extFromUrl(cleanedUrl),
+      );
+
+      if (kIsWeb) {
+        downloadBytes(bytes, fileName);
         if (!context.mounted) return;
         AppToast.fromSnackBar(
           context,
           const SnackBar(content: Text('Download started.')),
         );
-      } catch (e) {
-        if (!context.mounted) return;
-        AppToast.fromSnackBar(
-          context,
-          SnackBar(content: Text('Download failed: $e')),
-        );
+        return;
       }
-      return;
-    }
 
-    try {
       final tempDir = await getTemporaryDirectory();
-      final fileName = _safeName(
-        suggestedName,
-        fallbackExt: _extFromUrl(cleanedUrl),
-      );
       final tempFile = File('${tempDir.path}/$fileName');
-
-      final res = await http.get(Uri.parse(cleanedUrl));
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw Exception('Download failed (${res.statusCode})');
-      }
-
-      await tempFile.writeAsBytes(res.bodyBytes, flush: true);
+      await tempFile.writeAsBytes(bytes, flush: true);
 
       if (!context.mounted) return;
       await _showDownloadActions(
@@ -87,7 +73,8 @@ class MediaDownload {
     }
   }
 
-  static Future<void> saveToGallery({
+  static Future<void> saveToGallery(
+    BuildContext context, {
     required String url,
     required bool isVideo,
   }) async {
@@ -95,17 +82,17 @@ class MediaDownload {
       throw UnsupportedError('Save to gallery is not supported on web.');
     }
     try {
-      final tempDir = await getTemporaryDirectory();
+      final bytes = await _downloadWithProgress(
+        context,
+        url: url,
+        label: 'Saving to gallery...',
+      );
+
       final fileName =
           'gallery_${DateTime.now().millisecondsSinceEpoch}.${_extFromUrl(url)}';
+      final tempDir = await getTemporaryDirectory();
       final tempFile = File('${tempDir.path}/$fileName');
-
-      final res = await http.get(Uri.parse(url));
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        throw Exception('Download failed (${res.statusCode})');
-      }
-
-      await tempFile.writeAsBytes(res.bodyBytes, flush: true);
+      await tempFile.writeAsBytes(bytes, flush: true);
 
       final result = await ImageGallerySaver.saveFile(
         tempFile.path,
@@ -120,6 +107,107 @@ class MediaDownload {
     } catch (e) {
       rethrow;
     }
+  }
+
+  static Future<Uint8List> _downloadWithProgress(
+    BuildContext context, {
+    required String url,
+    String? label,
+  }) async {
+    final progress = ValueNotifier<double>(0.0);
+    final statusText = ValueNotifier<String>('Starting download...');
+
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    if (!context.mounted) throw Exception('Context no longer valid');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (label != null) ...[
+                  Text(
+                    label,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                ValueListenableBuilder<String>(
+                  valueListenable: statusText,
+                  builder: (_, s, _) => Text(
+                    s,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ValueListenableBuilder<double>(
+                  valueListenable: progress,
+                  builder: (_, p, _) => LinearProgressIndicator(
+                    value: p > 0 ? p : null,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ValueListenableBuilder<double>(
+                  valueListenable: progress,
+                  builder: (_, p, _) => Text(
+                    '${(p * 100).toStringAsFixed(0)}%',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(url.trim()));
+      final streamedResponse = await client.send(request);
+
+      if (streamedResponse.statusCode < 200 ||
+          streamedResponse.statusCode >= 300) {
+        throw Exception('Download failed (${streamedResponse.statusCode})');
+      }
+
+      final total = streamedResponse.contentLength;
+      final bytes = <int>[];
+
+      await for (final chunk in streamedResponse.stream) {
+        bytes.addAll(chunk);
+        if (total != null && total > 0) {
+          progress.value = bytes.length / total;
+          final downloaded = _formatBytes(bytes.length);
+          final totalFormatted = _formatBytes(total);
+          statusText.value = 'Downloading... $downloaded / $totalFormatted';
+        } else {
+          statusText.value = 'Downloading... ${_formatBytes(bytes.length)}';
+        }
+      }
+
+      if (navigator.context.mounted) navigator.pop();
+      return Uint8List.fromList(bytes);
+    } catch (e) {
+      if (navigator.context.mounted) navigator.pop();
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   static String _extFromUrl(String u) {
@@ -303,6 +391,7 @@ class MediaDownload {
                       Navigator.of(sheetContext).pop();
                       try {
                         await saveToGallery(
+                          context,
                           url: url,
                           isVideo: isVideo,
                         );

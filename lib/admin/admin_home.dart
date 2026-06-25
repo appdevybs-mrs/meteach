@@ -23,6 +23,7 @@ import 'admin_instructions_screen.dart';
 import 'admin_teacher_reminders_screen.dart';
 import 'admin_classes.dart';
 import 'admin_public_gallery_screen.dart';
+import 'gallery_screen.dart';
 import 'admin_public_preview.dart';
 import 'admin_subscriptions.dart';
 import 'admin_job_applications_screen.dart';
@@ -730,6 +731,21 @@ class _AdminHomeState extends State<AdminHome> {
             () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const AdminPublicGalleryScreen(),
+              ),
+            ),
+          ),
+        ),
+      ),
+      card(
+        'Gallery',
+        windowKey: AppWindowKeys.adminGallery,
+        child: _DashGalleryCard(
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminGallery,
+            () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdminGalleryScreen(),
               ),
             ),
           ),
@@ -2417,6 +2433,61 @@ class _PublicGalleryDashCard extends StatelessWidget {
           color: AdminHome.accentPurple,
           isReceptionistStyle: isReceptionistStyle,
           onTap: onTap,
+        );
+      },
+    );
+  }
+}
+
+class _DashGalleryCard extends StatelessWidget {
+  const _DashGalleryCard({
+    required this.onTap,
+    this.isReceptionistStyle = false,
+  });
+
+  final VoidCallback onTap;
+  final bool isReceptionistStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final publicRef =
+        FirebaseDatabase.instance.ref('public_gallery_teasers');
+    final learnerRef =
+        FirebaseDatabase.instance.ref('learner_gallery');
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: publicRef.onValue,
+      builder: (context, publicSnap) {
+        int publicCount = 0;
+        final publicVal = publicSnap.data?.snapshot.value;
+        if (publicVal is Map) publicCount = publicVal.length;
+
+        return StreamBuilder<DatabaseEvent>(
+          stream: learnerRef.onValue,
+          builder: (context, learnerSnap) {
+            int learnerItems = 0;
+            final learnerVal = learnerSnap.data?.snapshot.value;
+            if (learnerVal is Map) {
+              for (final v in learnerVal.values) {
+                if (v is Map) learnerItems += v.length;
+              }
+            }
+
+            return _DashCard(
+              title: 'Gallery',
+              statusLabels: [
+                _StatusLabelData(
+                  label: 'All Media',
+                  count: publicCount + learnerItems,
+                  color: AdminHome.accentSky,
+                ),
+              ],
+              icon: Icons.photo_library_rounded,
+              color: AdminHome.accentSky,
+              isReceptionistStyle: isReceptionistStyle,
+              onTap: onTap,
+            );
+          },
         );
       },
     );

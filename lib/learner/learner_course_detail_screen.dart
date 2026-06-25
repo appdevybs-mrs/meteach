@@ -3185,6 +3185,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               courseData: _course,
               embedded: true,
               showOverviewCard: false,
+              onProgressChanged: _refreshRecordedProgress,
             ),
           ),
         ),
@@ -3690,7 +3691,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     );
   }
 
-  void _openRecordedStudy() {
+  Future<void> _openRecordedStudy() async {
     if (_courseId.trim().isEmpty) {
       _notice(
         'Recorded course is not available.',
@@ -3698,24 +3699,59 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       );
       return;
     }
-    unawaited(
-      OfflineActionGuard.runExclusive(
-        context,
-        'learner.course_detail.recorded_study.${widget.courseKey}',
-        () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => RecordedCourseStudyScreen(
-                courseKey: widget.courseKey,
-                courseData: _course,
-              ),
+    await OfflineActionGuard.runExclusive(
+      context,
+      'learner.course_detail.recorded_study.${widget.courseKey}',
+      () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => RecordedCourseStudyScreen(
+              courseKey: widget.courseKey,
+              courseData: _course,
             ),
-          );
-        },
-        requireOnline: false,
-      ),
+          ),
+        );
+      },
+      requireOnline: false,
     );
+    if (!mounted) return;
+    await _refreshRecordedProgress();
+  }
+
+  Future<void> _refreshRecordedProgress() async {
+    if (_deliveryKey != 'recorded') return;
+    try {
+      final progressSnap = await _usersRef
+          .child(_uid)
+          .child('courses')
+          .child(widget.courseKey)
+          .child('recorded_progress')
+          .get();
+      final recordedCovered = <String>{};
+      if (progressSnap.exists && progressSnap.value is Map) {
+        final pm = Map<String, dynamic>.from(progressSnap.value as Map);
+        bool asBool(dynamic v) {
+          if (v is bool) return v;
+          final s = (v ?? '').toString().trim().toLowerCase();
+          return s == 'true' || s == '1';
+        }
+        for (final e in pm.entries) {
+          final sid = e.key.toString().trim();
+          if (sid.isEmpty || e.value is! Map) continue;
+          final rec = Map<String, dynamic>.from(e.value as Map);
+          final doneVideo = asBool(rec['videoCompleted']);
+          final doneMaterials = asBool(rec['materialsCompleted']);
+          if (doneVideo || doneMaterials) recordedCovered.add(sid);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _coveredSessionIds = recordedCovered;
+      });
+    } catch (_) {
+      // silent fail
+    }
   }
 
   Color _paymentProgressColor(double v) {

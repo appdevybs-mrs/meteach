@@ -11,6 +11,7 @@ import '../shared/ui_constants.dart';
 import '../shared/watermark_background.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
+import '../services/homework_cache_service.dart';
 import '../services/mail_consistency_service.dart';
 import '../services/push_dispatch_service.dart';
 
@@ -593,7 +594,22 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   @override
   void initState() {
     super.initState();
+    _restoreFromCache();
     _load();
+  }
+
+  void _restoreFromCache() {
+    final cacheKey = 'learner_${widget.courseKey}_items';
+    final cached = HomeworkCacheService.instance.retrieve<List<Map<String, dynamic>>>(cacheKey);
+    if (cached != null) {
+      _items = cached;
+      _busy = false;
+    }
+  }
+
+  void _storeInCache() {
+    final cacheKey = 'learner_${widget.courseKey}_items';
+    HomeworkCacheService.instance.store(cacheKey, _items);
   }
 
   Future<void> _load() async {
@@ -611,6 +627,10 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       if (user == null) throw Exception('Not logged in.');
       _uid = user.uid;
       _learnerUid = await _resolveLearnerUidFromAuth(_uid);
+
+      _usersRef
+          .child('$_uid/courses/${widget.courseKey}/attendance')
+          .keepSynced(true);
 
       final courseSnap = await _usersRef
           .child(_uid)
@@ -764,6 +784,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
         _items = list;
         _busy = false;
       });
+      _storeInCache();
     } catch (e) {
       setState(() {
         _error = toHumanError(e);

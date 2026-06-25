@@ -11,6 +11,7 @@ import '../shared/responsive_layout.dart';
 import '../shared/teacher_web_layout.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
+import '../services/homework_cache_service.dart';
 import '../services/homework_review_sync_service.dart';
 import '../services/push_dispatch_service.dart';
 import 'teacher_mail_thread_screen.dart';
@@ -44,19 +45,41 @@ class _TeacherHomeworkInboxScreenState
   final Set<String> _selectedThreadIds = <String>{};
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  bool _backgroundRefreshing = false;
+  Timer? _searchDebounce;
+
+  final Map<String, String> _courseTitleCache = <String, String>{};
+  final Map<String, String> _classTitleCache = <String, String>{};
+  final Map<String, String> _learnerNameCache = <String, String>{};
 
   @override
   void initState() {
     super.initState();
     _meUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (_meUid.isNotEmpty) {
-      _indexStream = _db.child('mail_index/$_meUid').onValue;
+      final indexRef = _db.child('mail_index/$_meUid');
+      indexRef.keepSynced(true);
+      _indexStream = indexRef.onValue;
+      _tryRestoreFromCache();
+    }
+  }
+
+  void _tryRestoreFromCache() {
+    final cache = HomeworkCacheService.instance;
+    final key = '${_meUid}_views';
+    final sigKey = '${_meUid}_signature';
+    final cached = cache.retrieve<List<_HomeworkThreadView>>(key);
+    final sig = cache.retrieve<String>(sigKey);
+    if (cached != null && sig != null) {
+      _viewsFuture = Future<List<_HomeworkThreadView>>.value(cached);
+      _rowsSignature = sig;
     }
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -164,6 +187,14 @@ class _TeacherHomeworkInboxScreenState
     if (_viewsFuture != null && sig == _rowsSignature) return _viewsFuture!;
 
     _rowsSignature = sig;
+
+    if (_viewsFuture != null && !_backgroundRefreshing) {
+      _backgroundRefreshing = true;
+      if (mounted) setState(() {});
+      _viewsFuture = _composeViews(rows);
+      return _viewsFuture!;
+    }
+
     _viewsFuture = _composeViews(rows);
     return _viewsFuture!;
   }
@@ -180,7 +211,21 @@ class _TeacherHomeworkInboxScreenState
 
     final merged = <_HomeworkThreadView>[...inboxViews, ...sentViews];
     merged.sort((a, b) => b.row.updatedAtMs.compareTo(a.row.updatedAtMs));
+
+    _storeViewsInCache(merged);
+    if (mounted) {
+      setState(() => _backgroundRefreshing = false);
+    }
+
     return merged;
+  }
+
+  void _storeViewsInCache(List<_HomeworkThreadView> views) {
+    if (_meUid.isEmpty) return;
+    final cache = HomeworkCacheService.instance;
+    cache.store('${_meUid}_views', views);
+    cache.store('${_meUid}_signature', _rowsSignature);
+    cache.store('${_meUid}_refreshedAt', DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<String> _learnerName(String uid) async {
@@ -210,7 +255,6 @@ class _TeacherHomeworkInboxScreenState
     final classes = _safeMap(classSnap.value);
 
     final courseKeyByLearnerAndClass = <String, String>{};
-    final learnerNameCache = <String, String>{};
 
     Future<String> resolveCourseKey(String learnerUid, String classId) async {
       final cacheKey = '$learnerUid|$classId';
@@ -279,12 +323,12 @@ class _TeacherHomeworkInboxScreenState
         final courseKey = await resolveCourseKey(learnerUid, classId);
         if (courseKey.isEmpty) continue;
 
-        final learnerName = learnerNameCache.putIfAbsent(
+        final learnerName = _learnerNameCache.putIfAbsent(
           learnerUid,
           () => learnerUid,
         );
         if (learnerName == learnerUid) {
-          learnerNameCache[learnerUid] = await _learnerName(learnerUid);
+          _learnerNameCache[learnerUid] = await _learnerName(learnerUid);
         }
 
         final learnerAttendanceSnap = await _db
@@ -339,7 +383,7 @@ class _TeacherHomeworkInboxScreenState
               row: _HomeworkThreadRow(
                 threadId: '',
                 peerUid: learnerUid,
-                peerName: learnerNameCache[learnerUid] ?? learnerUid,
+                peerName: _learnerNameCache[learnerUid] ?? learnerUid,
                 subject: subject,
                 lastMessage: _short(text, 120),
                 updatedAtMs: updatedAt,
@@ -411,63 +455,80 @@ class _TeacherHomeworkInboxScreenState
           homeworkRefPath =
               'users/${row.peerUid}/courses/$courseKey/attendance/$sessionId/homework';
         }
-        if (homeworkRefPath.isNotEmpty) {
-          final hwSnap = await _db.child(homeworkRefPath).get();
-          if (hwSnap.exists && hwSnap.value is Map) {
-            final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
-            reviewedAt = _toInt(hw['reviewedAt']);
-            submittedAtMs = _toInt(hw['submittedAt']);
-            reviewStatus = _normalizeHomeworkStatus(hw['reviewStatus']);
-            score = _toInt(hw['reviewScore']);
-            grade = (hw['reviewGrade'] ?? '').toString().trim();
-            needsRedo = hw['needsRedo'] == true || reviewStatus == 'redo';
-            reviewed = reviewedAt > 0 || reviewStatus.isNotEmpty;
-            homeworkText =
-                (hw['text'] ?? hw['homeworkText'] ?? hw['note'] ?? '')
-                    .toString()
-                    .trim();
-            homeworkDueDate = (hw['dueDate'] ?? '').toString().trim();
-          }
 
-          if (!reviewed) {
-            final repaired =
-                await HomeworkReviewSyncService.repairHomeworkNodeFromThread(
-                  db: FirebaseDatabase.instance,
-                  threadId: row.threadId,
-                  homeworkRefPath: homeworkRefPath,
-                  lastMessage: row.lastMessage,
-                  updatedAt: row.updatedAtMs,
-                );
-            if (repaired != null) {
-              reviewedAt = repaired.reviewedAt;
-              reviewStatus = repaired.reviewStatus;
-              score = repaired.reviewScore;
-              grade = repaired.reviewGrade;
-              needsRedo = repaired.needsRedo;
-              reviewed = true;
-            }
+        final hwSnap = homeworkRefPath.isNotEmpty
+            ? await _db.child(homeworkRefPath).get()
+            : null;
+        if (hwSnap != null && hwSnap.exists && hwSnap.value is Map) {
+          final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
+          reviewedAt = _toInt(hw['reviewedAt']);
+          submittedAtMs = _toInt(hw['submittedAt']);
+          reviewStatus = _normalizeHomeworkStatus(hw['reviewStatus']);
+          score = _toInt(hw['reviewScore']);
+          grade = (hw['reviewGrade'] ?? '').toString().trim();
+          needsRedo = hw['needsRedo'] == true || reviewStatus == 'redo';
+          reviewed = reviewedAt > 0 || reviewStatus.isNotEmpty;
+          homeworkText =
+              (hw['text'] ?? hw['homeworkText'] ?? hw['note'] ?? '')
+                  .toString()
+                  .trim();
+          homeworkDueDate = (hw['dueDate'] ?? '').toString().trim();
+        }
+
+        if (homeworkRefPath.isNotEmpty && !reviewed) {
+          final repaired =
+              await HomeworkReviewSyncService.repairHomeworkNodeFromThread(
+                db: FirebaseDatabase.instance,
+                threadId: row.threadId,
+                homeworkRefPath: homeworkRefPath,
+                lastMessage: row.lastMessage,
+                updatedAt: row.updatedAtMs,
+              );
+          if (repaired != null) {
+            reviewedAt = repaired.reviewedAt;
+            reviewStatus = repaired.reviewStatus;
+            score = repaired.reviewScore;
+            grade = repaired.reviewGrade;
+            needsRedo = repaired.needsRedo;
+            reviewed = true;
           }
         }
 
-        if ((courseTitle.isEmpty || courseTitle == courseKey) &&
+        final needsCourseTitle = courseTitle.isEmpty ||
+            courseTitle == courseKey ||
+            courseTitle == 'Course not set';
+
+        if (needsCourseTitle &&
             row.peerUid.isNotEmpty &&
             courseKey.isNotEmpty) {
-          final cSnap = await _db
-              .child('users/${row.peerUid}/courses/$courseKey')
-              .get();
-          if (cSnap.exists && cSnap.value is Map) {
-            final c = (cSnap.value as Map).map((k, v) => MapEntry('$k', v));
-            final title = (c['title'] ?? c['course_title'] ?? '')
-                .toString()
-                .trim();
-            if (title.isNotEmpty) courseTitle = title;
+          final cacheKey = '${row.peerUid}|$courseKey';
+          final cachedTitle = _courseTitleCache[cacheKey];
+          if (cachedTitle != null && cachedTitle.isNotEmpty) {
+            courseTitle = cachedTitle;
+          } else {
+            final cSnap = await _db
+                .child('users/${row.peerUid}/courses/$courseKey')
+                .get();
+            if (cSnap.exists && cSnap.value is Map) {
+              final c =
+                  (cSnap.value as Map).map((k, v) => MapEntry('$k', v));
+              final title = (c['title'] ?? c['course_title'] ?? '')
+                  .toString()
+                  .trim();
+              if (title.isNotEmpty) {
+                courseTitle = title;
+                _courseTitleCache[cacheKey] = title;
+              }
 
-            if (classId.isEmpty && c['class'] is Map) {
-              final cls = (c['class'] as Map).map((k, v) => MapEntry('$k', v));
-              classId = (cls['class_id'] ?? '').toString().trim();
-              final classTitle = (cls['course_title'] ?? '').toString().trim();
-              if (courseTitle.isEmpty && classTitle.isNotEmpty) {
-                courseTitle = classTitle;
+              if (classId.isEmpty && c['class'] is Map) {
+                final cls = (c['class'] as Map)
+                    .map((k, v) => MapEntry('$k', v));
+                classId = (cls['class_id'] ?? '').toString().trim();
+                final classTitle =
+                    (cls['course_title'] ?? '').toString().trim();
+                if (courseTitle.isEmpty && classTitle.isNotEmpty) {
+                  courseTitle = classTitle;
+                }
               }
             }
           }
@@ -475,24 +536,43 @@ class _TeacherHomeworkInboxScreenState
 
         if (classId.isNotEmpty &&
             (courseTitle.isEmpty || courseTitle == 'Course not set')) {
-          final clsSnap = await _db.child('classes/$classId').get();
-          if (clsSnap.exists && clsSnap.value is Map) {
-            final c = (clsSnap.value as Map).map((k, v) => MapEntry('$k', v));
-            final classCourseTitle =
-                (c['course_title'] ?? c['courseTitle'] ?? '').toString().trim();
-            if (classCourseTitle.isNotEmpty) courseTitle = classCourseTitle;
+          final cachedClassTitle = _classTitleCache[classId];
+          if (cachedClassTitle != null && cachedClassTitle.isNotEmpty) {
+            courseTitle = cachedClassTitle;
+          } else {
+            final clsSnap = await _db.child('classes/$classId').get();
+            if (clsSnap.exists && clsSnap.value is Map) {
+              final c =
+                  (clsSnap.value as Map).map((k, v) => MapEntry('$k', v));
+              final classCourseTitle =
+                  (c['course_title'] ?? c['courseTitle'] ?? '')
+                      .toString()
+                      .trim();
+              if (classCourseTitle.isNotEmpty) {
+                courseTitle = classCourseTitle;
+                _classTitleCache[classId] = classCourseTitle;
+              }
+            }
           }
         }
 
         if ((courseTitle.isEmpty || courseTitle == courseKey) &&
             courseKey.isNotEmpty) {
-          final courseSnap = await _db.child('courses/$courseKey').get();
-          if (courseSnap.exists && courseSnap.value is Map) {
-            final c = (courseSnap.value as Map).map(
-              (k, v) => MapEntry('$k', v),
-            );
-            final t = (c['title'] ?? c['course_title'] ?? '').toString().trim();
-            if (t.isNotEmpty) courseTitle = t;
+          final cachedCourseTitle = _courseTitleCache[courseKey];
+          if (cachedCourseTitle != null && cachedCourseTitle.isNotEmpty) {
+            courseTitle = cachedCourseTitle;
+          } else {
+            final courseSnap = await _db.child('courses/$courseKey').get();
+            if (courseSnap.exists && courseSnap.value is Map) {
+              final c = (courseSnap.value as Map)
+                  .map((k, v) => MapEntry('$k', v));
+              final t =
+                  (c['title'] ?? c['course_title'] ?? '').toString().trim();
+              if (t.isNotEmpty) {
+                courseTitle = t;
+                _courseTitleCache[courseKey] = t;
+              }
+            }
           }
         }
       }
@@ -676,8 +756,6 @@ class _TeacherHomeworkInboxScreenState
       },
     );
 
-    _rowsSignature = '';
-    _viewsFuture = null;
     if (mounted) {
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
@@ -849,8 +927,6 @@ class _TeacherHomeworkInboxScreenState
     if (v.homeworkRefPath.trim().isEmpty) return;
     final hwRef = v.homeworkRefPath.trim();
     _localReviewedOverrideByHwRef[hwRef] = true;
-    _rowsSignature = '';
-    _viewsFuture = null;
     if (mounted) setState(() {});
     final now = DateTime.now().millisecondsSinceEpoch;
     try {
@@ -901,8 +977,6 @@ class _TeacherHomeworkInboxScreenState
         keywords: [v.courseKey, v.sessionId],
       );
       _localReviewedOverrideByHwRef.remove(hwRef);
-      _rowsSignature = '';
-      _viewsFuture = null;
       if (mounted) setState(() {});
     }
   }
@@ -911,8 +985,6 @@ class _TeacherHomeworkInboxScreenState
     if (v.homeworkRefPath.trim().isEmpty) return;
     final hwRef = v.homeworkRefPath.trim();
     _localReviewedOverrideByHwRef[hwRef] = false;
-    _rowsSignature = '';
-    _viewsFuture = null;
     if (mounted) setState(() {});
     try {
       await _db.child(v.homeworkRefPath).update({
@@ -950,8 +1022,6 @@ class _TeacherHomeworkInboxScreenState
         keywords: [v.courseKey, v.sessionId],
       );
       _localReviewedOverrideByHwRef.remove(hwRef);
-      _rowsSignature = '';
-      _viewsFuture = null;
       if (mounted) setState(() {});
     }
   }
@@ -995,7 +1065,12 @@ class _TeacherHomeworkInboxScreenState
   Widget _buildSearchBox() {
     return TextField(
       controller: _searchCtrl,
-      onChanged: (value) => setState(() => _searchQuery = value),
+      onChanged: (value) {
+        _searchDebounce?.cancel();
+        _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+          if (mounted) setState(() => _searchQuery = value);
+        });
+      },
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: 'Search students, subjects or keywords...',
@@ -1005,6 +1080,7 @@ class _TeacherHomeworkInboxScreenState
             : IconButton(
                 tooltip: 'Clear search',
                 onPressed: () {
+                  _searchDebounce?.cancel();
                   _searchCtrl.clear();
                   setState(() => _searchQuery = '');
                 },
@@ -1452,6 +1528,7 @@ class _TeacherHomeworkInboxScreenState
   Future<void> _refreshInbox() async {
     _rowsSignature = '';
     _viewsFuture = null;
+    _backgroundRefreshing = true;
     if (mounted) setState(() {});
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
@@ -1697,6 +1774,30 @@ class _TeacherHomeworkInboxScreenState
                               _buildSearchBox(),
                               const SizedBox(height: 10),
                               _buildFilterBar(activeViews),
+                              if (_backgroundRefreshing) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.5,
+                                        color: Colors.grey.shade500,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Updating…',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade500,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                               const SizedBox(height: 120),
                               Center(child: Text(_emptyStateText())),
                             ],
@@ -1720,6 +1821,30 @@ class _TeacherHomeworkInboxScreenState
                                     _buildSearchBox(),
                                     const SizedBox(height: 10),
                                     _buildFilterBar(activeViews),
+                                    if (_backgroundRefreshing) ...[
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 12,
+                                            height: 12,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 1.5,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Updating…',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade500,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                     if (_bulkMode) ...[
                                       const SizedBox(height: 10),
                                       Container(
