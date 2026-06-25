@@ -172,12 +172,12 @@ class _AdminSplashScreenState extends State<AdminSplashScreen> {
 
   Future<String> _uploadFile(PlatformFile file) async {
     final uploadUri = await BackendApi.withAuthQuery(
-      BackendApi.uri('upload_file_secure.php'),
+      BackendApi.uri('upload_secure.php'),
     );
     final request = http.MultipartRequest('POST', uploadUri);
     request.headers['X-Requested-With'] = 'XMLHttpRequest';
     await BackendApi.applyAuthToMultipart(request);
-    request.fields['root'] = 'splash';
+    request.fields['app_id'] = 'splash';
 
     if (kIsWeb) {
       final bytes = file.bytes;
