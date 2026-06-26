@@ -5404,7 +5404,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
 
       buf.writeln('────────────────');
       buf.writeln();
-      buf.writeln('#YourBridgeSchool #YBS #دورات_الرياض #تطوير_المهارات #تعلم_مدى_الحياة');
+      buf.writeln('#YourBridgeSchool #YBS #تعلم_الإنجليزية #LearnEnglish #EnglishCourse');
 
       final text = buf.toString();
 
@@ -6397,11 +6397,8 @@ borderRadius: BorderRadius.circular(20),
                                             onSelected: () {
                                               WidgetsBinding.instance
                                                   .addPostFrameCallback((_) {
-                                                final target = _scrollController
-                                                        .offset +
-                                                    280;
                                                 _scrollController.animateTo(
-                                                  target,
+                                                  280,
                                                   duration: const Duration(
                                                     milliseconds: 400,
                                                   ),
@@ -6694,9 +6691,8 @@ borderRadius: BorderRadius.circular(20),
                               onExpandedChanged: (v) {
                                 if (v) {
                                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    final target = _scrollController.offset + 220;
                                     _scrollController.animateTo(
-                                      target,
+                                      220,
                                       duration: const Duration(milliseconds: 400),
                                       curve: Curves.easeOut,
                                     );
