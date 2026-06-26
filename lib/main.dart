@@ -6506,80 +6506,82 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                               ),
                             ),
                             const SizedBox(height: 12),
-                            _sectionTitle(Icons.info_rounded, 'More about this course'),
-                            const SizedBox(height: 8),
-                            Column(
-                              children: [
-                                if (course.content.trim().isNotEmpty)
-                                  _expandableSection(
-                                    icon: Icons.lightbulb_rounded,
-                                    title: 'What you will learn | ماذا ستتعلم',
-                                    child: SizedBox(
-                                      width: double.infinity,
-                                      child: _rtlText(context, course.content),
-                                    ),
-                                  ),
-                                if (course.content.trim().isNotEmpty)
-                                  const SizedBox(height: 8),
-                                if (course.longDesc.trim().isNotEmpty ||
-                                    course.shortDesc.trim().isNotEmpty)
-                                  _expandableSection(
-                                    icon: Icons.description_rounded,
-                                    title: 'Description | الوصف',
-                                    child: SizedBox(
-                                      width: double.infinity,
-                                      child: _rtlText(
-                                        context,
-                                        course.longDesc.trim().isEmpty
-                                            ? course.shortDesc
-                                            : course.longDesc,
+                            _expandableSection(
+                              icon: Icons.info_rounded,
+                              title: 'More about this course',
+                              child: Column(
+                                children: [
+                                  if (course.content.trim().isNotEmpty)
+                                    _expandableSection(
+                                      icon: Icons.lightbulb_rounded,
+                                      title: 'What you will learn | ماذا ستتعلم',
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: _rtlText(context, course.content),
                                       ),
                                     ),
-                                  ),
-                                if (course.longDesc.trim().isNotEmpty ||
-                                    course.shortDesc.trim().isNotEmpty)
-                                  const SizedBox(height: 8),
-                                if (course.instructors.isNotEmpty)
-                                  _expandableSection(
-                                    icon: Icons.people_rounded,
-                                    title: 'Instructors',
-                                    child: SizedBox(
-                                      width: double.infinity,
-                                      child: Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: course.instructors
-                                            .map(
-                                              (teacher) =>
-                                                  _TeacherChip(teacher: teacher),
-                                            )
-                                            .toList(),
+                                  if (course.content.trim().isNotEmpty)
+                                    const SizedBox(height: 8),
+                                  if (course.longDesc.trim().isNotEmpty ||
+                                      course.shortDesc.trim().isNotEmpty)
+                                    _expandableSection(
+                                      icon: Icons.description_rounded,
+                                      title: 'Description | الوصف',
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: _rtlText(
+                                          context,
+                                          course.longDesc.trim().isEmpty
+                                              ? course.shortDesc
+                                              : course.longDesc,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                if (course.instructors.isNotEmpty)
-                                  const SizedBox(height: 8),
-                                _expandableSection(
-                                  icon: Icons.reviews_rounded,
-                                  title: 'Reviews',
-                                  child: _reviewsBlock(context),
-                                ),
-                                if (course.requirements.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 8),
-                                  _expandableSection(
-                                    icon: Icons.checklist_rounded,
-                                    title: 'Requirements',
-                                    child: SizedBox(
-                                      width: double.infinity,
-                                      child: _rtlText(
-                                        context,
-                                        course.requirements,
-                                        height: 1.45,
+                                  if (course.longDesc.trim().isNotEmpty ||
+                                      course.shortDesc.trim().isNotEmpty)
+                                    const SizedBox(height: 8),
+                                  if (course.instructors.isNotEmpty)
+                                    _expandableSection(
+                                      icon: Icons.people_rounded,
+                                      title: 'Instructors',
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: course.instructors
+                                              .map(
+                                                (teacher) =>
+                                                    _TeacherChip(teacher: teacher),
+                                              )
+                                              .toList(),
+                                        ),
                                       ),
                                     ),
+                                  if (course.instructors.isNotEmpty)
+                                    const SizedBox(height: 8),
+                                  _expandableSection(
+                                    icon: Icons.reviews_rounded,
+                                    title: 'Reviews',
+                                    child: _reviewsBlock(context),
                                   ),
+                                  if (course.requirements.trim().isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    _expandableSection(
+                                      icon: Icons.checklist_rounded,
+                                      title: 'Requirements',
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: _rtlText(
+                                          context,
+                                          course.requirements,
+                                          height: 1.45,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ],
                         ),
