@@ -1305,6 +1305,8 @@ class _TeacherGridVideoTileState extends State<_TeacherGridVideoTile> {
   VideoPlayerController? _controller;
   bool _ready = false;
   bool _failed = false;
+  int _thumbnailAttempt = 0;
+  bool _autoRetryScheduled = false;
 
   @override
   void initState() {
@@ -1344,6 +1346,30 @@ class _TeacherGridVideoTileState extends State<_TeacherGridVideoTile> {
     }
   }
 
+  Widget _buildThumbnailError() {
+    if (!_autoRetryScheduled && _thumbnailAttempt < 3) {
+      _autoRetryScheduled = true;
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          _autoRetryScheduled = false;
+          _retryThumbnail();
+        }
+      });
+    }
+    return GestureDetector(
+      onTap: _retryThumbnail,
+      child: Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: const Icon(Icons.refresh_rounded, color: Colors.white, size: 34),
+      ),
+    );
+  }
+
+  void _retryThumbnail() {
+    setState(() => _thumbnailAttempt++);
+  }
+
   @override
   void dispose() {
     final c = _controller;
@@ -1362,9 +1388,10 @@ class _TeacherGridVideoTileState extends State<_TeacherGridVideoTile> {
         children: [
           CachedNetworkImage(
             imageUrl: widget.thumbnailUrl!,
+            cacheKey: '${widget.thumbnailUrl}_$_thumbnailAttempt',
             fit: BoxFit.cover,
             memCacheWidth: 440,
-            errorWidget: (_, _, _) => const SizedBox.shrink(),
+            errorWidget: (_, _, _) => _buildThumbnailError(),
           ),
           Container(
             decoration: BoxDecoration(

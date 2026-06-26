@@ -18,8 +18,8 @@ plugins {
 
 android {
     namespace = "com.yourbridgeschool.dreamenglish"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 35
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -33,8 +33,8 @@ android {
 
     defaultConfig {
         applicationId = "com.yourbridgeschool.dreamenglish"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 23
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

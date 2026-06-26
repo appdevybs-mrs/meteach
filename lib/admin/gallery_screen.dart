@@ -21,7 +21,9 @@ String _teacherAbbr(String name) {
   if (parts.length >= 2) {
     return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
-  return name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase();
+  return name.length >= 2
+      ? name.substring(0, 2).toUpperCase()
+      : name.toUpperCase();
 }
 
 String _coursesRelativePathFromUrl(String rawUrl) {
@@ -110,33 +112,36 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       if (mounted) setState(() {});
     });
 
-    _publicSub =
-        _db.child('public_gallery_teasers').onValue.asBroadcastStream().listen(
-          (e) {
-            if (!mounted) return;
-            _publicCache = e.snapshot.value;
-            _mergedCache = null;
-            setState(() {});
-          },
-        );
-    _learnerSub =
-        _db.child('learner_gallery').onValue.asBroadcastStream().listen(
-          (e) {
-            if (!mounted) return;
-            _learnerCache = e.snapshot.value;
-            _mergedCache = null;
-            setState(() {});
-          },
-        );
-    _teacherSub =
-        _db.child('website/teachers').onValue.asBroadcastStream().listen(
-          (e) {
-            if (!mounted) return;
-            _teacherCache = e.snapshot.value;
-            _mergedCache = null;
-            setState(() {});
-          },
-        );
+    _publicSub = _db
+        .child('public_gallery_teasers')
+        .onValue
+        .asBroadcastStream()
+        .listen((e) {
+          if (!mounted) return;
+          _publicCache = e.snapshot.value;
+          _mergedCache = null;
+          setState(() {});
+        });
+    _learnerSub = _db
+        .child('learner_gallery')
+        .onValue
+        .asBroadcastStream()
+        .listen((e) {
+          if (!mounted) return;
+          _learnerCache = e.snapshot.value;
+          _mergedCache = null;
+          setState(() {});
+        });
+    _teacherSub = _db
+        .child('website/teachers')
+        .onValue
+        .asBroadcastStream()
+        .listen((e) {
+          if (!mounted) return;
+          _teacherCache = e.snapshot.value;
+          _mergedCache = null;
+          setState(() {});
+        });
   }
 
   @override
@@ -176,6 +181,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       final s = _normUrl(v);
       if (s.isNotEmpty && _isHttpUrl(s)) out.add(s);
     }
+
     if (raw is List) {
       for (final item in raw) {
         addOne(item);
@@ -245,7 +251,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
         if (learnerName.isEmpty) learnerName = learnerUid;
         for (final item in items) {
           item['_source'] = 'learner';
-          item['_sourceLabel'] = 'Learner: $learnerName';
+          item['_sourceLabel'] = learnerName;
           item['_learnerUid'] = learnerUid;
           result.add(item);
         }
@@ -256,12 +262,12 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       final teachers = Map<dynamic, dynamic>.from(_teacherCache as Map);
       teachers.forEach((uidRaw, teacherNodeRaw) {
         if (teacherNodeRaw is! Map) return;
-        final teacherNode =
-            teacherNodeRaw.map((k, v) => MapEntry(k.toString(), v));
+        final teacherNode = teacherNodeRaw.map(
+          (k, v) => MapEntry(k.toString(), v),
+        );
         final profile = teacherNode['profile'];
         if (profile is! Map) return;
-        final profileMap =
-            profile.map((k, v) => MapEntry(k.toString(), v));
+        final profileMap = profile.map((k, v) => MapEntry(k.toString(), v));
 
         final photoUrls = _urlsFromUnknown(profileMap['profile_photos']);
         if (photoUrls.isEmpty) {
@@ -360,21 +366,17 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       if (source == 'public' && id.isNotEmpty) {
         await _db.child('public_gallery_teasers/$id').remove();
       } else if (source == 'learner') {
-        final learnerUid =
-            (item['_learnerUid'] ?? '').toString().trim();
+        final learnerUid = (item['_learnerUid'] ?? '').toString().trim();
         if (learnerUid.isNotEmpty && id.isNotEmpty) {
           await _db.child('learner_gallery/$learnerUid/$id').remove();
         }
       } else if (source == 'teacher') {
-        final teacherUid =
-            (item['_teacherUid'] ?? '').toString().trim();
+        final teacherUid = (item['_teacherUid'] ?? '').toString().trim();
         if (teacherUid.isNotEmpty) {
-          final type =
-              (item['type'] ?? '').toString().trim().toLowerCase();
+          final type = (item['type'] ?? '').toString().trim().toLowerCase();
           if (type == 'video') {
             await _db
-                .child(
-                'website/teachers/$teacherUid/profile/intro_video_url')
+                .child('website/teachers/$teacherUid/profile/intro_video_url')
                 .remove();
           }
         }
@@ -383,9 +385,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              toHumanError(e, fallback: 'Could not delete item.'),
-            ),
+            content: Text(toHumanError(e, fallback: 'Could not delete item.')),
           ),
         );
       }
@@ -412,8 +412,11 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
     var videos = 0;
     for (final item in all) {
       final type = (item['type'] ?? '').toString().trim().toLowerCase();
-      if (type == 'photo') { photos++; }
-      else if (type == 'video') { videos++; }
+      if (type == 'photo') {
+        photos++;
+      } else if (type == 'video') {
+        videos++;
+      }
     }
     return (all.length, photos, videos);
   }
@@ -448,10 +451,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
           children: [
             const Text(
               'Gallery',
-              style: TextStyle(
-                color: primaryBlue,
-                fontWeight: FontWeight.w900,
-              ),
+              style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
             ),
             const SizedBox(width: 6),
             GestureDetector(
@@ -533,8 +533,8 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
           filterType == 'all'
               ? 'No media items found.'
               : filterType == 'video'
-                  ? 'No videos found.'
-                  : 'No photos found.',
+              ? 'No videos found.'
+              : 'No photos found.',
           style: const TextStyle(
             color: mainText,
             fontWeight: FontWeight.w800,
@@ -555,25 +555,10 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       ),
       itemBuilder: (context, index) {
         final item = items[index];
-        final type =
-            (item['type'] ?? '').toString().trim().toLowerCase();
+        final type = (item['type'] ?? '').toString().trim().toLowerCase();
         final url = (item['url'] ?? '').toString().trim();
-        final thumbnailUrl =
-            (item['thumbnailUrl'] ?? '').toString().trim();
-        final sourceLabel =
-            (item['_sourceLabel'] ?? '').toString().trim();
-        final uploaderName =
-            (item['uploadedByName'] ?? '').toString().trim();
-        final teacherName =
-            (item['teacherName'] ?? '').toString().trim();
-        final displayName = uploaderName.isNotEmpty
-            ? uploaderName
-            : teacherName.isNotEmpty
-            ? teacherName
-            : '';
-        final abbr = _teacherAbbr(displayName);
-        final dateLabel = _fmtDate(item['createdAt']);
-
+        final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
+        final sourceLabel = (item['_sourceLabel'] ?? '').toString().trim();
         return InkWell(
           borderRadius: BorderRadius.circular(18),
           onTap: () => _openViewer(items, index),
@@ -581,9 +566,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: uiBorder.withValues(alpha: 0.85),
-              ),
+              border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
@@ -591,10 +574,7 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
                 fit: StackFit.expand,
                 children: [
                   if (type == 'video')
-                    _AdminGalleryVideoTile(
-                      url: url,
-                      thumbnailUrl: thumbnailUrl,
-                    )
+                    _AdminGalleryVideoTile(url: url, thumbnailUrl: thumbnailUrl)
                   else
                     CachedNetworkImage(
                       imageUrl: url,
@@ -606,46 +586,19 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
                         child: const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                       ),
                       errorWidget: (_, _, _) => Container(
                         color: Colors.grey.shade200,
                         alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.broken_image_outlined,
-                        ),
-                      ),
-                    ),
-                  if (abbr.isNotEmpty)
-                    Positioned(
-                      left: 8,
-                      bottom: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.58),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          dateLabel != '-' ? '$abbr · $dateLabel' : abbr,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 9,
-                            height: 1.2,
-                          ),
-                        ),
+                        child: const Icon(Icons.broken_image_outlined),
                       ),
                     ),
                   Positioned(
-                    top: 8,
+                    left: 8,
                     right: 8,
+                    bottom: 8,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -655,9 +608,9 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
                         color: primaryBlue.withValues(alpha: 0.85),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      constraints: const BoxConstraints(maxWidth: 120),
                       child: Text(
                         sourceLabel,
+                        textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -676,15 +629,6 @@ class _AdminGalleryScreenState extends State<AdminGalleryScreen>
       },
     );
   }
-
-  String _fmtDate(dynamic ts) {
-    final ms = _toInt(ts);
-    if (ms <= 0) return '-';
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.year}-${_two(d.month)}-${_two(d.day)}  ${_two(d.hour)}:${_two(d.minute)}';
-  }
-
-  static String _two(int n) => n < 10 ? '0$n' : '$n';
 }
 
 class _AdminGalleryVideoTile extends StatefulWidget {
@@ -694,14 +638,15 @@ class _AdminGalleryVideoTile extends StatefulWidget {
   final String? thumbnailUrl;
 
   @override
-  State<_AdminGalleryVideoTile> createState() =>
-      _AdminGalleryVideoTileState();
+  State<_AdminGalleryVideoTile> createState() => _AdminGalleryVideoTileState();
 }
 
 class _AdminGalleryVideoTileState extends State<_AdminGalleryVideoTile> {
   VideoPlayerController? _controller;
   bool _ready = false;
   bool _failed = false;
+  int _thumbnailAttempt = 0;
+  bool _autoRetryScheduled = false;
 
   @override
   void initState() {
@@ -713,8 +658,9 @@ class _AdminGalleryVideoTileState extends State<_AdminGalleryVideoTile> {
 
   Future<void> _init() async {
     try {
-      final controller =
-      VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+      );
 
       await controller.initialize().timeout(const Duration(seconds: 10));
       await controller.setLooping(false);
@@ -740,6 +686,30 @@ class _AdminGalleryVideoTileState extends State<_AdminGalleryVideoTile> {
     }
   }
 
+  Widget _buildThumbnailError() {
+    if (!_autoRetryScheduled && _thumbnailAttempt < 3) {
+      _autoRetryScheduled = true;
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          _autoRetryScheduled = false;
+          _retryThumbnail();
+        }
+      });
+    }
+    return GestureDetector(
+      onTap: _retryThumbnail,
+      child: Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: const Icon(Icons.refresh_rounded, color: Colors.white, size: 34),
+      ),
+    );
+  }
+
+  void _retryThumbnail() {
+    setState(() => _thumbnailAttempt++);
+  }
+
   @override
   void dispose() {
     final c = _controller;
@@ -756,9 +726,10 @@ class _AdminGalleryVideoTileState extends State<_AdminGalleryVideoTile> {
         children: [
           CachedNetworkImage(
             imageUrl: widget.thumbnailUrl!,
+            cacheKey: '${widget.thumbnailUrl}_$_thumbnailAttempt',
             fit: BoxFit.cover,
             memCacheWidth: 220,
-            errorWidget: (_, _, _) => const SizedBox.shrink(),
+            errorWidget: (_, _, _) => _buildThumbnailError(),
           ),
           Container(color: Colors.black.withValues(alpha: 0.18)),
           const Center(
@@ -843,8 +814,9 @@ class _AdminGalleryVideoPreviewCardState
 
   Future<void> _init() async {
     try {
-      final controller =
-      VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.url),
+      );
       await controller.initialize().timeout(const Duration(seconds: 10));
       await controller.setLooping(false);
       await controller.setPlaybackSpeed(_speed);
@@ -947,8 +919,7 @@ class _AdminGalleryVideoPreviewCardState
 
     final value = _controller!.value;
     final duration = value.duration;
-    final position =
-    value.position > duration ? duration : value.position;
+    final position = value.position > duration ? duration : value.position;
 
     return Container(
       decoration: BoxDecoration(
@@ -961,8 +932,7 @@ class _AdminGalleryVideoPreviewCardState
           mainAxisSize: MainAxisSize.min,
           children: [
             AspectRatio(
-              aspectRatio:
-              value.aspectRatio == 0 ? 16 / 9 : value.aspectRatio,
+              aspectRatio: value.aspectRatio == 0 ? 16 / 9 : value.aspectRatio,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -997,17 +967,16 @@ class _AdminGalleryVideoPreviewCardState
                       ),
                     ),
                     child: Slider(
-                      min: 0,
                       max: duration.inMilliseconds <= 0
                           ? 1
                           : duration.inMilliseconds.toDouble(),
                       value: position.inMilliseconds
                           .clamp(
-                        0,
-                        duration.inMilliseconds <= 0
-                            ? 1
-                            : duration.inMilliseconds,
-                      )
+                            0,
+                            duration.inMilliseconds <= 0
+                                ? 1
+                                : duration.inMilliseconds,
+                          )
                           .toDouble(),
                       activeColor: Colors.white,
                       inactiveColor: Colors.white24,
@@ -1086,8 +1055,7 @@ class AdminGalleryViewerScreen extends StatefulWidget {
       _AdminGalleryViewerScreenState();
 }
 
-class _AdminGalleryViewerScreenState
-    extends State<AdminGalleryViewerScreen> {
+class _AdminGalleryViewerScreenState extends State<AdminGalleryViewerScreen> {
   late final PageController _pageController;
   late int _currentIndex;
 
@@ -1109,8 +1077,10 @@ class _AdminGalleryViewerScreenState
     for (final offset in [-2, -1, 0, 1, 2]) {
       final i = index + offset;
       if (i < 0 || i >= widget.items.length) continue;
-      final type =
-          (widget.items[i]['type'] ?? '').toString().trim().toLowerCase();
+      final type = (widget.items[i]['type'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
       if (type == 'video') continue;
       final url = (widget.items[i]['url'] ?? '').toString().trim();
       if (url.isNotEmpty) {
@@ -1158,7 +1128,7 @@ class _AdminGalleryViewerScreenState
               final item = widget.items[_currentIndex];
               final isVideo =
                   (item['type'] ?? '').toString().trim().toLowerCase() ==
-                      'video';
+                  'video';
               final url = (item['url'] ?? '').toString().trim();
               MediaDownload.downloadUrl(
                 context,
@@ -1195,18 +1165,13 @@ class _AdminGalleryViewerScreenState
         },
         itemBuilder: (context, index) {
           final item = widget.items[index];
-          final type =
-              (item['type'] ?? '').toString().trim().toLowerCase();
+          final type = (item['type'] ?? '').toString().trim().toLowerCase();
           final url = (item['url'] ?? '').toString().trim();
-          final thumbnailUrl =
-              (item['thumbnailUrl'] ?? '').toString().trim();
+          final thumbnailUrl = (item['thumbnailUrl'] ?? '').toString().trim();
           final isVideo = type == 'video';
-          final sourceLabel =
-              (item['_sourceLabel'] ?? '').toString().trim();
-          final uploaderName =
-              (item['uploadedByName'] ?? '').toString().trim();
-          final teacherName =
-              (item['teacherName'] ?? '').toString().trim();
+          final sourceLabel = (item['_sourceLabel'] ?? '').toString().trim();
+          final uploaderName = (item['uploadedByName'] ?? '').toString().trim();
+          final teacherName = (item['teacherName'] ?? '').toString().trim();
           final displayUploader = uploaderName.isNotEmpty
               ? uploaderName
               : teacherName.isNotEmpty
@@ -1239,7 +1204,9 @@ class _AdminGalleryViewerScreenState
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      sourceLabel.isNotEmpty ? sourceLabel : (isVideo ? 'Video' : 'Photo'),
+                      sourceLabel.isNotEmpty
+                          ? sourceLabel
+                          : (isVideo ? 'Video' : 'Photo'),
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
@@ -1274,10 +1241,12 @@ class _AdminGalleryViewerScreenState
     return LayoutBuilder(
       builder: (context, constraints) {
         final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
-        final memCacheWidth =
-            (constraints.maxWidth * devicePixelRatio).round().clamp(320, 2400);
-        final memCacheHeight =
-            (constraints.maxHeight * devicePixelRatio).round().clamp(320, 2400);
+        final memCacheWidth = (constraints.maxWidth * devicePixelRatio)
+            .round()
+            .clamp(320, 2400);
+        final memCacheHeight = (constraints.maxHeight * devicePixelRatio)
+            .round()
+            .clamp(320, 2400);
 
         return Stack(
           children: [
@@ -1295,7 +1264,6 @@ class _AdminGalleryViewerScreenState
               ),
             Center(
               child: InteractiveViewer(
-                minScale: 0.8,
                 maxScale: 4,
                 child: CachedNetworkImage(
                   imageUrl: url,
@@ -1305,14 +1273,14 @@ class _AdminGalleryViewerScreenState
                   placeholder: (_, _) => thumbnailUrl.isNotEmpty
                       ? const SizedBox.shrink()
                       : const SizedBox(
-                    height: 260,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    ),
-                  ),
+                          height: 260,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
                   progressIndicatorBuilder: (context, _, progress) {
                     return SizedBox(
                       height: 260,

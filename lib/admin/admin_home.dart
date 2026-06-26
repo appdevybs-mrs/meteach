@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -116,8 +115,14 @@ class _AdminHomeState extends State<AdminHome> {
   bool _allToolsExpanded = false;
   List<String> _pinnedCardTitles = [];
   static const _defaultPinnedCards = [
-    'Learners', 'Classes', 'Payments', 'Courses',
-    'Online Booking', 'Priority Alerts', 'Admin Mail', 'Subscriptions',
+    'Learners',
+    'Classes',
+    'Payments',
+    'Courses',
+    'Online Booking',
+    'Priority Alerts',
+    'Admin Mail',
+    'Subscriptions',
   ];
   static const _pinnedPrefKey = 'pinned_cards_';
 
@@ -353,13 +358,13 @@ class _AdminHomeState extends State<AdminHome> {
         : (width >= 1160 ? 4 : (width >= 760 ? 3 : 2));
     final double cardRatio;
     if (crossAxisCount >= 5) {
-      cardRatio = _isAdminMode ? 1.24 : 1.30;
+      cardRatio = _isAdminMode ? 1.48 : 1.54;
     } else if (crossAxisCount >= 4) {
-      cardRatio = _isAdminMode ? 1.18 : 1.22;
+      cardRatio = _isAdminMode ? 1.40 : 1.46;
     } else if (crossAxisCount == 3) {
-      cardRatio = _isAdminMode ? 1.02 : 1.06;
+      cardRatio = _isAdminMode ? 1.20 : 1.26;
     } else {
-      cardRatio = width >= 420 ? 1.06 : 0.98;
+      cardRatio = width >= 420 ? 1.14 : 1.04;
     }
     final gridGap = width >= 1200
         ? 14.0
@@ -788,9 +793,7 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminGallery,
             () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminGalleryScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const AdminGalleryScreen()),
             ),
           ),
         ),
@@ -806,9 +809,7 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminSplashScreen,
             () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminSplashScreen(),
-              ),
+              MaterialPageRoute(builder: (_) => const AdminSplashScreen()),
             ),
           ),
         ),
@@ -905,9 +906,7 @@ class _AdminHomeState extends State<AdminHome> {
 
     final q = _homeSearch.trim().toLowerCase();
     bool filterCard(_HomeCardItem c) {
-      final matchesSearch =
-          q.isEmpty ||
-          c.title.toLowerCase().contains(q);
+      final matchesSearch = q.isEmpty || c.title.toLowerCase().contains(q);
       if (!matchesSearch) return false;
       if (_isAdminMode) return true;
       if (c.adminOnly) return false;
@@ -933,7 +932,9 @@ class _AdminHomeState extends State<AdminHome> {
       final bi = _pinnedCardTitles.indexOf(b.title);
       return ai.compareTo(bi);
     });
-    otherItems.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    otherItems.sort(
+      (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+    );
 
     // auto-expand all tools when search is active
     if (q.isNotEmpty && otherItems.isNotEmpty) {
@@ -1027,7 +1028,9 @@ class _AdminHomeState extends State<AdminHome> {
                                 mainAxisSpacing: gridGap,
                                 crossAxisSpacing: gridGap,
                                 childAspectRatio: cardRatio,
-                                children: pinnedItems.map((c) => c.child).toList(),
+                                children: pinnedItems
+                                    .map((c) => c.child)
+                                    .toList(),
                               ),
                               const SizedBox(height: 14),
                             ],
@@ -1052,7 +1055,9 @@ class _AdminHomeState extends State<AdminHome> {
                                   mainAxisSpacing: gridGap,
                                   crossAxisSpacing: gridGap,
                                   childAspectRatio: cardRatio,
-                                  children: otherItems.map((c) => c.child).toList(),
+                                  children: otherItems
+                                      .map((c) => c.child)
+                                      .toList(),
                                 ),
                               ),
                           ],
@@ -2025,9 +2030,21 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Online Booking',
           statusLabels: [
-            _StatusLabelData(label: 'Today', count: stats.today, color: AdminHome.accentGreen),
-            _StatusLabelData(label: 'Week', count: stats.week, color: AdminHome.accentBlue),
-            _StatusLabelData(label: 'Upcoming', count: stats.upcoming, color: AdminHome.accentAmber),
+            _StatusLabelData(
+              label: 'Today',
+              count: stats.today,
+              color: AdminHome.accentGreen,
+            ),
+            _StatusLabelData(
+              label: 'Week',
+              count: stats.week,
+              color: AdminHome.accentBlue,
+            ),
+            _StatusLabelData(
+              label: 'Upcoming',
+              count: stats.upcoming,
+              color: AdminHome.accentAmber,
+            ),
           ],
           icon: AdminIcons.onlineBooking,
           color: AdminHome.accentGreen,
@@ -2061,7 +2078,11 @@ class _SubscriptionsDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Subscriptions',
           statusLabels: [
-            _StatusLabelData(label: 'New', count: count, color: AdminHome.accentAmber),
+            _StatusLabelData(
+              label: 'New',
+              count: count,
+              color: AdminHome.accentAmber,
+            ),
           ],
           icon: AdminIcons.subscriptions,
           color: AdminHome.accentAmber,
@@ -2115,9 +2136,21 @@ class _JobApplicationsDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Job Applications',
           statusLabels: [
-            _StatusLabelData(label: 'New', count: uncalledCount, color: AdminHome.accentRose),
-            _StatusLabelData(label: 'Follow-up', count: followUp, color: AdminHome.accentAmber),
-            _StatusLabelData(label: 'Total', count: total, color: AdminHome.accentSlate),
+            _StatusLabelData(
+              label: 'New',
+              count: uncalledCount,
+              color: AdminHome.accentRose,
+            ),
+            _StatusLabelData(
+              label: 'Follow-up',
+              count: followUp,
+              color: AdminHome.accentAmber,
+            ),
+            _StatusLabelData(
+              label: 'Total',
+              count: total,
+              color: AdminHome.accentSlate,
+            ),
           ],
           icon: AdminIcons.jobApplications,
           color: AdminHome.accentSlate,
@@ -2181,9 +2214,21 @@ class _ClassesDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Classes',
           statusLabels: [
-            _StatusLabelData(label: 'Open', count: open, color: AdminHome.accentGreen),
-            _StatusLabelData(label: 'Closed', count: closed, color: AdminHome.accentSlate),
-            _StatusLabelData(label: 'Learners', count: learnerUids.length, color: AdminHome.accentBlue),
+            _StatusLabelData(
+              label: 'Open',
+              count: open,
+              color: AdminHome.accentGreen,
+            ),
+            _StatusLabelData(
+              label: 'Closed',
+              count: closed,
+              color: AdminHome.accentSlate,
+            ),
+            _StatusLabelData(
+              label: 'Learners',
+              count: learnerUids.length,
+              color: AdminHome.accentBlue,
+            ),
           ],
           icon: Icons.class_rounded,
           color: AdminHome.actionOrange,
@@ -2214,7 +2259,11 @@ class _AdminSharedFilesDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Shared Files',
           statusLabels: [
-            _StatusLabelData(label: 'Shared', count: count, color: AdminHome.accentTeal),
+            _StatusLabelData(
+              label: 'Shared',
+              count: count,
+              color: AdminHome.accentTeal,
+            ),
           ],
           icon: AdminIcons.sharedFiles,
           color: AdminHome.accentTeal,
@@ -2292,8 +2341,16 @@ class _CertificatesDashCardState extends State<_CertificatesDashCard> {
     return _DashCard(
       title: 'Certificates',
       statusLabels: [
-        _StatusLabelData(label: 'Total', count: totalCount, color: AdminHome.accentIndigo),
-        _StatusLabelData(label: 'Recorded', count: _recordedCount, color: AdminHome.accentGreen),
+        _StatusLabelData(
+          label: 'Total',
+          count: totalCount,
+          color: AdminHome.accentIndigo,
+        ),
+        _StatusLabelData(
+          label: 'Recorded',
+          count: _recordedCount,
+          color: AdminHome.accentGreen,
+        ),
       ],
       icon: Icons.workspace_premium_rounded,
       color: AdminHome.accentIndigo,
@@ -2360,8 +2417,16 @@ class _WagesDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Wages',
           statusLabels: [
-            _StatusLabelData(label: 'Pending', count: pending, color: AdminHome.accentRose),
-            _StatusLabelData(label: 'Paid', count: paidThisMonth, color: AdminHome.accentGreen),
+            _StatusLabelData(
+              label: 'Pending',
+              count: pending,
+              color: AdminHome.accentRose,
+            ),
+            _StatusLabelData(
+              label: 'Paid',
+              count: paidThisMonth,
+              color: AdminHome.accentGreen,
+            ),
           ],
           icon: AdminIcons.wages,
           color: AdminHome.accentRose,
@@ -2404,8 +2469,16 @@ class _ContractDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Contract',
           statusLabels: [
-            _StatusLabelData(label: 'Teacher', count: teacherCount, color: AdminHome.accentCyan),
-            _StatusLabelData(label: 'Learner', count: learnerCount, color: AdminHome.accentGreen),
+            _StatusLabelData(
+              label: 'Teacher',
+              count: teacherCount,
+              color: AdminHome.accentCyan,
+            ),
+            _StatusLabelData(
+              label: 'Learner',
+              count: learnerCount,
+              color: AdminHome.accentGreen,
+            ),
           ],
           icon: AdminIcons.contract,
           color: AdminHome.accentCyan,
@@ -2494,8 +2567,16 @@ class _SettingsDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Settings',
           statusLabels: [
-            _StatusLabelData(label: 'Android', count: int.tryParse(a) ?? 0, color: AdminHome.accentGreen),
-            _StatusLabelData(label: 'iOS', count: int.tryParse(i) ?? 0, color: AdminHome.accentBlue),
+            _StatusLabelData(
+              label: 'Android',
+              count: int.tryParse(a) ?? 0,
+              color: AdminHome.accentGreen,
+            ),
+            _StatusLabelData(
+              label: 'iOS',
+              count: int.tryParse(i) ?? 0,
+              color: AdminHome.accentBlue,
+            ),
           ],
           icon: Icons.settings_rounded,
           color: AdminHome.accentIndigo,
@@ -2532,8 +2613,16 @@ class _PriorityAlertsDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Priority Alerts',
           statusLabels: [
-            _StatusLabelData(label: 'Unseen', count: unseen, color: AdminHome.accentRose),
-            _StatusLabelData(label: 'Today', count: today, color: AdminHome.accentAmber),
+            _StatusLabelData(
+              label: 'Unseen',
+              count: unseen,
+              color: AdminHome.accentRose,
+            ),
+            _StatusLabelData(
+              label: 'Today',
+              count: today,
+              color: AdminHome.accentAmber,
+            ),
           ],
           icon: AdminIcons.priorityAlerts,
           color: AdminHome.actionOrange,
@@ -2569,7 +2658,11 @@ class _PublicGalleryDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Public Gallery',
           statusLabels: [
-            _StatusLabelData(label: 'Teasers', count: count, color: AdminHome.accentPurple),
+            _StatusLabelData(
+              label: 'Teasers',
+              count: count,
+              color: AdminHome.accentPurple,
+            ),
           ],
           icon: AdminIcons.publicGallery,
           color: AdminHome.accentPurple,
@@ -2592,10 +2685,8 @@ class _DashGalleryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final publicRef =
-        FirebaseDatabase.instance.ref('public_gallery_teasers');
-    final learnerRef =
-        FirebaseDatabase.instance.ref('learner_gallery');
+    final publicRef = FirebaseDatabase.instance.ref('public_gallery_teasers');
+    final learnerRef = FirebaseDatabase.instance.ref('learner_gallery');
 
     return StreamBuilder<DatabaseEvent>(
       stream: publicRef.onValue,
@@ -2691,8 +2782,16 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Teacher Availability',
           statusLabels: [
-            _StatusLabelData(label: 'Online', count: online, color: AdminHome.accentGreen),
-            _StatusLabelData(label: 'Slots', count: slots, color: AdminHome.accentBlue),
+            _StatusLabelData(
+              label: 'Online',
+              count: online,
+              color: AdminHome.accentGreen,
+            ),
+            _StatusLabelData(
+              label: 'Slots',
+              count: slots,
+              color: AdminHome.accentBlue,
+            ),
           ],
           icon: AdminIcons.teacherAvailability,
           color: AdminHome.accentCyan,
@@ -3242,10 +3341,7 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) => ListTile(
                         dense: true,
-                        leading: Icon(
-                          Icons.person_rounded,
-                          color: color,
-                        ),
+                        leading: Icon(Icons.person_rounded, color: color),
                         title: Text(
                           names[i],
                           maxLines: 1,
@@ -3295,11 +3391,7 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
           snap.data?.snapshot.value,
         );
 
-        return _buildCardUi(
-          context,
-          details: details,
-          loading: false,
-        );
+        return _buildCardUi(context, details: details, loading: false);
       },
     );
   }
@@ -3311,18 +3403,21 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
   }) {
     final isMobileCard = MediaQuery.of(context).size.width < 760;
     final summary = details.summary;
-    final borderColor = isReceptionistStyle
-        ? const Color(0xFFFFEAD8)
-        : AdminHome.uiBorder;
-
-    final boxShadowOpacity = isReceptionistStyle ? 0.025 : 0.04;
+    final accent = isReceptionistStyle
+        ? AdminHome.actionOrange
+        : AdminHome.accentBlue;
+    final borderColor = accent.withValues(alpha: 0.28);
+    final boxShadowOpacity = isReceptionistStyle ? 0.045 : 0.06;
+    final iconSize = isMobileCard ? 38.0 : 42.0;
 
     return InkWell(
       borderRadius: BorderRadius.circular(isMobileCard ? 18 : 20),
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: AdminHome.cardBg,
+          color: isReceptionistStyle
+              ? const Color(0xFFFFF5ED)
+              : const Color(0xFFDCE8FF),
           borderRadius: BorderRadius.circular(isMobileCard ? 18 : 20),
           border: Border.all(color: borderColor),
           boxShadow: [
@@ -3341,43 +3436,65 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Stack(
-                  children: [
-                    _CardBlobArt(
-                      color: isReceptionistStyle
-                          ? AdminHome.actionOrange
-                          : AdminHome.accentBlue,
-                      seed: 'Payments',
-                      isMobile: isMobileCard,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: iconSize,
+                    height: iconSize,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(
+                        isMobileCard ? 12 : 14,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.25),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    if (loading)
-                      const Positioned.fill(
-                        child: Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                    child: loading
+                        ? const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(
+                            AdminIcons.navPayments,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text(
+                        'Payments',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14.5,
+                          height: 1.08,
+                          color: AdminHome.mainText,
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(height: isMobileCard ? 5 : 7),
-              const Text(
-                'Payments',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
-                  color: AdminHome.primaryBlue,
-                ),
-              ),
-              SizedBox(height: isMobileCard ? 4 : 6),
+              SizedBox(height: isMobileCard ? 9 : 11),
               Flexible(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 100),
+                  constraints: const BoxConstraints(maxHeight: 78),
                   child: Wrap(
-                    spacing: isMobileCard ? 6 : 8,
-                    runSpacing: isMobileCard ? 4 : 5,
+                    spacing: isMobileCard ? 5 : 6,
+                    runSpacing: isMobileCard ? 4 : 4,
                     children: [
                       _StatusLabel(
                         label: 'Learners',
@@ -3394,7 +3511,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                           context,
                           title: _PayLegend.blackLabel,
                           color: _PayLegend.blackColor,
-                          ruleExplanation: 'No active payment package or sessions are past due.',
+                          ruleExplanation:
+                              'No active payment package or sessions are past due.',
                           names: details.overdueLearners,
                         ),
                       ),
@@ -3407,7 +3525,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                           context,
                           title: _PayLegend.redLabel,
                           color: _PayLegend.redColor,
-                          ruleExplanation: 'All paid sessions have been consumed. Payment is required.',
+                          ruleExplanation:
+                              'All paid sessions have been consumed. Payment is required.',
                           names: details.dueNowLearners,
                         ),
                       ),
@@ -3420,7 +3539,8 @@ class _PaymentsAttentionDashCard extends StatelessWidget {
                           context,
                           title: _PayLegend.yellowLabel,
                           color: _PayLegend.yellowColor,
-                          ruleExplanation: 'Sessions are running low. Payment will be due soon.',
+                          ruleExplanation:
+                              'Sessions are running low. Payment will be due soon.',
                           names: details.warningLearners,
                         ),
                       ),
@@ -3565,10 +3685,7 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                       separatorBuilder: (_, _) => const Divider(height: 1),
                       itemBuilder: (_, i) => ListTile(
                         dense: true,
-                        leading: Icon(
-                          Icons.person_rounded,
-                          color: color,
-                        ),
+                        leading: Icon(Icons.person_rounded, color: color),
                         title: Text(
                           names[i],
                           maxLines: 1,
@@ -3996,15 +4113,18 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
     required bool isReceptionistStyle,
   }) {
     final isMobileCard = MediaQuery.of(context).size.width < 760;
-    final borderColor = isReceptionistStyle
-        ? const Color(0xFFFFEAD8)
-        : AdminHome.uiBorder;
-
-    final boxShadowOpacity = isReceptionistStyle ? 0.025 : 0.04;
+    final accent = isReceptionistStyle
+        ? AdminHome.actionOrange
+        : AdminHome.accentPurple;
+    final borderColor = accent.withValues(alpha: 0.28);
+    final boxShadowOpacity = isReceptionistStyle ? 0.045 : 0.06;
+    final iconSize = isMobileCard ? 38.0 : 42.0;
 
     return Container(
       decoration: BoxDecoration(
-        color: AdminHome.cardBg,
+        color: isReceptionistStyle
+            ? const Color(0xFFFFF5ED)
+            : const Color(0xFFE9DDFF),
         borderRadius: BorderRadius.circular(isMobileCard ? 18 : 20),
         border: Border.all(color: borderColor),
         boxShadow: [
@@ -4023,41 +4143,63 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  _CardBlobArt(
-                    color: AdminHome.accentPurple,
-                    seed: 'Learners',
-                    isMobile: isMobileCard,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: iconSize,
+                  height: iconSize,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: BorderRadius.circular(isMobileCard ? 12 : 14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.25),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  if (loading)
-                    const Positioned.fill(
-                      child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                  child: loading
+                      ? const Padding(
+                          padding: EdgeInsets.all(10),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.school_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Learners',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14.5,
+                        height: 1.08,
+                        color: AdminHome.mainText,
                       ),
                     ),
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: isMobileCard ? 5 : 7),
-            const Text(
-              'Learners',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 14,
-                color: AdminHome.primaryBlue,
-              ),
-            ),
-            SizedBox(height: isMobileCard ? 4 : 6),
+            SizedBox(height: isMobileCard ? 9 : 11),
             Flexible(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 100),
+                constraints: const BoxConstraints(maxHeight: 78),
                 child: Wrap(
-                  spacing: isMobileCard ? 6 : 8,
-                  runSpacing: isMobileCard ? 4 : 5,
+                  spacing: isMobileCard ? 5 : 6,
+                  runSpacing: isMobileCard ? 4 : 4,
                   children: [
                     _StatusLabel(
                       label: 'Learners',
@@ -4087,7 +4229,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                         context,
                         title: _PayLegend.blackLabel,
                         color: _PayLegend.blackColor,
-                        ruleExplanation: 'No active payment package or sessions are past due.',
+                        ruleExplanation:
+                            'No active payment package or sessions are past due.',
                         names: blackNames,
                       ),
                     ),
@@ -4100,7 +4243,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                         context,
                         title: _PayLegend.redLabel,
                         color: _PayLegend.redColor,
-                        ruleExplanation: 'All paid sessions have been consumed. Payment is required.',
+                        ruleExplanation:
+                            'All paid sessions have been consumed. Payment is required.',
                         names: redNames,
                       ),
                     ),
@@ -4113,7 +4257,8 @@ class _LearnersDashCardState extends State<_LearnersDashCard> {
                         context,
                         title: _PayLegend.yellowLabel,
                         color: _PayLegend.yellowColor,
-                        ruleExplanation: 'Sessions are running low. Payment will be due soon.',
+                        ruleExplanation:
+                            'Sessions are running low. Payment will be due soon.',
                         names: yellowNames,
                       ),
                     ),
@@ -4199,9 +4344,21 @@ class _RemindersDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Reminders',
           statusLabels: [
-            _StatusLabelData(label: 'Undone', count: undone, color: AdminHome.accentRose),
-            _StatusLabelData(label: 'Seen', count: seen, color: AdminHome.accentBlue),
-            _StatusLabelData(label: 'Done', count: done, color: AdminHome.accentGreen),
+            _StatusLabelData(
+              label: 'Undone',
+              count: undone,
+              color: AdminHome.accentRose,
+            ),
+            _StatusLabelData(
+              label: 'Seen',
+              count: seen,
+              color: AdminHome.accentBlue,
+            ),
+            _StatusLabelData(
+              label: 'Done',
+              count: done,
+              color: AdminHome.accentGreen,
+            ),
           ],
           icon: Icons.notifications_active_rounded,
           color: AdminHome.accentPurple,
@@ -4254,8 +4411,16 @@ class _StaffMailDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Staff',
           statusLabels: [
-            _StatusLabelData(label: 'Unread', count: unread, color: AdminHome.accentRose),
-            _StatusLabelData(label: 'Threads', count: threads, color: AdminHome.accentBlue),
+            _StatusLabelData(
+              label: 'Unread',
+              count: unread,
+              color: AdminHome.accentRose,
+            ),
+            _StatusLabelData(
+              label: 'Threads',
+              count: threads,
+              color: AdminHome.accentBlue,
+            ),
           ],
           icon: AdminIcons.staff,
           color: AdminHome.accentAmber,
@@ -4309,8 +4474,16 @@ class _AdminMailDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Admin Mail',
           statusLabels: [
-            _StatusLabelData(label: 'Unread', count: unread, color: AdminHome.accentRose),
-            _StatusLabelData(label: 'Threads', count: threads, color: AdminHome.accentBlue),
+            _StatusLabelData(
+              label: 'Unread',
+              count: unread,
+              color: AdminHome.accentRose,
+            ),
+            _StatusLabelData(
+              label: 'Threads',
+              count: threads,
+              color: AdminHome.accentBlue,
+            ),
           ],
           icon: AdminIcons.adminMail,
           color: AdminHome.accentSky,
@@ -4358,9 +4531,9 @@ class _StatusLabel extends StatelessWidget {
         vertical: isMobile ? 3.5 : 4.5,
       ),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
       ),
       child: Text(
         '$label $count',
@@ -4386,80 +4559,6 @@ class _StatusLabel extends StatelessWidget {
   }
 }
 
-class _CardBlobArt extends StatelessWidget {
-  final Color color;
-  final String seed;
-  final bool isMobile;
-
-  const _CardBlobArt({
-    required this.color,
-    required this.seed,
-    required this.isMobile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: CustomPaint(
-        painter: _BlobPainter(color: color, seed: seed),
-      ),
-    );
-  }
-}
-
-class _BlobPainter extends CustomPainter {
-  final Color color;
-  final String seed;
-
-  _BlobPainter({required this.color, required this.seed});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final hash = seed.hashCode;
-    final rng = Random(hash);
-
-    final w = size.width;
-    final h = size.height;
-    if (w <= 0 || h <= 0) return;
-
-    for (int i = 0; i < 6; i++) {
-      final cx = w * (0.1 + rng.nextDouble() * 0.8);
-      final cy = h * (0.1 + rng.nextDouble() * 0.8);
-      final r = w * (0.15 + rng.nextDouble() * 0.30);
-      final opacity = 0.04 + rng.nextDouble() * 0.10;
-
-      final hslColor = HSLColor.fromColor(color);
-      final shifted = hslColor.withLightness(
-        (hslColor.lightness + (rng.nextDouble() - 0.5) * 0.15).clamp(0.0, 1.0),
-      ).toColor();
-
-      final paint = Paint()
-        ..color = shifted.withValues(alpha: opacity)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16);
-
-      canvas.drawCircle(Offset(cx, cy), r, paint);
-    }
-
-    // accent circle top-right
-    final accentSize = w * 0.55;
-    canvas.drawCircle(
-      Offset(w * 0.82, h * 0.18),
-      accentSize * 0.5,
-      Paint()..color = color.withValues(alpha: 0.07),
-    );
-
-    // accent circle bottom-left
-    canvas.drawCircle(
-      Offset(w * 0.15, h * 0.85),
-      accentSize * 0.3,
-      Paint()..color = color.withValues(alpha: 0.05),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_BlobPainter oldDelegate) => oldDelegate.seed != seed;
-}
-
 // ===================== GENERIC DASH CARD =====================
 
 class _DashCard extends StatelessWidget {
@@ -4482,43 +4581,38 @@ class _DashCard extends StatelessWidget {
   });
 
   Color _softBg(Color color) {
-    if (color == AdminHome.actionOrange) return const Color(0xFFFFF1E5);
-    if (color == AdminHome.accentBlue) return const Color(0xFFEAF2FF);
-    if (color == AdminHome.accentTeal) return const Color(0xFFE8FBF7);
-    if (color == AdminHome.accentPurple) return const Color(0xFFF1EAFE);
-    if (color == AdminHome.accentAmber) return const Color(0xFFFFF6DB);
-    if (color == AdminHome.accentSky) return const Color(0xFFEAF8FF);
-    if (color == AdminHome.accentRose) return const Color(0xFFFFECEB);
-    if (color == AdminHome.accentIndigo) return const Color(0xFFEEF0FF);
-    if (color == AdminHome.accentSlate) return const Color(0xFFF1F5F9);
-    if (color == AdminHome.accentCyan) return const Color(0xFFE9FBFE);
-    if (color == AdminHome.accentGreen) return const Color(0xFFEAFBF1);
-    return const Color(0xFFEAF2FF);
+    if (color == AdminHome.actionOrange) return const Color(0xFFFFE3CC);
+    if (color == AdminHome.accentBlue) return const Color(0xFFDCE8FF);
+    if (color == AdminHome.accentTeal) return const Color(0xFFD8F7F0);
+    if (color == AdminHome.accentPurple) return const Color(0xFFE9DDFF);
+    if (color == AdminHome.accentAmber) return const Color(0xFFFFEAB0);
+    if (color == AdminHome.accentSky) return const Color(0xFFD8F1FF);
+    if (color == AdminHome.accentRose) return const Color(0xFFFFD7D6);
+    if (color == AdminHome.accentIndigo) return const Color(0xFFE2E5FF);
+    if (color == AdminHome.accentSlate) return const Color(0xFFE2E8F0);
+    if (color == AdminHome.accentCyan) return const Color(0xFFD5F7FE);
+    if (color == AdminHome.accentGreen) return const Color(0xFFD9F8E6);
+    return const Color(0xFFDCE8FF);
   }
 
   @override
   Widget build(BuildContext context) {
     final isMobileCard = MediaQuery.of(context).size.width < 760;
     final borderColor = isReceptionistStyle
-        ? const Color(0xFFFFEAD8)
-        : AdminHome.uiBorder;
-    final shadowOpacity = isReceptionistStyle ? 0.025 : 0.04;
+        ? AdminHome.actionOrange.withValues(alpha: 0.35)
+        : color.withValues(alpha: 0.24);
+    final shadowOpacity = isReceptionistStyle ? 0.045 : 0.06;
+    final cardBg = isReceptionistStyle
+        ? const Color(0xFFFFF5ED)
+        : _softBg(color);
+    final iconSize = isMobileCard ? 38.0 : 42.0;
 
     return InkWell(
       borderRadius: BorderRadius.circular(isMobileCard ? 18 : 20),
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              _softBg(color).withValues(alpha: isReceptionistStyle ? 0.22 : 0.26),
-              AdminHome.cardBg,
-              AdminHome.cardBg,
-            ],
-            stops: const [0.0, 0.22, 1.0],
-          ),
+          color: cardBg,
           borderRadius: BorderRadius.circular(isMobileCard ? 18 : 20),
           border: Border.all(color: borderColor),
           boxShadow: [
@@ -4530,70 +4624,91 @@ class _DashCard extends StatelessWidget {
           ],
         ),
         child: Padding(
-          padding: EdgeInsets.all(isMobileCard ? 9 : 12),
+          padding: EdgeInsets.all(isMobileCard ? 10 : 13),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Stack(
-                  children: [
-                    _CardBlobArt(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: iconSize,
+                    height: iconSize,
+                    decoration: BoxDecoration(
                       color: color,
-                      seed: title,
-                      isMobile: isMobileCard,
+                      borderRadius: BorderRadius.circular(
+                        isMobileCard ? 12 : 14,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.25),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    if (badgeCount > 0)
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            badgeCount > 99 ? '99+' : badgeCount.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 9.5,
-                            ),
-                          ),
+                    child: Icon(
+                      icon,
+                      color: Colors.white,
+                      size: isMobileCard ? 20 : 22,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: isMobileCard ? 1 : 2),
+                      child: Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: isMobileCard ? 13 : 14.5,
+                          height: 1.08,
+                          color: AdminHome.mainText,
                         ),
                       ),
-                  ],
-                ),
-              ),
-              SizedBox(height: isMobileCard ? 5 : 7),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: isMobileCard ? 13 : 14,
-                  color: AdminHome.primaryBlue,
-                ),
+                    ),
+                  ),
+                  if (badgeCount > 0)
+                    Container(
+                      margin: const EdgeInsets.only(left: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : badgeCount.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 9.5,
+                        ),
+                      ),
+                    ),
+                ],
               ),
               if (statusLabels.isNotEmpty) ...[
-                SizedBox(height: isMobileCard ? 4 : 6),
+                SizedBox(height: isMobileCard ? 9 : 11),
                 Flexible(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 100),
+                    constraints: const BoxConstraints(maxHeight: 78),
                     child: Wrap(
-                      spacing: isMobileCard ? 6 : 8,
-                      runSpacing: isMobileCard ? 4 : 5,
+                      spacing: isMobileCard ? 5 : 6,
+                      runSpacing: isMobileCard ? 4 : 4,
                       children: statusLabels
-                          .map((sl) => _StatusLabel(
-                                label: sl.label,
-                                count: sl.count,
-                                color: sl.color,
-                                isMobile: isMobileCard,
-                              ))
+                          .map(
+                            (sl) => _StatusLabel(
+                              label: sl.label,
+                              count: sl.count,
+                              color: sl.color,
+                              isMobile: isMobileCard,
+                            ),
+                          )
                           .toList(),
                     ),
                   ),
@@ -4679,7 +4794,11 @@ class _CourseFeedbackDashCard extends StatelessWidget {
         return _DashCard(
           title: 'Course Reviews',
           statusLabels: [
-            _StatusLabelData(label: 'Reported', count: reported, color: AdminHome.accentRose),
+            _StatusLabelData(
+              label: 'Reported',
+              count: reported,
+              color: AdminHome.accentRose,
+            ),
           ],
           icon: AdminIcons.courseReviews,
           color: AdminHome.accentAmber,
@@ -4955,7 +5074,9 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
 
       final avatarSnap = await _avatarRoot.get();
       if (avatarSnap.value is List) {
-        _avatarUrls = (avatarSnap.value as List).map((e) => e.toString()).toList();
+        _avatarUrls = (avatarSnap.value as List)
+            .map((e) => e.toString())
+            .toList();
       } else {
         _avatarUrls = [];
       }
@@ -5161,29 +5282,49 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
 
         if (kIsWeb) {
           final bytes = file.bytes;
-          if (bytes == null || bytes.isEmpty) { failCount++; _doneOne(); continue; }
+          if (bytes == null || bytes.isEmpty) {
+            failCount++;
+            _doneOne();
+            continue;
+          }
           request.files.add(
             http.MultipartFile.fromBytes('file', bytes, filename: file.name),
           );
         } else {
           final path = file.path;
-          if (path == null || path.trim().isEmpty) { failCount++; _doneOne(); continue; }
+          if (path == null || path.trim().isEmpty) {
+            failCount++;
+            _doneOne();
+            continue;
+          }
           request.files.add(
-            await http.MultipartFile.fromPath('file', path, filename: file.name),
+            await http.MultipartFile.fromPath(
+              'file',
+              path,
+              filename: file.name,
+            ),
           );
         }
 
         final streamed = await request.send();
         final body = await streamed.stream.bytesToString();
         if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-          failCount++; _doneOne(); continue;
+          failCount++;
+          _doneOne();
+          continue;
         }
         final decoded = jsonDecode(body);
         if (decoded is! Map || decoded['success'] != true) {
-          failCount++; _doneOne(); continue;
+          failCount++;
+          _doneOne();
+          continue;
         }
         final url = (decoded['url'] ?? '').toString().trim();
-        if (url.isEmpty) { failCount++; _doneOne(); continue; }
+        if (url.isEmpty) {
+          failCount++;
+          _doneOne();
+          continue;
+        }
 
         successCount++;
         if (mounted) {
@@ -5209,10 +5350,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
         ? '$successCount avatar${successCount == 1 ? '' : 's'} uploaded ✅'
         : '$successCount uploaded, $failCount failed';
     if (mounted) {
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(content: Text(msg)),
-      );
+      AppToast.fromSnackBar(context, SnackBar(content: Text(msg)));
     }
   }
 
@@ -5220,7 +5358,13 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
     try {
       final uri = Uri.parse(url);
       final segments = uri.pathSegments;
-      const knownRoots = ['courses', 'games', 'stories', 'shared_files', 'certificates'];
+      const knownRoots = [
+        'courses',
+        'games',
+        'stories',
+        'shared_files',
+        'certificates',
+      ];
       final rootIdx = segments.indexWhere((s) => knownRoots.contains(s));
       if (rootIdx < 0) return;
       final root = segments[rootIdx];
@@ -5331,7 +5475,7 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
                               child: CircularProgressIndicator(
                                 value: progress.expectedTotalBytes != null
                                     ? progress.cumulativeBytesLoaded /
-                                        progress.expectedTotalBytes!
+                                          progress.expectedTotalBytes!
                                     : null,
                                 color: Colors.white,
                               ),
@@ -5360,11 +5504,13 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
     for (final offset in [-1, 1]) {
       final idx = index + offset;
       if (idx >= 0 && idx < _avatarUrls.length) {
-        unawaited(precacheImage(
-          NetworkImage(_avatarUrls[idx]),
-          context,
-          onError: (_, _) {},
-        ));
+        unawaited(
+          precacheImage(
+            NetworkImage(_avatarUrls[idx]),
+            context,
+            onError: (_, _) {},
+          ),
+        );
       }
     }
   }
@@ -5588,208 +5734,214 @@ class _AdminForceUpdateAllScreenState extends State<AdminForceUpdateAllScreen>
   Widget _buildAvatarsTab() {
     return SafeArea(
       child: ListView(
-      padding: const EdgeInsets.all(12),
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: uiBorder),
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Avatar Presets',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: primaryBlue,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${_avatarUrls.length} avatar${_avatarUrls.length == 1 ? '' : 's'} uploaded',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: softText,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (_avatarUrls.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: appBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: uiBorder.withValues(alpha: 0.5)),
+        padding: const EdgeInsets.all(12),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: uiBorder),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Avatar Presets',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: primaryBlue,
+                    fontSize: 15,
                   ),
-                  child: const Center(
-                    child: Text(
-                      'No avatars yet. Upload one to get started.',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: softText,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${_avatarUrls.length} avatar${_avatarUrls.length == 1 ? '' : 's'} uploaded',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: softText,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (_avatarUrls.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: appBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: uiBorder.withValues(alpha: 0.5),
                       ),
                     ),
-                  ),
-                )
-              else
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 0.85,
-                  ),
-                  itemCount: _avatarUrls.length,
-                  itemBuilder: (ctx, index) {
-                    final url = _avatarUrls[index];
-                    return GestureDetector(
-                      onTap: () => _showAvatarViewer(index),
-                      onLongPress: () => _removeAvatar(index),
-                      child: Stack(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              color: appBg,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: uiBorder.withValues(alpha: 0.6),
+                    child: const Center(
+                      child: Text(
+                        'No avatars yet. Upload one to get started.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: softText,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 4,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          childAspectRatio: 0.85,
+                        ),
+                    itemCount: _avatarUrls.length,
+                    itemBuilder: (ctx, index) {
+                      final url = _avatarUrls[index];
+                      return GestureDetector(
+                        onTap: () => _showAvatarViewer(index),
+                        onLongPress: () => _removeAvatar(index),
+                        child: Stack(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: appBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: uiBorder.withValues(alpha: 0.6),
+                                ),
                               ),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: Image.network(
-                                    url,
-                                    width: double.infinity,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => Container(
-                                      color: appBg,
-                                      child: const Icon(
-                                        Icons.broken_image_outlined,
-                                        size: 28,
+                              clipBehavior: Clip.antiAlias,
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: Image.network(
+                                      url,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => Container(
+                                        color: appBg,
+                                        child: const Icon(
+                                          Icons.broken_image_outlined,
+                                          size: 28,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          Positioned(
-                            top: 4,
-                            right: 4,
-                            child: Column(
-                              children: [
-                                InkWell(
-                                  onTap: index > 0
-                                      ? () => _moveAvatarUp(index)
-                                      : null,
-                                  child: Container(
-                                    width: 22,
-                                    height: 22,
-                                    decoration: BoxDecoration(
-                                      color: index > 0
-                                          ? primaryBlue.withValues(alpha: 0.8)
-                                          : Colors.grey.withValues(alpha: 0.3),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(
-                                      Icons.keyboard_arrow_up_rounded,
-                                      size: 16,
-                                      color: Colors.white,
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: Column(
+                                children: [
+                                  InkWell(
+                                    onTap: index > 0
+                                        ? () => _moveAvatarUp(index)
+                                        : null,
+                                    child: Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: BoxDecoration(
+                                        color: index > 0
+                                            ? primaryBlue.withValues(alpha: 0.8)
+                                            : Colors.grey.withValues(
+                                                alpha: 0.3,
+                                              ),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Icon(
+                                        Icons.keyboard_arrow_up_rounded,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(height: 2),
-                                InkWell(
-                                  onTap: index < _avatarUrls.length - 1
-                                      ? () => _moveAvatarDown(index)
-                                      : null,
-                                  child: Container(
-                                    width: 22,
-                                    height: 22,
-                                    decoration: BoxDecoration(
-                                      color: index < _avatarUrls.length - 1
-                                          ? primaryBlue.withValues(alpha: 0.8)
-                                          : Colors.grey.withValues(alpha: 0.3),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      size: 16,
-                                      color: Colors.white,
+                                  const SizedBox(height: 2),
+                                  InkWell(
+                                    onTap: index < _avatarUrls.length - 1
+                                        ? () => _moveAvatarDown(index)
+                                        : null,
+                                    child: Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: BoxDecoration(
+                                        color: index < _avatarUrls.length - 1
+                                            ? primaryBlue.withValues(alpha: 0.8)
+                                            : Colors.grey.withValues(
+                                                alpha: 0.3,
+                                              ),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 4,
-                            left: 4,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '${index + 1}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                ],
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _uploadingAvatarTotal > 0 ? null : _uploadAvatar,
-                  icon: _uploadingAvatarTotal > 0
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.add_photo_alternate_outlined),
-                  label: Text(
-                    _uploadingAvatarTotal > 0
-                        ? 'Uploading $_uploadingAvatarDone/$_uploadingAvatarTotal...'
-                        : 'Upload Avatar Images',
+                            Positioned(
+                              bottom: 4,
+                              left: 4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: primaryBlue,
-                    side: BorderSide(color: uiBorder),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _uploadingAvatarTotal > 0 ? null : _uploadAvatar,
+                    icon: _uploadingAvatarTotal > 0
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add_photo_alternate_outlined),
+                    label: Text(
+                      _uploadingAvatarTotal > 0
+                          ? 'Uploading $_uploadingAvatarDone/$_uploadingAvatarTotal...'
+                          : 'Upload Avatar Images',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryBlue,
+                      side: BorderSide(color: uiBorder),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-
-      ],
+        ],
       ),
     );
   }

@@ -532,6 +532,20 @@ class _LearnerHomeState extends State<LearnerHome> {
     );
   }
 
+  static const _fieldArabicLabels = <String, String>{
+    'Profile Photo': 'صورة الملف الشخصي',
+    'Phone Number': 'رقم الهاتف',
+    'Second Phone Number': 'رقم الهاتف الثاني',
+    'Date of Birth': 'تاريخ الميلاد',
+    'Gender': 'الجنس',
+    'Country': 'الدولة',
+    'Wilaya / City': 'الولاية / المدينة',
+    'About Me': 'نبذة عني',
+    'Important Notes': 'ملاحظات مهمة',
+    'National ID': 'الرقم الوطني',
+    'Extra Photos': 'صور إضافية',
+  };
+
   List<String> _missingProfileFields(Map<String, dynamic> m) {
     String field(String key) => (m[key] ?? '').toString().trim();
     final missing = <String>[];
@@ -542,6 +556,11 @@ class _LearnerHomeState extends State<LearnerHome> {
     if (field('country').isEmpty) missing.add('Country');
     if (field('city').isEmpty) missing.add('Wilaya / City');
     if (field('about_me').isEmpty) missing.add('About Me');
+    if (field('national_id_number').isEmpty) missing.add('National ID');
+    if (field('special_notes').isEmpty) missing.add('Important Notes');
+
+    final photos = m['profile_photos'];
+    if (photos is! List || photos.isEmpty) missing.add('Extra Photos');
 
     final dob = field('dob');
     if (dob.isNotEmpty && _ageFromDob(dob) < 19) {
@@ -593,13 +612,9 @@ class _LearnerHomeState extends State<LearnerHome> {
 
       final userMap = raw.map((k, v) => MapEntry(k.toString(), v));
       final missingFields = _missingProfileFields(userMap);
-      final specialNotesMissing = (userMap['special_notes'] ?? '').toString().trim().isEmpty;
       if (missingFields.isEmpty || !mounted) return;
 
-      final action = await _showProfileCompletionDialog(
-        missingFields,
-        hasSuggestedNotes: specialNotesMissing,
-      );
+      final action = await _showProfileCompletionDialog(missingFields);
       if (!mounted || action == null) return;
 
       if (action == _ProfilePromptAction.complete) {
@@ -613,9 +628,8 @@ class _LearnerHomeState extends State<LearnerHome> {
   }
 
   Future<_ProfilePromptAction?> _showProfileCompletionDialog(
-    List<String> missingFields, {
-    bool hasSuggestedNotes = false,
-  }) {
+    List<String> missingFields,
+  ) {
     final iconColors = {
       'Profile Photo': Icons.camera_alt_rounded,
       'Phone Number': Icons.phone_rounded,
@@ -626,6 +640,8 @@ class _LearnerHomeState extends State<LearnerHome> {
       'Wilaya / City': Icons.location_city_rounded,
       'About Me': Icons.auto_stories_rounded,
       'Important Notes': Icons.warning_amber_rounded,
+      'National ID': Icons.badge_rounded,
+      'Extra Photos': Icons.photo_library_rounded,
     };
 
     return showDialog<_ProfilePromptAction>(
@@ -719,67 +735,8 @@ class _LearnerHomeState extends State<LearnerHome> {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: ListView.builder(
                       shrinkWrap: true,
-                      itemCount: missingFields.length + (hasSuggestedNotes ? 1 : 0),
+                      itemCount: missingFields.length,
                       itemBuilder: (ctx, index) {
-                        if (hasSuggestedNotes && index == missingFields.length) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: palette.soft.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: palette.border.withValues(alpha: 0.35),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: const Icon(
-                                      Icons.warning_amber_rounded,
-                                      size: 18,
-                                      color: Colors.grey,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Important Notes',
-                                          style: TextStyle(
-                                            color: palette.text.withValues(alpha: 0.7),
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                        Text(
-                                          '(Optional)',
-                                          style: TextStyle(
-                                            color: palette.text.withValues(alpha: 0.45),
-                                            fontWeight: FontWeight.w600,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
                         final field = missingFields[index];
                         final icon = iconColors[field] ??
                             Icons.fiber_manual_record_rounded;
@@ -814,13 +771,26 @@ class _LearnerHomeState extends State<LearnerHome> {
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
-                                  child: Text(
-                                    field,
-                                    style: TextStyle(
-                                      color: palette.text,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 14,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        field,
+                                        style: TextStyle(
+                                          color: palette.text,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      Text(
+                                        _fieldArabicLabels[field] ?? '',
+                                        style: TextStyle(
+                                          color: palette.text.withValues(alpha: 0.55),
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 Icon(
