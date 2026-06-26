@@ -785,10 +785,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<void> _markMaterialsCompleted(_RecordedSession session) async {
     _debug('markMaterialsCompleted sessionId=${session.id}');
     if (_progressOf(session.id).materialsCompleted) return;
-    unawaited(StudyStreakService.instance.updateStreak(
-      uid: _uid,
-      courseKey: widget.courseKey,
-    ));
+    unawaited(
+      StudyStreakService.instance.updateStreak(
+        uid: _uid,
+        courseKey: widget.courseKey,
+      ),
+    );
     final current = _progressOf(session.id);
     final updated = current.copyWith(
       materialsCompleted: true,
@@ -825,10 +827,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<void> _markVideoCompletedManually(_RecordedSession session) async {
     _debug('markVideoCompletedManually sessionId=${session.id}');
     if (_progressOf(session.id).videoCompleted) return;
-    unawaited(StudyStreakService.instance.updateStreak(
-      uid: _uid,
-      courseKey: widget.courseKey,
-    ));
+    unawaited(
+      StudyStreakService.instance.updateStreak(
+        uid: _uid,
+        courseKey: widget.courseKey,
+      ),
+    );
     final current = _progressOf(session.id);
     final updated = current.copyWith(
       videoCompleted: true,
@@ -2156,8 +2160,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         });
         unawaited(_saveMilestone(key));
         if (mounted) {
-          _notice('🎉 $m% complete! Keep going!',
-              tone: LearnerNoticeTone.success);
+          _notice(
+            '🎉 $m% complete! Keep going!',
+            tone: LearnerNoticeTone.success,
+          );
         }
         break;
       }
@@ -2546,71 +2552,110 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         : hasActive
         ? '${(summary.progress * 100).round()}%'
         : label;
-    return Container(
-      margin: EdgeInsets.only(top: compact ? 0 : 8),
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 10,
-        vertical: compact ? 6 : 8,
-      ),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
-        children: [
-          if (!compact) ...[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${summary.downloaded}/${summary.total} offline',
-                    style: const TextStyle(
-                      color: Color(0xFF334155),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      value: summary.progress,
-                      minHeight: 5,
-                      backgroundColor: const Color(0xFFE2E8F0),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          TextButton.icon(
-            onPressed: hasActive
-                ? null
-                : isDone
-                ? () => _deleteDownloads(requests, title: deleteTitle)
-                : () => _downloadVideos(
-                    requests,
-                    emptyMessage: 'No videos available to download.',
-                  ),
-            style: TextButton.styleFrom(
-              foregroundColor: isDone
-                  ? const Color(0xFF16A34A)
-                  : const Color(0xFF4F46E5),
-              minimumSize: const Size.fromHeight(48),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            ),
+    final onPressed = hasActive
+        ? null
+        : isDone
+        ? () => _deleteDownloads(requests, title: deleteTitle)
+        : () => _downloadVideos(
+            requests,
+            emptyMessage: 'No videos available to download.',
+          );
+
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Tooltip(
+          message: text,
+          child: IconButton.filledTonal(
+            onPressed: onPressed,
             icon: Icon(
               isDone ? Icons.delete_outline_rounded : Icons.download_rounded,
-              size: 17,
+              size: 16,
             ),
-            label: Text(text),
+            color: isDone ? const Color(0xFF16A34A) : const Color(0xFF4F46E5),
+            style: IconButton.styleFrom(
+              minimumSize: const Size.square(30),
+              fixedSize: const Size.square(30),
+              padding: EdgeInsets.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              backgroundColor: const Color(0xFFF8FAFC),
+              disabledBackgroundColor: const Color(0xFFF8FAFC),
+            ),
           ),
-        ],
-      ),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tight = constraints.maxWidth < 260;
+        final progress = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${summary.downloaded}/${summary.total} offline',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF334155),
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 5),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: summary.progress,
+                minHeight: 5,
+                backgroundColor: const Color(0xFFE2E8F0),
+              ),
+            ),
+          ],
+        );
+        final button = TextButton.icon(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            foregroundColor: isDone
+                ? const Color(0xFF16A34A)
+                : const Color(0xFF4F46E5),
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          ),
+          icon: Icon(
+            isDone ? Icons.delete_outline_rounded : Icons.download_rounded,
+            size: 17,
+          ),
+          label: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+        );
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: tight
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    progress,
+                    const SizedBox(height: 6),
+                    Align(alignment: Alignment.centerRight, child: button),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: progress),
+                    const SizedBox(width: 8),
+                    Flexible(flex: 0, child: button),
+                  ],
+                ),
+        );
+      },
     );
   }
 
@@ -3162,6 +3207,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 children: [
                                   Text(
                                     moduleLabel,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: moduleLocked
                                           ? const Color(0xFF94A3B8)
@@ -3173,6 +3220,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   const SizedBox(height: 3),
                                   Text(
                                     '$doneUnits/$totalUnits units • $doneLessons/$totalLessons lessons',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: moduleLocked
                                           ? const Color(0xFF94A3B8)
@@ -3310,6 +3359,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                     selectedUnit.title.trim().isEmpty
                                         ? selectedUnit.displayTitle
                                         : selectedUnit.title.trim(),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: Color(0xFF0F172A),
                                       fontWeight: FontWeight.w900,

@@ -212,7 +212,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   String _teacherName(Map<String, dynamic> story) {
     final first = (story['teacherFirstName'] ?? '').toString().trim();
     final last = (story['teacherLastName'] ?? '').toString().trim();
-    final full = ('$first $last').trim();
+    final full = '$first $last'.trim();
 
     if (full.isNotEmpty) return full;
 
@@ -269,7 +269,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
   List<MapEntry<String, Map<String, dynamic>>> _applyFiltersAndSort({
     required List<MapEntry<String, Map<String, dynamic>>> items,
   }) {
-    var filtered = items.where((entry) {
+    final filtered = items.where((entry) {
       final story = entry.value;
       final status = (story['status'] ?? '').toString().trim().toLowerCase();
 
@@ -518,6 +518,30 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
     final views = _storyStat(story, 'views');
     final plays = _storyStat(story, 'plays');
 
+    Widget actionButton(BuildContext ctx) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: actionColor,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () {
+            Navigator.of(ctx).pop();
+            _openStudy(story);
+          },
+          icon: Icon(
+            hasRead
+                ? Icons.auto_stories_rounded
+                : hasListen
+                ? Icons.headphones_rounded
+                : Icons.language_rounded,
+          ),
+          label: Text(hasRead || hasListen ? 'Enjoy' : 'Read'),
+        ),
+      );
+    }
+
     showModalBottomSheet(
       context: context,
       backgroundColor: p.appBg,
@@ -613,6 +637,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                       ),
                     ),
                   ),
+                const SizedBox(height: 16),
+                actionButton(ctx),
                 const SizedBox(height: 16),
                 Text(
                   title.isEmpty ? 'Story' : title,
@@ -775,28 +801,6 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                         .toList(),
                   ),
                 ],
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: actionColor,
-                      foregroundColor: Colors.white,
-                    ),
-                    onPressed: () {
-                      Navigator.of(ctx).pop();
-                      _openStudy(story);
-                    },
-                    icon: Icon(
-                      hasRead
-                          ? Icons.auto_stories_rounded
-                          : hasListen
-                          ? Icons.headphones_rounded
-                          : Icons.language_rounded,
-                    ),
-                    label: Text(hasRead || hasListen ? 'Enjoy' : 'Read'),
-                  ),
-                ),
               ],
             ),
           ),
