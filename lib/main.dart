@@ -5476,7 +5476,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
   Widget _hero() {
     if (course.thumb.trim().isEmpty) {
       return Container(
-        height: 190,
+        height: 175,
         decoration: BoxDecoration(
           color: Brand.appBg,
           borderRadius: BorderRadius.circular(22),
@@ -5491,7 +5491,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: AspectRatio(
-        aspectRatio: 21 / 9,
+        aspectRatio: 23 / 9,
         child: Image.network(
           course.thumb,
           fit: BoxFit.cover,
@@ -5688,7 +5688,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
         child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         margin: const EdgeInsets.all(1),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -5716,17 +5716,20 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
             Icon(
               option.icon(),
               color: selected ? Colors.white : tone,
-              size: 18,
+              size: 16,
             ),
-            const SizedBox(height: 4),
-            Text(
-              option.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected ? Colors.white : Brand.primaryBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
+            const SizedBox(height: 3),
+            Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text(
+                _deliveryArabicLabel(option),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.white : Brand.primaryBlue,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
               ),
             ),
           ],
@@ -5982,6 +5985,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     required String title,
     required Widget child,
     bool initiallyExpanded = false,
+    ValueChanged<bool>? onExpandedChanged,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -5991,6 +5995,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
       ),
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
+        onExpansionChanged: onExpandedChanged,
         tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
         childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
         iconColor: Brand.primaryBlue,
@@ -6204,9 +6209,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                                       crossAxisCount: 2,
                                       shrinkWrap: true,
                                       physics: const NeverScrollableScrollPhysics(),
-                                      mainAxisSpacing: 6,
-                                      crossAxisSpacing: 6,
-                                      childAspectRatio: 1.5,
+                                      mainAxisSpacing: 5,
+                                      crossAxisSpacing: 5,
+                                      childAspectRatio: 1.35,
                                       children: [
                                         for (final option in deliveryOptions)
                                           _deliveryCard(
@@ -6508,7 +6513,19 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                             const SizedBox(height: 12),
                             _expandableSection(
                               icon: Icons.info_rounded,
-                              title: 'More about this course',
+                              title: 'More about this course | المزيد عن الدورة',
+                              onExpandedChanged: (v) {
+                                if (v) {
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    final target = _scrollController.offset + 220;
+                                    _scrollController.animateTo(
+                                      target,
+                                      duration: const Duration(milliseconds: 400),
+                                      curve: Curves.easeOut,
+                                    );
+                                  });
+                                }
+                              },
                               child: Column(
                                 children: [
                                   if (course.content.trim().isNotEmpty)
@@ -6543,7 +6560,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                                   if (course.instructors.isNotEmpty)
                                     _expandableSection(
                                       icon: Icons.people_rounded,
-                                      title: 'Instructors',
+                                      title: 'Instructors | المدرسون',
                                       child: SizedBox(
                                         width: double.infinity,
                                         child: Wrap(
@@ -6562,14 +6579,14 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                                     const SizedBox(height: 8),
                                   _expandableSection(
                                     icon: Icons.reviews_rounded,
-                                    title: 'Reviews',
+                                    title: 'Reviews | التقييمات',
                                     child: _reviewsBlock(context),
                                   ),
                                   if (course.requirements.trim().isNotEmpty) ...[
                                     const SizedBox(height: 8),
                                     _expandableSection(
                                       icon: Icons.checklist_rounded,
-                                      title: 'Requirements',
+                                      title: 'Requirements | المتطلبات',
                                       child: SizedBox(
                                         width: double.infinity,
                                         child: _rtlText(
