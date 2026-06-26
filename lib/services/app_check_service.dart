@@ -10,9 +10,9 @@ class AppCheckService {
       androidProvider: kDebugMode
           ? AndroidProvider.debug
           : AndroidProvider.playIntegrity,
-      iosProvider: kDebugMode
-          ? iOSProvider.debug
-          : iOSProvider.deviceCheck,
+      appleProvider: kDebugMode
+          ? AppleProvider.debug
+          : AppleProvider.appAttest,
       webProvider: kIsWeb
           ? kDebugMode
               ? ReCaptchaV3Provider('debug')
