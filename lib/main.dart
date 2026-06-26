@@ -4991,7 +4991,8 @@ class _CourseDetailsSheet extends StatefulWidget {
   State<_CourseDetailsSheet> createState() => _CourseDetailsSheetState();
 }
 
-class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
+class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final fullNameC = TextEditingController();
   final phoneC = TextEditingController();
@@ -5007,6 +5008,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
   AppliedPromo? _appliedPromo;
   String? _promoMessage;
   bool _promoError = false;
+  final _scrollController = ScrollController();
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _pulseAnim;
 
   _CourseLite get course => widget.course;
 
@@ -5030,10 +5034,20 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
           );
       selectedDeliveryKey = firstSelectable?.key;
     }
+
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 1.0, end: 1.04).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
   }
 
   @override
   void dispose() {
+    _pulseCtrl.dispose();
+    _scrollController.dispose();
     fullNameC.dispose();
     phoneC.dispose();
     dobC.dispose();
@@ -5477,7 +5491,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: AspectRatio(
-        aspectRatio: 16 / 9,
+        aspectRatio: 21 / 9,
         child: Image.network(
           course.thumb,
           fit: BoxFit.cover,
@@ -5653,7 +5667,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     }
   }
 
-  Widget _deliveryCard(EnrollDeliveryOption option, bool selected) {
+  Widget _deliveryCard(EnrollDeliveryOption option, bool selected, {VoidCallback? onSelected}) {
     final compact = MediaQuery.sizeOf(context).width < 390;
     final tone = _deliveryTone(option);
     final tone2 = _deliveryTone2(option);
@@ -5669,11 +5683,12 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                   selectedDeliveryKey = option.key;
                   _clearPromo();
                 });
+                onSelected?.call();
               },
         child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
-        margin: const EdgeInsets.all(2),
-        padding: EdgeInsets.all(compact ? 10 : 12),
+        margin: const EdgeInsets.all(1),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -5701,9 +5716,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
             Icon(
               option.icon(),
               color: selected ? Colors.white : tone,
-              size: 20,
+              size: 18,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Text(
               option.label,
               maxLines: 1,
@@ -5711,31 +5726,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
               style: TextStyle(
                 color: selected ? Colors.white : Brand.primaryBlue,
                 fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-              decoration: BoxDecoration(
-                color: selected
-                    ? Colors.white.withValues(alpha: 0.20)
-                    : Colors.white.withValues(alpha: 0.86),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: selected
-                      ? Colors.white.withValues(alpha: 0.35)
-                      : tone.withValues(alpha: 0.24),
-                ),
-              ),
-              child: Text(
-                option.feeLabel(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: selected ? Colors.white : tone,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w900,
-                ),
+                fontSize: 12,
               ),
             ),
           ],
@@ -5936,12 +5927,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _deliveryFeatureTags(option),
-          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -6175,6 +6161,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                   children: [
                     Expanded(
                       child: SingleChildScrollView(
+                        controller: _scrollController,
                         padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
                         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         child: Column(
@@ -6196,7 +6183,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                 children: [
                                   _sectionTitle(
                                     Icons.menu_book_rounded,
-                                    '1. Choose how you want to study',
+                                    'اختر طريقة الدراسة',
                                   ),
                                   const SizedBox(height: 8),
                                   if (deliveryOptions.isEmpty)
@@ -6217,14 +6204,29 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                       crossAxisCount: 2,
                                       shrinkWrap: true,
                                       physics: const NeverScrollableScrollPhysics(),
-                                      mainAxisSpacing: 8,
-                                      crossAxisSpacing: 8,
-                                      childAspectRatio: 1.1,
+                                      mainAxisSpacing: 6,
+                                      crossAxisSpacing: 6,
+                                      childAspectRatio: 1.5,
                                       children: [
                                         for (final option in deliveryOptions)
                                           _deliveryCard(
                                             option,
                                             option.key == selectedDeliveryKey,
+                                            onSelected: () {
+                                              WidgetsBinding.instance
+                                                  .addPostFrameCallback((_) {
+                                                final target = _scrollController
+                                                        .offset +
+                                                    280;
+                                                _scrollController.animateTo(
+                                                  target,
+                                                  duration: const Duration(
+                                                    milliseconds: 400,
+                                                  ),
+                                                  curve: Curves.easeOut,
+                                                );
+                                              });
+                                            },
                                           ),
                                       ],
                                     ),
@@ -6458,30 +6460,45 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                       },
                                     ),
                                     const SizedBox(height: 12),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Brand.accentCyan.withValues(alpha: 0.08),
-                                        borderRadius: BorderRadius.circular(16),
-                                        border: Border.all(color: Brand.uiBorder),
-                                      ),
-                                      child: const Row(
-                                        children: [
-                                          Icon(
-                                            Icons.info_outline_rounded,
-                                            color: Brand.primaryBlue,
+                                    AnimatedBuilder(
+                                      animation: _pulseAnim,
+                                      builder: (context, child) {
+                                        final scale = _pulseAnim.value;
+                                        return Transform.scale(
+                                          scale: scale,
+                                          child: child,
+                                        );
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(14),
+                                        decoration: BoxDecoration(
+                                          color: Brand.accentCyan.withValues(alpha: 0.10),
+                                          borderRadius: BorderRadius.circular(16),
+                                          border: Border.all(
+                                            color: accent.withValues(alpha: 0.35),
+                                            width: 1.5,
                                           ),
-                                          SizedBox(width: 10),
-                                          Expanded(
-                                            child: Text(
-                                              'لا يوجد دفع الآن. سنقوم بالتواصل معك قريباً لتأكيد التسجيل والتفاصيل.',
-                                              textDirection: TextDirection.rtl,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w800,
+                                        ),
+                                        child: const Row(
+                                          children: [
+                                            Icon(
+                                              Icons.info_outline_rounded,
+                                              color: Brand.primaryBlue,
+                                              size: 22,
+                                            ),
+                                            SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                'لا يوجد دفع الآن. سنقوم بالتواصل معك قريباً لتأكيد التسجيل والتفاصيل.',
+                                                textDirection: TextDirection.rtl,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 13,
+                                                ),
                                               ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ],
