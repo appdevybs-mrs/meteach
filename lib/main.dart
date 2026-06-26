@@ -5015,6 +5015,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
   late final Animation<double> _pulseAnim;
   late final AnimationController _sharePulseCtrl;
   late final Animation<double> _sharePulseAnim;
+  _CompanyInfo? _schoolInfo;
 
   _CourseLite get course => widget.course;
 
@@ -5054,6 +5055,10 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     _sharePulseAnim = Tween<double>(begin: 1.0, end: 1.06).animate(
       CurvedAnimation(parent: _sharePulseCtrl, curve: Curves.easeInOut),
     );
+
+    SimpleTopBar._loadCompanyInfo().then((v) {
+      if (mounted) setState(() => _schoolInfo = v);
+    });
   }
 
   @override
@@ -5333,6 +5338,16 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
+  String _deliveryLabelAr(String key) {
+    switch (normalizeDeliveryKey(key)) {
+      case 'inclass':  return 'حضوري';
+      case 'flexible': return 'مرن';
+      case 'private':  return 'خاص';
+      case 'recorded': return 'مسجل';
+      default:         return key;
+    }
+  }
+
   Future<void> _shareCourse() async {
     if (_sharing) return;
     setState(() => _sharing = true);
@@ -5342,31 +5357,55 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
       final buf = StringBuffer();
 
       buf.writeln('📚 ${c.title}');
+      buf.writeln();
 
       final desc = c.shortDesc.trim();
-      if (desc.isNotEmpty) buf.writeln('\n$desc');
+      if (desc.isNotEmpty) {
+        buf.writeln(desc);
+        buf.writeln();
+      }
 
       if (c.duration.trim().isNotEmpty) {
-        buf.writeln('\n⏱ ${c.duration.trim()}');
+        buf.writeln('⏱ المدة: ${c.duration.trim()}');
       }
       if (c.level.trim().isNotEmpty) {
-        buf.writeln('📊 ${c.level.trim()}');
+        buf.writeln('📊 المستوى: ${c.level.trim()}');
       }
-      if (c.language.trim().isNotEmpty) {
-        buf.writeln('🌐 ${c.language.trim()}');
+      if (c.duration.trim().isNotEmpty || c.level.trim().isNotEmpty) {
+        buf.writeln();
       }
 
-      final fees = c.deliveryConfigs.values
-          .map((d) => d.fee)
-          .whereType<double>()
-          .where((f) => f > 0)
+      final deliveryKeys = deliveryOptions
+          .map((e) => _deliveryLabelAr(e.key))
+          .where((l) => l.isNotEmpty)
           .toList();
-      if (fees.isNotEmpty) {
-        final lowest = fees.reduce(math.min);
-        buf.writeln('💰 From $lowest SAR');
+      if (deliveryKeys.isNotEmpty) {
+        buf.writeln('🎓 طرق الدراسة المتاحة:');
+        for (final d in deliveryKeys) {
+          buf.writeln('   • $d');
+        }
+        buf.writeln();
       }
 
-      buf.writeln('\n— Your Bridge School');
+      if (_schoolInfo != null) {
+        buf.writeln('──────────────');
+        buf.writeln();
+        if (_schoolInfo!.fullName.isNotEmpty) {
+          buf.writeln(_schoolInfo!.fullName);
+        }
+        if (_schoolInfo!.phone.isNotEmpty) {
+          buf.writeln('📞 ${_schoolInfo!.phone}');
+        }
+        if (_schoolInfo!.address.isNotEmpty) {
+          buf.writeln('📍 ${_schoolInfo!.address}');
+        }
+        buf.writeln();
+      }
+
+      buf.writeln('────────────────');
+      buf.writeln();
+      buf.writeln('#YourBridgeSchool #YBS #دورات_الرياض #تطوير_المهارات #تعلم_مدى_الحياة');
+
       final text = buf.toString();
 
       if (c.thumb.trim().isNotEmpty) {
