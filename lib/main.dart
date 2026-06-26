@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -5005,12 +5006,15 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
   String? _gender;
   String _privateStudyMode = 'online';
   bool saving = false;
+  bool _sharing = false;
   AppliedPromo? _appliedPromo;
   String? _promoMessage;
   bool _promoError = false;
   final _scrollController = ScrollController();
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseAnim;
+  late final AnimationController _sharePulseCtrl;
+  late final Animation<double> _sharePulseAnim;
 
   _CourseLite get course => widget.course;
 
@@ -5042,11 +5046,20 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     _pulseAnim = Tween<double>(begin: 1.0, end: 1.04).animate(
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
+
+    _sharePulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat(reverse: true);
+    _sharePulseAnim = Tween<double>(begin: 1.0, end: 1.06).animate(
+      CurvedAnimation(parent: _sharePulseCtrl, curve: Curves.easeInOut),
+    );
   }
 
   @override
   void dispose() {
     _pulseCtrl.dispose();
+    _sharePulseCtrl.dispose();
     _scrollController.dispose();
     fullNameC.dispose();
     phoneC.dispose();
@@ -5318,6 +5331,78 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}-${two(d.month)}-${two(d.day)}';
+  }
+
+  Future<void> _shareCourse() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+
+    try {
+      final c = course;
+      final buf = StringBuffer();
+
+      buf.writeln('📚 ${c.title}');
+
+      final desc = c.shortDesc.trim();
+      if (desc.isNotEmpty) buf.writeln('\n$desc');
+
+      if (c.duration.trim().isNotEmpty) {
+        buf.writeln('\n⏱ ${c.duration.trim()}');
+      }
+      if (c.level.trim().isNotEmpty) {
+        buf.writeln('📊 ${c.level.trim()}');
+      }
+      if (c.language.trim().isNotEmpty) {
+        buf.writeln('🌐 ${c.language.trim()}');
+      }
+
+      final fees = c.deliveryConfigs.values
+          .map((d) => d.fee)
+          .whereType<double>()
+          .where((f) => f > 0)
+          .toList();
+      if (fees.isNotEmpty) {
+        final lowest = fees.reduce(math.min);
+        buf.writeln('💰 From $lowest SAR');
+      }
+
+      buf.writeln('\n— Your Bridge School');
+      final text = buf.toString();
+
+      if (c.thumb.trim().isNotEmpty) {
+        try {
+          final uri = Uri.parse(c.thumb.trim());
+          final response = await http
+              .get(uri)
+              .timeout(const Duration(seconds: 10));
+          if (response.statusCode == 200 && response.bodyBytes.length < 5 * 1024 * 1024) {
+            final dir = await getTemporaryDirectory();
+            final safeId = c.id.replaceAll(RegExp(r'[^\w-]'), '_');
+            final file = File('${dir.path}/course_share_$safeId.jpg');
+            await file.writeAsBytes(response.bodyBytes, flush: true);
+            if (mounted) {
+              await Share.shareXFiles(
+                [XFile(file.path, mimeType: 'image/jpeg')],
+                text: text,
+              );
+            }
+            return;
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) await Share.share(text);
+    } catch (e) {
+      if (mounted) {
+        AppToast.show(
+          context,
+          'Could not share. Try again.',
+          type: AppToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 
   Widget _starsRow(int rating) {
@@ -6172,12 +6257,65 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              course.title.isEmpty ? 'Course' : course.title,
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w900,
-                                color: Brand.primaryBlue,
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    course.title.isEmpty ? 'Course' : course.title,
+                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      color: Brand.primaryBlue,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 2,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                AnimatedBuilder(
+                                  animation: _sharePulseAnim,
+                                  builder: (context, child) {
+                                    return Transform.scale(
+                                      scale: _sharePulseAnim.value,
+                                      child: child,
+                                    );
+                                  },
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(20),
+                                      onTap: _sharing ? null : _shareCourse,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                            colors: [Brand.primaryBlue, Brand.accentCyan],
+                                          ),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              _sharing ? Icons.hourglass_top_rounded : Icons.ios_share_rounded,
+                                              size: 16,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              _sharing ? '...' : 'Share',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 12),
                             _hero(),
