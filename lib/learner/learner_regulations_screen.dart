@@ -6,7 +6,6 @@ import 'package:firebase_database/firebase_database.dart';
 import '../shared/app_theme.dart';
 import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
-import '../shared/responsive_layout.dart';
 import '../shared/watermark_background.dart';
 
 class LearnerRegulationsScreen extends StatefulWidget {
@@ -222,11 +221,6 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
   @override
   Widget build(BuildContext context) {
     final p = palette;
-    final desktopWorkspace = AppResponsive.isWebDesktop(
-      context,
-      minWidth: 1180,
-    );
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -276,90 +270,15 @@ class _LearnerRegulationsScreenState extends State<LearnerRegulationsScreen> {
                       message: 'لا توجد قوانين متاحة حاليًا.',
                       icon: Icons.info_rounded,
                     )
-                  : RefreshIndicator(
-                      color: p.primary,
-                      onRefresh: _loadAll,
-                      child: desktopWorkspace
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                SizedBox(
-                                  width: 300,
-                                  child: ListView(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      16,
-                                      16,
-                                      8,
-                                      20,
-                                    ),
-                                    children: [
-                                      _InfoBox(
-                                        palette: p,
-                                        title: 'القوانين',
-                                        message:
-                                            'استخدم اللوحة الواسعة لقراءة الأقسام ومراجعة التحديثات بدون تمدد المحتوى على كامل الشاشة.',
-                                        icon: Icons.menu_book_rounded,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(
-                                  child: ListView(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      8,
-                                      16,
-                                      16,
-                                      20,
-                                    ),
-                                    children: [
-                                      _RegSectionCarousel(
-                                        palette: p,
-                                        sections: _sections,
-                                        formatUpdatedAt: _formatUpdatedAt,
-                                        onTapSection: _openSectionSheet,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            )
-                          : ListView(
-                              padding: const EdgeInsets.fromLTRB(
-                                16,
-                                16,
-                                16,
-                                20,
-                              ),
-                              children: [
-                                _RegSectionCarousel(
-                                  palette: p,
-                                  sections: _sections,
-                                  formatUpdatedAt: _formatUpdatedAt,
-                                  onTapSection: _openSectionSheet,
-                                ),
-                              ],
-                            ),
+                  : _RegSectionCarousel(
+                      palette: p,
+                      sections: _sections,
+                      formatUpdatedAt: _formatUpdatedAt,
                     ),
             ),
           ),
         ),
       ),
-    );
-  }
-
-  void _openSectionSheet(_RegSection section) {
-    final p = palette;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        return _RegSectionSheet(
-          palette: p,
-          section: section,
-          updatedAtLabel: _formatUpdatedAt(section.updatedAt),
-        );
-      },
     );
   }
 }
@@ -369,13 +288,11 @@ class _RegSectionCarousel extends StatefulWidget {
     required this.palette,
     required this.sections,
     required this.formatUpdatedAt,
-    required this.onTapSection,
   });
 
   final _RegPalette palette;
   final List<_RegSection> sections;
   final String Function(int ms) formatUpdatedAt;
-  final void Function(_RegSection section) onTapSection;
 
   @override
   State<_RegSectionCarousel> createState() => _RegSectionCarouselState();
@@ -414,51 +331,21 @@ class _RegSectionCarouselState extends State<_RegSectionCarousel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'اسحب لاختيار القسم',
-          style: TextStyle(
-            color: p.text.withValues(alpha: 0.7),
-            fontWeight: FontWeight.w800,
-            fontSize: 12,
+        Expanded(
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: sections.length,
+            itemBuilder: (context, i) {
+              final section = sections[i];
+              return _RegSectionPage(
+                palette: p,
+                section: section,
+                updatedAtLabel: widget.formatUpdatedAt(section.updatedAt),
+              );
+            },
           ),
         ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.center,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 940),
-            child: SizedBox(
-              height: 288,
-              child: PageView.builder(
-                controller: _controller,
-                itemCount: sections.length,
-                itemBuilder: (context, i) {
-                  final section = sections[i];
-                  final delta = (_page - i).abs().clamp(0.0, 1.0);
-                  final scale = 1 - (delta * 0.04);
-                  final active = delta < 0.45;
-
-                  return Transform.translate(
-                    offset: Offset(0, active ? -8 : 0),
-                    child: Transform.scale(
-                      scale: scale,
-                      child: _RegCategoryCard(
-                        palette: p,
-                        section: section,
-                        updatedAtLabel: widget.formatUpdatedAt(
-                          section.updatedAt,
-                        ),
-                        active: active,
-                        onTap: () => widget.onTapSection(section),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Center(
           child: Wrap(
             spacing: 7,
@@ -478,284 +365,90 @@ class _RegSectionCarouselState extends State<_RegSectionCarousel> {
             }),
           ),
         ),
+        const SizedBox(height: 12),
       ],
     );
   }
 }
 
-class _RegCategoryCard extends StatelessWidget {
-  const _RegCategoryCard({
+class _RegSectionPage extends StatelessWidget {
+  const _RegSectionPage({
     required this.palette,
     required this.section,
     required this.updatedAtLabel,
-    required this.active,
-    required this.onTap,
   });
 
   final _RegPalette palette;
   final _RegSection section;
   final String updatedAtLabel;
-  final bool active;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 220),
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                palette.cardBg,
-                active
-                    ? palette.soft.withValues(alpha: 0.65)
-                    : palette.cardBg.withValues(alpha: 0.98),
-              ],
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: active
-                  ? palette.accent.withValues(alpha: 0.45)
-                  : palette.border.withValues(alpha: 0.85),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: active ? 0.12 : 0.05),
-                blurRadius: active ? 26 : 14,
-                spreadRadius: active ? 1 : 0,
-                offset: Offset(0, active ? 14 : 8),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: palette.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(
-                      Icons.category_rounded,
-                      color: palette.primary,
-                      size: 28,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: palette.accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '${section.items.length} بنود',
-                      style: TextStyle(
-                        color: palette.accent,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Text(
-                section.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: palette.primary,
-                  fontSize: 22,
-                  height: 1.25,
-                ),
-              ),
-              const Spacer(),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      updatedAtLabel.isEmpty
-                          ? 'بدون تاريخ تحديث'
-                          : updatedAtLabel,
-                      style: TextStyle(
-                        color: palette.text.withValues(alpha: 0.6),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_back_rounded,
-                    color: palette.primary,
-                    size: 22,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RegSectionSheet extends StatelessWidget {
-  const _RegSectionSheet({
-    required this.palette,
-    required this.section,
-    required this.updatedAtLabel,
-  });
-
-  final _RegPalette palette;
-  final _RegSection section;
-  final String updatedAtLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
-
-    return Directionality(
-      textDirection: TextDirection.rtl,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.9,
-        ),
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: palette.appBg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          color: palette.cardBg,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: palette.border.withValues(alpha: 0.85)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 10 + bottomPad),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              section.title,
+              style: TextStyle(
+                color: palette.primary,
+                fontWeight: FontWeight.w900,
+                fontSize: 24,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Center(
-                  child: Container(
-                    width: 48,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: palette.border,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _SectionPopupHeader(
+                _MiniChip(
                   palette: palette,
-                  title: section.title,
-                  count: section.items.length,
-                  updatedAtLabel: updatedAtLabel,
+                  label: '${section.items.length} بنود',
+                  icon: Icons.format_list_bulleted_rounded,
                 ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: section.items.length,
-                    itemBuilder: (context, i) {
-                      return _PopupRegulationCard(
-                        palette: palette,
-                        item: section.items[i],
-                        index: i,
-                      );
-                    },
+                if (updatedAtLabel.isNotEmpty)
+                  _MiniChip(
+                    palette: palette,
+                    label: updatedAtLabel,
+                    icon: Icons.update_rounded,
                   ),
-                ),
               ],
             ),
-          ),
+            const SizedBox(height: 14),
+            Divider(color: palette.border.withValues(alpha: 0.9), height: 1),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: section.items.length,
+                itemBuilder: (context, i) {
+                  return _PopupRegulationCard(
+                    palette: palette,
+                    item: section.items[i],
+                    index: i,
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-      ),
-    );
-  }
-}
-
-class _SectionPopupHeader extends StatelessWidget {
-  const _SectionPopupHeader({
-    required this.palette,
-    required this.title,
-    required this.count,
-    required this.updatedAtLabel,
-  });
-
-  final _RegPalette palette;
-  final String title;
-  final int count;
-  final String updatedAtLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: palette.cardBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: palette.border.withValues(alpha: 0.85)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: palette.soft,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(Icons.rule_rounded, color: palette.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: palette.primary,
-                    fontSize: 16,
-                    height: 1.15,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _MiniChip(
-                      palette: palette,
-                      label: '$count بند',
-                      icon: Icons.format_list_bulleted_rounded,
-                    ),
-                    if (updatedAtLabel.isNotEmpty)
-                      _MiniChip(
-                        palette: palette,
-                        label: updatedAtLabel,
-                        icon: Icons.update_rounded,
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

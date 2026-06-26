@@ -2746,6 +2746,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
         out.add(
           _CourseProgressItem(
             courseKey: key,
+            courseId: meta.courseId,
             courseData: Map<String, dynamic>.from(course),
             title: title.isEmpty ? 'Course' : title,
             code: code,
@@ -2969,8 +2970,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
                       );
                     }
 
-                    final hasJoinCards = items.any((e) => e.isPrivateOnline);
-
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         final textScale = MediaQuery.textScalerOf(
@@ -2985,42 +2984,50 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
                             ? 3
                             : 2;
 
-                          final hasRecorded = items.any(
-                            (e) => e.variantKey == 'recorded' && e.completed > 0,
-                          );
+                        const gap = 10.0;
+                        final cardWidth = useSingle
+                            ? constraints.maxWidth
+                            : (constraints.maxWidth -
+                                      gap * (crossAxisCount - 1)) /
+                                  crossAxisCount;
 
-                          return GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: items.length,
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                childAspectRatio: hasRecorded
-                                    ? (useSingle ? 0.78 : 0.72)
-                                    : (hasJoinCards
-                                        ? (useSingle ? 0.92 : 0.86)
-                                        : 1),
-                                mainAxisSpacing: 10,
-                                crossAxisSpacing: 10,
+                        return Wrap(
+                          spacing: gap,
+                          runSpacing: gap,
+                          children: [
+                            for (final item in items)
+                              SizedBox(
+                                width: cardWidth,
+                                child: _ProgressCard(
+                                  palette: p,
+                                  item: item,
+                                  examMode: _examMode,
+                                  onOpenBooking: () {
+                                    final courseId = item.courseId.trim();
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => LearnerBookingScreen(
+                                          courseId: courseId.isEmpty
+                                              ? null
+                                              : courseId,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            LearnerCourseDetailScreen(
+                                              courseKey: item.courseKey,
+                                              courseData: item.courseData,
+                                            ),
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
-                          itemBuilder: (context, i) {
-                            return _ProgressCard(
-                              palette: p,
-                              item: items[i],
-                              examMode: _examMode,
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => LearnerCourseDetailScreen(
-                                      courseKey: items[i].courseKey,
-                                      courseData: items[i].courseData,
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          },
+                          ],
                         );
                       },
                     );
@@ -3102,6 +3109,7 @@ class _CourseMeta {
 
 class _CourseProgressItem {
   final String courseKey;
+  final String courseId;
   final Map<String, dynamic> courseData;
   final String title;
   final String code;
@@ -3122,6 +3130,7 @@ class _CourseProgressItem {
 
   const _CourseProgressItem({
     required this.courseKey,
+    required this.courseId,
     required this.courseData,
     required this.title,
     required this.code,
@@ -3330,12 +3339,14 @@ class _ProgressCard extends StatelessWidget {
     required this.palette,
     required this.item,
     required this.examMode,
+    required this.onOpenBooking,
     required this.onTap,
   });
 
   final _HomePalette palette;
   final _CourseProgressItem item;
   final bool examMode;
+  final VoidCallback onOpenBooking;
   final VoidCallback onTap;
 
   bool _canJoinNow(int startMs) {
@@ -3488,15 +3499,17 @@ class _ProgressCard extends StatelessWidget {
   }
 
   String _schedulePreviewText(_CourseProgressItem item) {
+    switch (item.variantKey) {
+      case 'recorded':
+      case 'flexible':
+      case 'online':
+        return '';
+    }
+
     final line = item.scheduleLine.trim();
     if (line.isNotEmpty) return line;
 
     switch (item.variantKey) {
-      case 'recorded':
-        return 'Schedule: On-demand';
-      case 'flexible':
-      case 'online':
-        return 'Schedule: Flexible booking';
       case 'private':
       case 'live':
       case 'inclass':
@@ -3506,6 +3519,43 @@ class _ProgressCard extends StatelessWidget {
         return 'Schedule: not set';
       default:
         return 'Schedule: -';
+    }
+  }
+
+  List<String> _schedulePreviewLines(_CourseProgressItem item) {
+    final cleaned = _schedulePreviewText(
+      item,
+    ).replaceFirst(RegExp(r'^Schedule:\s*', caseSensitive: false), '').trim();
+    if (cleaned.isEmpty ||
+        cleaned == '-' ||
+        cleaned.toLowerCase() == 'not set') {
+      return const ['Schedule not set'];
+    }
+
+    final parts = cleaned
+        .split('•')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .take(2)
+        .toList();
+    return parts.isEmpty ? const ['Schedule not set'] : parts;
+  }
+
+  bool get _isFlexibleCard {
+    return item.variantKey == 'flexible' || item.variantKey == 'online';
+  }
+
+  bool get _isScheduledCard {
+    switch (item.variantKey) {
+      case 'private':
+      case 'live':
+      case 'inclass':
+      case 'in_class':
+      case 'in-class':
+      case 'in class':
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -3598,7 +3648,7 @@ class _ProgressCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  SizedBox(height: compact ? 8 : 10),
                   Row(
                     children: [
                       Container(
@@ -3664,37 +3714,68 @@ class _ProgressCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              item.classType,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: hasProgress
-                                    ? Colors.white.withValues(alpha: 0.90)
-                                    : palette.text.withValues(alpha: 0.70),
-                                fontWeight: FontWeight.w700,
-                                fontSize: compact ? 9 : 10,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _schedulePreviewText(item),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: hasProgress
-                                    ? Colors.white.withValues(alpha: 0.82)
-                                    : palette.text.withValues(alpha: 0.64),
-                                fontWeight: FontWeight.w700,
-                                fontSize: compact ? 8 : 9,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: isRecorded
+                            ? const SizedBox.shrink()
+                            : _isFlexibleCard
+                            ? Align(
+                                alignment: Alignment.centerLeft,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: Size(0, compact ? 36 : 40),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: compact ? 10 : 12,
+                                      vertical: 8,
+                                    ),
+                                    backgroundColor: palette.accent,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  onPressed: onOpenBooking,
+                                  icon: Icon(
+                                    LearnerIcons.booking,
+                                    size: compact ? 14 : 16,
+                                  ),
+                                  label: Text(
+                                    'Book class',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: compact ? 10 : 11,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : _isScheduledCard
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (final line in _schedulePreviewLines(
+                                    item,
+                                  ))
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 2),
+                                      child: Text(
+                                        line,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: hasProgress
+                                              ? Colors.white.withValues(
+                                                  alpha: 0.88,
+                                                )
+                                              : palette.text.withValues(
+                                                  alpha: 0.70,
+                                                ),
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: compact ? 9 : 10,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              )
+                            : const SizedBox.shrink(),
                       ),
                     ],
                   ),

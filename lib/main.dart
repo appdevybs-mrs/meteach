@@ -15,7 +15,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'enroll_screen.dart';
@@ -162,6 +161,9 @@ class YourBridgeSchoolApp extends StatelessWidget {
     return AnimatedBuilder(
       animation: appThemeController,
       builder: (context, _) {
+        const appContent = ForceUpdateGate(
+          child: AuthGate(signedOutHome: HomeShell()),
+        );
         return MaterialApp(
           navigatorKey: appNavigatorKey,
           scaffoldMessengerKey: messengerKey,
@@ -180,11 +182,9 @@ class YourBridgeSchoolApp extends StatelessWidget {
               ),
             ),
           ),
-          home: AppStartupGate(
-            child: ForceUpdateGate(
-              child: const AuthGate(signedOutHome: HomeShell()),
-            ),
-          ),
+          home: AppFlavor.isAdmin
+              ? appContent
+              : const AppStartupGate(child: appContent),
         );
       },
     );
@@ -207,13 +207,27 @@ class _AppStartupGateState extends State<AppStartupGate> {
   SplashConfig _splashConfig = SplashConfig.empty;
   VideoPlayerController? _videoController;
   bool _videoInitialized = false;
-  bool _videoInitInProgress = false;
+  Timer? _splashTimer;
 
   @override
   void initState() {
     super.initState();
-    _loadCachedConfig();
-    _boot();
+    _splashTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (!_ready && mounted) _skip();
+    });
+    unawaited(_start());
+  }
+
+  Future<void> _start() async {
+    await _resetSplashConfig();
+    if (!mounted || _skipping) return;
+    await _boot();
+  }
+
+  Future<void> _resetSplashConfig() async {
+    await SplashConfig.clearPrefs();
+    if (!mounted) return;
+    setState(() => _splashConfig = SplashConfig.empty);
   }
 
   void _skip() {
@@ -226,15 +240,6 @@ class _AppStartupGateState extends State<AppStartupGate> {
     setState(() => _ready = true);
   }
 
-  Future<void> _loadCachedConfig() async {
-    final cached = await SplashConfig.loadFromPrefs();
-    if (!mounted) return;
-    setState(() => _splashConfig = cached);
-    if (cached.isVideo && cached.url.isNotEmpty) {
-      await _initVideo(cached.url, cachedFile: cached.hasCachedFile ? cached.cachedFilePath : null);
-    }
-  }
-
   Future<void> _boot() async {
     Future<void> step(Future<void> Function() fn, double progress) async {
       await fn();
@@ -242,37 +247,12 @@ class _AppStartupGateState extends State<AppStartupGate> {
       setState(() => _progress = progress);
     }
 
-    await step(() async {
-      final fresh = await SplashConfigService.fetch();
-      if (!mounted) return;
-      if (fresh.url != _splashConfig.url) {
-        _videoController?.dispose();
-        _videoController = null;
-        _videoInitialized = false;
-        setState(() => _splashConfig = fresh);
-        if (fresh.isVideo && fresh.url.isNotEmpty) {
-          await _downloadAndCacheVideo(fresh);
-        }
-      }
-      await fresh.saveToPrefs();
-    }, 0.1);
+    await step(_resetSplashConfig, 0.1);
 
-    await step(
-      () async => Future<void>.delayed(const Duration(milliseconds: 120)),
-      0.2,
-    );
     await step(() async => appThemeController.loadSavedTheme(), 0.45);
     await step(() async {
       await PackageInfo.fromPlatform();
     }, 0.7);
-    await step(
-      () async => Future<void>.delayed(const Duration(milliseconds: 220)),
-      0.9,
-    );
-    await step(
-      () async => Future<void>.delayed(const Duration(milliseconds: 180)),
-      1.0,
-    );
 
     if (_skipping) return;
 
@@ -287,7 +267,10 @@ class _AppStartupGateState extends State<AppStartupGate> {
           FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
         }
       }
-      if (mounted && _videoController != null && _videoInitialized && !_skipping) {
+      if (mounted &&
+          _videoController != null &&
+          _videoInitialized &&
+          !_skipping) {
         final completer = Completer<void>();
         void listener() {
           if (!mounted || _skipping) {
@@ -301,6 +284,7 @@ class _AppStartupGateState extends State<AppStartupGate> {
             if (!completer.isCompleted) completer.complete();
           }
         }
+
         _videoController!.addListener(listener);
         try {
           await completer.future.timeout(const Duration(seconds: 15));
@@ -318,57 +302,10 @@ class _AppStartupGateState extends State<AppStartupGate> {
     setState(() => _ready = true);
   }
 
-  Future<void> _downloadAndCacheVideo(SplashConfig config) async {
-    try {
-      final dir = await getApplicationDocumentsDirectory();
-      final ext = config.url.split('.').last.split('?').first;
-      final filePath = '${dir.path}/splash_video.$ext';
-      final file = File(filePath);
-      if (file.existsSync()) await file.delete();
-      final response = await http.get(Uri.parse(config.url));
-      if (response.statusCode == 200) {
-        await file.writeAsBytes(response.bodyBytes);
-        final cached = config.copyWithCachedFile(filePath);
-        setState(() => _splashConfig = cached);
-        await _initVideo(config.url, cachedFile: filePath);
-      }
-    } catch (e) {
-      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
-    }
-  }
-
-  Future<void> _initVideo(String url, {String? cachedFile}) async {
-    if (_videoInitInProgress) return;
-    _videoInitInProgress = true;
-    try {
-      _videoController?.dispose();
-      _videoController = null;
-      _videoInitialized = false;
-      final VideoPlayerController controller;
-      if (cachedFile != null && File(cachedFile).existsSync()) {
-        controller = VideoPlayerController.file(File(cachedFile));
-      } else {
-        controller = VideoPlayerController.networkUrl(Uri.parse(url));
-      }
-      _videoController = controller;
-      try {
-        await controller.initialize();
-        if (!mounted) return;
-        if (controller == _videoController) {
-          setState(() => _videoInitialized = true);
-          controller.play();
-        }
-      } catch (e) {
-        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
-      }
-    } finally {
-      _videoInitInProgress = false;
-    }
-  }
-
   @override
   void dispose() {
     _videoController?.dispose();
+    _splashTimer?.cancel();
     super.dispose();
   }
 
@@ -380,13 +317,15 @@ class _AppStartupGateState extends State<AppStartupGate> {
         AnimatedOpacity(
           opacity: _ready ? 0.0 : 1.0,
           duration: const Duration(milliseconds: 350),
-          child: _ready ? const SizedBox.shrink() : _ProgressiveLogoSplash(
-            progress: _progress,
-            splashConfig: _splashConfig,
-            videoController: _videoController,
-            videoInitialized: _videoInitialized,
-            onSkip: _skip,
-          ),
+          child: _ready
+              ? const SizedBox.shrink()
+              : _ProgressiveLogoSplash(
+                  progress: _progress,
+                  splashConfig: _splashConfig,
+                  videoController: _videoController,
+                  videoInitialized: _videoInitialized,
+                  onSkip: _skip,
+                ),
         ),
       ],
     );
@@ -425,46 +364,27 @@ class _ProgressiveLogoSplash extends StatelessWidget {
         ),
       );
     } else if (splashConfig.isVideo) {
-      mediaContent = Stack(
-        fit: StackFit.expand,
-        children: [
-          if (splashConfig.thumbnailUrl.isNotEmpty)
-            CachedNetworkImage(
+      mediaContent = splashConfig.thumbnailUrl.isNotEmpty
+          ? CachedNetworkImage(
               imageUrl: splashConfig.thumbnailUrl,
               fit: BoxFit.cover,
               errorWidget: (_, _, _) => Container(color: Colors.black),
             )
-          else
-            Container(color: Colors.black),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: _logoBox(p, showReveal: false),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    color: Colors.white.withValues(alpha: 0.7),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
+          : Container(color: Colors.black);
     } else if (splashConfig.isImage) {
-      mediaContent = CachedNetworkImage(
-        imageUrl: splashConfig.url,
-        fit: BoxFit.cover,
-        placeholder: (_, _) => Container(color: Colors.black),
-        errorWidget: (_, _, _) => Center(child: _logoBox(p)),
-      );
+      final cachedFile = File(splashConfig.cachedFilePath);
+      mediaContent = splashConfig.hasCachedFile && cachedFile.existsSync()
+          ? Image.file(
+              cachedFile,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(color: Colors.black),
+            )
+          : CachedNetworkImage(
+              imageUrl: splashConfig.url,
+              fit: BoxFit.cover,
+              placeholder: (_, _) => Container(color: Colors.black),
+              errorWidget: (_, _, _) => Container(color: Colors.black),
+            );
     } else {
       mediaContent = Center(
         child: Padding(
@@ -491,7 +411,10 @@ class _ProgressiveLogoSplash extends StatelessWidget {
                   onPressed: onSkip,
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.white.withValues(alpha: 0.7),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     textStyle: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -513,9 +436,7 @@ class _ProgressiveLogoSplash extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: showReveal ? Brand.uiBorder : Colors.white24,
-        ),
+        border: Border.all(color: showReveal ? Brand.uiBorder : Colors.white24),
         boxShadow: showReveal
             ? [
                 BoxShadow(
@@ -1644,7 +1565,7 @@ class _JoinOnlineCircleEntryButtonState
           ),
         ),
       );
-  }
+    }
 
     Widget liveTeacherImage(String photoUrl) {
       final liveUrl = photoUrl.trim();

@@ -30,12 +30,12 @@ class SplashConfig {
   bool get hasCachedFile => cachedFilePath.isNotEmpty;
 
   SplashConfig copyWithCachedFile(String path) => SplashConfig(
-        type: type,
-        url: url,
-        thumbnailUrl: thumbnailUrl,
-        updatedAt: updatedAt,
-        cachedFilePath: path,
-      );
+    type: type,
+    url: url,
+    thumbnailUrl: thumbnailUrl,
+    updatedAt: updatedAt,
+    cachedFilePath: path,
+  );
 
   factory SplashConfig.fromSnapshot(DataSnapshot? snap) {
     if (snap?.value == null || snap!.value is! Map) return SplashConfig.empty;
@@ -44,7 +44,7 @@ class SplashConfig {
       type: (data['type'] as String?)?.trim().toLowerCase() ?? 'none',
       url: (data['url'] as String?)?.trim() ?? '',
       thumbnailUrl: (data['thumbnailUrl'] as String?)?.trim() ?? '',
-      updatedAt: ((data['updatedAt'] as num?)?.toInt()) ?? 0,
+      updatedAt: (data['updatedAt'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -88,11 +88,15 @@ class SplashConfigService {
   static const _rtdbPath = 'appConfig/splashScreen';
 
   static Future<SplashConfig> fetch() async {
+    return await fetchOrNull() ?? SplashConfig.empty;
+  }
+
+  static Future<SplashConfig?> fetchOrNull() async {
     try {
       final snap = await FirebaseDatabase.instance.ref(_rtdbPath).get();
       return SplashConfig.fromSnapshot(snap);
     } catch (_) {
-      return SplashConfig.empty;
+      return null;
     }
   }
 
