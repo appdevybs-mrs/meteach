@@ -1780,7 +1780,7 @@ class _JoinOnlineCircleEntryButtonState
       margin: EdgeInsets.only(top: active ? 4 : 14, bottom: active ? 4 : 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: active
               ? Brand.primaryBlue.withValues(alpha: 0.35)
@@ -1796,7 +1796,7 @@ class _JoinOnlineCircleEntryButtonState
         ],
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         onTap: () => _showCircleDetails(circle),
         child: Column(
           children: [
@@ -4327,7 +4327,7 @@ class _CoursesByCategory extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: Brand.uiBorder),
                   ),
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
@@ -5782,7 +5782,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                 ? [tone, tone2]
                 : [tone.withValues(alpha: 0.18), tone2.withValues(alpha: 0.10)],
           ),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           border: Border.all(
             color: selected ? Colors.white : tone.withValues(alpha: 0.35),
             width: selected ? 2.2 : 1,
@@ -5801,7 +5801,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
             Icon(
               option.icon(),
               color: selected ? Colors.white : tone,
-              size: 20,
+              size: 22,
             ),
             const SizedBox(height: 5),
             Directionality(
@@ -5813,7 +5813,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                 style: TextStyle(
                   color: selected ? Colors.white : Brand.primaryBlue,
                   fontWeight: FontWeight.w900,
-                  fontSize: 16,
+                  fontSize: 18,
                 ),
               ),
             ),
@@ -6289,7 +6289,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                                           gradient: const LinearGradient(
                                             colors: [Brand.primaryBlue, Brand.accentCyan],
                                           ),
-                                          borderRadius: BorderRadius.circular(20),
+borderRadius: BorderRadius.circular(20),
                                         ),
                                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                         child: Row(
@@ -6349,7 +6349,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                                       physics: const NeverScrollableScrollPhysics(),
                                       mainAxisSpacing: 5,
                                       crossAxisSpacing: 5,
-                                      childAspectRatio: 1.5,
+                                      childAspectRatio: 1.65,
                                       children: [
                                         for (final option in deliveryOptions)
                                           _deliveryCard(
