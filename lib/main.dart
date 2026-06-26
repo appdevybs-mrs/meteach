@@ -16,6 +16,7 @@ import 'dart:math' as math;
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'enroll_screen.dart';
 import 'course_reviews_screen.dart';
@@ -207,27 +208,46 @@ class _AppStartupGateState extends State<AppStartupGate> {
   SplashConfig _splashConfig = SplashConfig.empty;
   VideoPlayerController? _videoController;
   bool _videoInitialized = false;
+  bool _videoInitInProgress = false;
   Timer? _splashTimer;
+
+  static const _lastFetchKey = 'splash_last_fetch_at';
 
   @override
   void initState() {
     super.initState();
-    _splashTimer = Timer(const Duration(milliseconds: 2500), () {
-      if (!_ready && mounted) _skip();
-    });
     unawaited(_start());
   }
 
   Future<void> _start() async {
-    await _resetSplashConfig();
+    await _loadCachedConfig();
     if (!mounted || _skipping) return;
+    if (!_videoInitialized) _startSplashTimer();
     await _boot();
   }
 
-  Future<void> _resetSplashConfig() async {
-    await SplashConfig.clearPrefs();
+  void _startSplashTimer() {
+    _splashTimer?.cancel();
+    _splashTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (!_ready && mounted) _skip();
+    });
+  }
+
+  Future<void> _loadCachedConfig() async {
+    final cached = await SplashConfig.loadFromPrefs();
     if (!mounted) return;
-    setState(() => _splashConfig = SplashConfig.empty);
+    setState(() => _splashConfig = cached);
+    if (cached.isVideo && cached.url.isNotEmpty) {
+      if (cached.hasCachedFile && File(cached.cachedFilePath).existsSync()) {
+        await _initVideo(cached.url, cachedFile: cached.cachedFilePath);
+      } else {
+        unawaited(_downloadAndCacheVideo(cached, initializeAfterDownload: false));
+      }
+    } else if (cached.isImage && cached.url.isNotEmpty) {
+      if (!cached.hasCachedFile || !File(cached.cachedFilePath).existsSync()) {
+        unawaited(_cacheMediaFile(cached));
+      }
+    }
   }
 
   void _skip() {
@@ -247,7 +267,32 @@ class _AppStartupGateState extends State<AppStartupGate> {
       setState(() => _progress = progress);
     }
 
-    await step(_resetSplashConfig, 0.1);
+    await step(() async {
+      final prefs = await SharedPreferences.getInstance();
+      final lastFetch = prefs.getInt(_lastFetchKey) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (_splashConfig.url.isNotEmpty && (now - lastFetch) < 86400000) {
+        return;
+      }
+
+      final fresh = await SplashConfigService.fetchOrNull();
+      if (!mounted) return;
+      if (fresh == null) return;
+
+      if (fresh.url != _splashConfig.url) {
+        _videoController?.dispose();
+        _videoController = null;
+        _videoInitialized = false;
+        setState(() => _splashConfig = fresh);
+        if (fresh.isVideo && fresh.url.isNotEmpty) {
+          unawaited(_downloadAndCacheVideo(fresh, initializeAfterDownload: false));
+        } else if (fresh.isImage && fresh.url.isNotEmpty) {
+          await _cacheMediaFile(fresh);
+        }
+      }
+      await _splashConfig.saveToPrefs();
+      await prefs.setInt(_lastFetchKey, now);
+    }, 0.1);
 
     await step(() async => appThemeController.loadSavedTheme(), 0.45);
     await step(() async {
@@ -300,6 +345,91 @@ class _AppStartupGateState extends State<AppStartupGate> {
     _videoController = null;
     _videoInitialized = false;
     setState(() => _ready = true);
+  }
+
+  Future<void> _downloadAndCacheVideo(
+    SplashConfig config, {
+    bool initializeAfterDownload = true,
+  }) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final ext = config.url.split('.').last.split('?').first;
+      final filePath = '${dir.path}/splash_video.$ext';
+      final file = File(filePath);
+      if (file.existsSync()) await file.delete();
+      final response = await http.get(Uri.parse(config.url));
+      if (response.statusCode == 200) {
+        await file.writeAsBytes(response.bodyBytes);
+        final cached = config.copyWithCachedFile(filePath);
+        await cached.saveToPrefs();
+        if (!mounted || _skipping) {
+          _splashConfig = cached;
+          return;
+        }
+        if (!initializeAfterDownload) {
+          _splashConfig = cached;
+          return;
+        }
+        setState(() => _splashConfig = cached);
+        await _initVideo(config.url, cachedFile: filePath);
+      }
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
+  }
+
+  Future<void> _cacheMediaFile(SplashConfig config) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final ext = config.url.split('.').last.split('?').first;
+      final filePath = '${dir.path}/splash_media.$ext';
+      final file = File(filePath);
+      if (file.existsSync()) await file.delete();
+      final response = await http.get(Uri.parse(config.url));
+      if (response.statusCode == 200) {
+        await file.writeAsBytes(response.bodyBytes);
+        final cached = config.copyWithCachedFile(filePath);
+        await cached.saveToPrefs();
+        if (!mounted || _skipping) {
+          _splashConfig = cached;
+          return;
+        }
+        setState(() => _splashConfig = cached);
+        _splashTimer?.cancel();
+      }
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
+  }
+
+  Future<void> _initVideo(String url, {String? cachedFile}) async {
+    if (_videoInitInProgress) return;
+    _videoInitInProgress = true;
+    try {
+      _videoController?.dispose();
+      _videoController = null;
+      _videoInitialized = false;
+      final VideoPlayerController controller;
+      if (cachedFile != null && File(cachedFile).existsSync()) {
+        controller = VideoPlayerController.file(File(cachedFile));
+      } else {
+        controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      }
+      _videoController = controller;
+      try {
+        await controller.initialize();
+        if (!mounted) return;
+        if (controller == _videoController) {
+          setState(() => _videoInitialized = true);
+          _splashTimer?.cancel();
+          controller.play();
+        }
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+      }
+    } finally {
+      _videoInitInProgress = false;
+    }
   }
 
   @override
@@ -4870,9 +5000,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
   final promoC = TextEditingController();
 
   late final List<EnrollDeliveryOption> deliveryOptions;
-  late final PageController _deliveryPageController;
   String? selectedDeliveryKey;
-  int _currentDeliveryIndex = 0;
   String? _gender;
   String _privateStudyMode = 'online';
   bool saving = false;
@@ -4901,21 +5029,11 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
             orElse: () => deliveryOptions.first,
           );
       selectedDeliveryKey = firstSelectable?.key;
-      _currentDeliveryIndex = deliveryOptions.indexWhere(
-        (e) => e.key == selectedDeliveryKey,
-      );
-      if (_currentDeliveryIndex < 0) _currentDeliveryIndex = 0;
     }
-
-    _deliveryPageController = PageController(
-      viewportFraction: 0.82,
-      initialPage: _currentDeliveryIndex,
-    );
   }
 
   @override
   void dispose() {
-    _deliveryPageController.dispose();
     fullNameC.dispose();
     phoneC.dispose();
     dobC.dispose();
@@ -5390,6 +5508,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     required String label,
     required IconData icon,
     String? hint,
+    Color accentColor = Brand.accentCyan,
   }) {
     return InputDecoration(
       labelText: label,
@@ -5409,7 +5528,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Brand.accentCyan, width: 2),
+        borderSide: BorderSide(color: accentColor, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(16),
@@ -5546,21 +5665,14 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
         onTap: saving || !option.isSelectable
             ? null
             : () {
-                final index = deliveryOptions.indexOf(option);
                 setState(() {
-                  _currentDeliveryIndex = index;
                   selectedDeliveryKey = option.key;
                   _clearPromo();
                 });
-                _deliveryPageController.animateToPage(
-                  index,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                );
               },
         child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
-        margin: EdgeInsets.symmetric(horizontal: 6, vertical: selected ? 1 : 8),
+        margin: const EdgeInsets.all(2),
         padding: EdgeInsets.all(compact ? 10 : 12),
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -5589,7 +5701,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
             Icon(
               option.icon(),
               color: selected ? Colors.white : tone,
-              size: compact ? 22 : 24,
+              size: 20,
             ),
             const SizedBox(height: 8),
             Text(
@@ -5601,23 +5713,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                 fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(height: 2),
-            Directionality(
-              textDirection: TextDirection.rtl,
-              child: Text(
-                _deliveryArabicLabel(option),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: selected
-                      ? Colors.white.withValues(alpha: 0.92)
-                      : Brand.mainText.withValues(alpha: 0.72),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               decoration: BoxDecoration(
@@ -5851,7 +5947,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     );
   }
 
-  Widget _genderPill(String value, FormFieldState<String> field) {
+  Widget _genderPill(String value, FormFieldState<String> field, {Color accent = Brand.primaryBlue}) {
     final selected = field.value == value;
     final isMale = value == 'Male';
     final icon = isMale ? Icons.male_rounded : Icons.female_rounded;
@@ -5868,10 +5964,10 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 13),
           decoration: BoxDecoration(
-            color: selected ? Brand.primaryBlue : Colors.white,
+            color: selected ? accent : Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: selected ? Brand.primaryBlue : Brand.uiBorder,
+              color: selected ? accent : Brand.uiBorder,
             ),
           ),
           alignment: Alignment.center,
@@ -5879,12 +5975,12 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 20, color: selected ? Colors.white : Brand.primaryBlue),
+              Icon(icon, size: 20, color: selected ? Colors.white : accent),
               const SizedBox(width: 6),
               Text(
                 value,
                 style: TextStyle(
-                  color: selected ? Colors.white : Brand.primaryBlue,
+                  color: selected ? Colors.white : accent,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -5928,7 +6024,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
 
   String _moneyLabel(double value) => '${value.toStringAsFixed(0)} DA';
 
-  Widget _promoCodeBlock(EnrollDeliveryOption option) {
+  Widget _promoCodeBlock(EnrollDeliveryOption option, {Color accent = Brand.primaryBlue}) {
     final applied = _appliedPromo;
     final hasApplied = applied != null && !_promoError;
     return Container(
@@ -5952,6 +6048,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                     label: 'Promo code | كود الخصم',
                     icon: Icons.local_offer_rounded,
                     hint: 'CODE9',
+                    accentColor: accent,
                   ),
                   onChanged: (_) {
                     if (_appliedPromo == null && _promoMessage == null) return;
@@ -5967,7 +6064,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
               FilledButton(
                 onPressed: saving ? null : _confirmPromo,
                 style: FilledButton.styleFrom(
-                  backgroundColor: Brand.primaryBlue,
+                  backgroundColor: accent,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -6027,6 +6124,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
   @override
   Widget build(BuildContext context) {
     final selected = _selectedOption;
+    final accent = selected != null ? _deliveryTone(selected) : Brand.primaryBlue;
     final showPrivateMode = selected?.requiresStudyMode == true;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
@@ -6115,58 +6213,27 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                       ),
                                     )
                                   else ...[
-                                    SizedBox(
-                                      height: MediaQuery.sizeOf(context).width < 390
-                                          ? 132
-                                          : 144,
-                                      child: PageView.builder(
-                                        controller: _deliveryPageController,
-                                        itemCount: deliveryOptions.length,
-                                        onPageChanged: saving
-                                            ? null
-                                            : (index) {
-                                                setState(() {
-                                                  _currentDeliveryIndex = index;
-                                                  selectedDeliveryKey =
-                                                      deliveryOptions[index].key;
-                                                  _clearPromo();
-                                                });
-                                              },
-                                        itemBuilder: (_, i) => _deliveryCard(
-                                          deliveryOptions[i],
-                                          i == _currentDeliveryIndex,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: List.generate(deliveryOptions.length, (
-                                        i,
-                                      ) {
-                                        final active = i == _currentDeliveryIndex;
-                                        return AnimatedContainer(
-                                          duration: const Duration(milliseconds: 180),
-                                          width: active ? 20 : 8,
-                                          height: 8,
-                                          margin: const EdgeInsets.symmetric(
-                                            horizontal: 3,
+                                    GridView.count(
+                                      crossAxisCount: 2,
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      mainAxisSpacing: 8,
+                                      crossAxisSpacing: 8,
+                                      childAspectRatio: 1.1,
+                                      children: [
+                                        for (final option in deliveryOptions)
+                                          _deliveryCard(
+                                            option,
+                                            option.key == selectedDeliveryKey,
                                           ),
-                                          decoration: BoxDecoration(
-                                            color: active
-                                                ? Brand.primaryBlue
-                                                : Brand.uiBorder,
-                                            borderRadius: BorderRadius.circular(99),
-                                          ),
-                                        );
-                                      }),
+                                      ],
                                     ),
                                     const SizedBox(height: 12),
                                     if (selected != null) ...[
                                       _selectedDeliverySummary(selected),
                                       const SizedBox(height: 10),
                                       if (selected.promoCodes.isNotEmpty)
-                                        _promoCodeBlock(selected),
+                                        _promoCodeBlock(selected, accent: accent),
                                     ],
                                   ],
                                 ],
@@ -6191,6 +6258,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                       decoration: _inputDeco(
                                         label: 'Choose mode | اختر الطريقة',
                                         icon: Icons.place_rounded,
+                                        accentColor: accent,
                                       ),
                                       items: const [
                                         DropdownMenuItem(
@@ -6234,6 +6302,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                         label: 'Full name | الاسم الكامل',
                                         icon: Icons.person_rounded,
                                         hint: 'Your full name | الاسم الكامل',
+                                        accentColor: accent,
                                       ),
                                       validator: (v) {
                                         final s = (v ?? '').trim();
@@ -6258,6 +6327,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                         label: 'Phone number | رقم الهاتف',
                                         icon: Icons.phone_rounded,
                                         hint: 'e.g. 0550 00 00 00',
+                                        accentColor: accent,
                                       ),
                                       validator: (v) {
                                         final s = (v ?? '').trim();
@@ -6282,6 +6352,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                         label: 'Date of birth | تاريخ الميلاد',
                                         icon: Icons.cake_rounded,
                                         hint: 'YYYY-MM-DD',
+                                        accentColor: accent,
                                       ),
                                       validator: (v) {
                                         final s = (v ?? '').trim();
@@ -6340,9 +6411,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                             ),
                                             Row(
                                               children: [
-                                                _genderPill('Male', field),
+                                                _genderPill('Male', field, accent: accent),
                                                 const SizedBox(width: 10),
-                                                _genderPill('Female', field),
+                                                _genderPill('Female', field, accent: accent),
                                               ],
                                             ),
                                             if (field.errorText != null) ...[
@@ -6375,6 +6446,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                             'Email (optional) | البريد الإلكتروني (اختياري)',
                                         icon: Icons.alternate_email_rounded,
                                         hint: 'name@example.com',
+                                        accentColor: accent,
                                       ),
                                       validator: (v) {
                                         final s = (v ?? '').trim();
@@ -6520,11 +6592,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                             child: FilledButton.icon(
                               onPressed: saving ? null : _submit,
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF10B981),
+                                backgroundColor: accent,
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor: const Color(
-                                  0xFF10B981,
-                                ).withValues(alpha: 0.55),
+                                disabledBackgroundColor: accent.withValues(alpha: 0.55),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
