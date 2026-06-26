@@ -2621,6 +2621,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   LearnerStatus _status = LearnerStatus.active;
   bool _saving = false;
   int _currentStep = 0;
+  bool _step0Valid = false;
+  bool _step1Valid = false;
 
   Map<String, CityAssetMeta> _cityIndex = const {};
   List<CityOption> _countryCities = const [];
@@ -2685,6 +2687,9 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
 
     _status = initial?.status ?? LearnerStatus.active;
 
+    _addListeners();
+    _updateStepValidity();
+
     if (dobC.text.trim().isNotEmpty) {
       final parts = dobC.text.trim().split('-');
       if (parts.length == 3) {
@@ -2723,6 +2728,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
   @override
   void dispose() {
     _geocodeTimer?.cancel();
+    _removeListeners();
     firstNameC.dispose();
     lastNameC.dispose();
     dobC.dispose();
@@ -2741,6 +2747,49 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     if (!mounted) return;
 
     AppToast.show(context, humanizeUiMessage(msg), type: AppToastType.info);
+  }
+
+  void _addListeners() {
+    firstNameC.addListener(_updateStepValidity);
+    lastNameC.addListener(_updateStepValidity);
+    dobC.addListener(_updateStepValidity);
+    phone1C.addListener(_updateStepValidity);
+    emailC.addListener(_updateStepValidity);
+    passwordC.addListener(_updateStepValidity);
+  }
+
+  void _removeListeners() {
+    firstNameC.removeListener(_updateStepValidity);
+    lastNameC.removeListener(_updateStepValidity);
+    dobC.removeListener(_updateStepValidity);
+    phone1C.removeListener(_updateStepValidity);
+    emailC.removeListener(_updateStepValidity);
+    passwordC.removeListener(_updateStepValidity);
+  }
+
+  void _updateStepValidity() {
+    final isCreate = widget.mode == EditorMode.create;
+
+    final fn = firstNameC.text.trim();
+    final fnOk = fn.length >= 2 && RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(fn);
+    final ln = lastNameC.text.trim();
+    final lnOk = ln.length >= 2 && RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(ln);
+    final dob = dobC.text.trim();
+    final dobOk = dob.isNotEmpty && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(dob);
+    final genderOk = !isCreate || _gender != null;
+
+    final p1 = phone1C.text.trim();
+    final p1Digits = p1.replaceAll(RegExp(r'[^0-9]'), '');
+    final p1Ok = p1.isNotEmpty && p1Digits.length >= 9;
+    final email = emailC.text.trim();
+    final emailOk = email.isNotEmpty && email.contains('@');
+    final pass = passwordC.text.trim();
+    final passOk = !isCreate || (pass.isNotEmpty && pass.length >= 6);
+
+    setState(() {
+      _step0Valid = fnOk && lnOk && dobOk && genderOk;
+      _step1Valid = p1Ok && emailOk && passOk;
+    });
   }
 
   Future<void> _pickDob() async {
@@ -3361,24 +3410,34 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                 color: Theme.of(context).dividerColor,
               ),
               const SizedBox(width: 12),
-              OutlinedButton(
-                onPressed: _currentStep > 0
-                    ? () => setState(() => _currentStep--)
-                    : null,
-                child: const Text('Back'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Text(
-                    _saving
-                        ? 'Saving…'
-                        : (isEdit ? 'Save Changes' : 'Create Learner'),
+              if (_currentStep == 0)
+                FilledButton.icon(
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                  label: const Text('Next'),
+                  onPressed: _step0Valid && !_saving
+                      ? () => setState(() => _currentStep = 1)
+                      : null,
+                )
+              else ...[
+                OutlinedButton(
+                  onPressed: () => setState(() => _currentStep--),
+                  child: const Text('Back'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed: (!_step0Valid || !_step1Valid) || _saving
+                      ? null
+                      : _save,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Text(
+                      _saving
+                          ? 'Saving…'
+                          : (isEdit ? 'Save Changes' : 'Create Learner'),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -3409,140 +3468,121 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _TextField(
-                              controller: firstNameC,
-                              label: 'First name *',
-                              hint: 'First name',
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (t.isEmpty) return 'Required';
-                                if (t.length < 2) return 'Too short';
-                                if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
-                                    .hasMatch(t)) {
-                                  return 'Invalid characters';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _TextField(
-                              controller: lastNameC,
-                              label: 'Last name *',
-                              hint: 'Last name',
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (t.isEmpty) return 'Required';
-                                if (t.length < 2) return 'Too short';
-                                if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
-                                    .hasMatch(t)) {
-                                  return 'Invalid characters';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                        ],
+                      _TextField(
+                        controller: firstNameC,
+                        label: 'First name *',
+                        hint: 'First name',
+                        prefixIcon: const Icon(Icons.person_outline_rounded),
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return 'Required';
+                          if (t.length < 2) return 'Too short';
+                          if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
+                              .hasMatch(t)) {
+                            return 'Invalid characters';
+                          }
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: dobC,
-                              readOnly: true,
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (t.isEmpty) return 'Required';
-                                if (!RegExp(r'^\d{4}-\d{2}-\d{2}$')
-                                    .hasMatch(t)) {
-                                  return 'Use YYYY-MM-DD';
-                                }
-                                return null;
-                              },
-                              onTap: _pickDob,
-                              decoration: const InputDecoration(
-                                labelText: 'Date of birth',
-                                hintText: 'Tap to pick',
-                                prefixIcon:
-                                    Icon(Icons.calendar_month_rounded),
+                      _TextField(
+                        controller: lastNameC,
+                        label: 'Last name *',
+                        hint: 'Last name',
+                        prefixIcon: const Icon(Icons.badge_outlined),
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return 'Required';
+                          if (t.length < 2) return 'Too short';
+                          if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
+                              .hasMatch(t)) {
+                            return 'Invalid characters';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: dobC,
+                        readOnly: true,
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return 'Required';
+                          if (!RegExp(r'^\d{4}-\d{2}-\d{2}$')
+                              .hasMatch(t)) {
+                            return 'Use YYYY-MM-DD';
+                          }
+                          return null;
+                        },
+                        onTap: _pickDob,
+                        decoration: const InputDecoration(
+                          labelText: 'Date of birth',
+                          hintText: 'Tap to pick',
+                          prefixIcon:
+                              Icon(Icons.calendar_month_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      DropdownButtonFormField<LearnerGender>(
+                        initialValue: _gender,
+                        decoration: const InputDecoration(
+                          labelText: 'Gender',
+                          hintText: 'Select',
+                          prefixIcon: Icon(Icons.wc_rounded),
+                        ),
+                        items: LearnerGender.values
+                            .map(
+                              (g) => DropdownMenuItem(
+                                value: g,
+                                child: Text(g.value),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<LearnerGender>(
-                              initialValue: _gender,
-                              decoration: const InputDecoration(
-                                labelText: 'Gender',
-                                hintText: 'Select',
-                                prefixIcon: Icon(Icons.wc_rounded),
-                              ),
-                              items: LearnerGender.values
-                                  .map(
-                                    (g) => DropdownMenuItem(
-                                      value: g,
-                                      child: Text(g.value),
-                                    ),
+                            )
+                            .toList(),
+                        validator: (v) {
+                          if (!isEdit && v == null) return 'Required';
+                          return null;
+                        },
+                        onChanged: (v) {
+                          setState(() => _gender = v);
+                          _updateStepValidity();
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      GestureDetector(
+                        onLongPress: () {
+                          setState(() => _serialUnlocked = true);
+                          _toast(
+                              'Serial unlocked (you can edit it now).');
+                        },
+                        child: TextFormField(
+                          controller: serialC,
+                          readOnly: !_serialUnlocked,
+                          decoration: InputDecoration(
+                            labelText: 'Serial number',
+                            hintText: '🎓-000001',
+                            prefixIcon: const Icon(
+                                Icons.confirmation_number_rounded),
+                            suffixIcon: _serialUnlocked
+                                ? IconButton(
+                                    tooltip: 'Lock',
+                                    icon: const Icon(
+                                        Icons.lock_open_rounded),
+                                    onPressed: () {
+                                      setState(() =>
+                                          _serialUnlocked = false);
+                                      _toast('Serial locked ✅');
+                                    },
                                   )
-                                  .toList(),
-                              validator: (v) {
-                                if (!isEdit && v == null) return 'Required';
-                                return null;
-                              },
-                              onChanged: (v) =>
-                                  setState(() => _gender = v),
-                            ),
+                                : const Icon(Icons.lock_rounded),
                           ),
-                        ],
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onLongPress: () {
-                                setState(() => _serialUnlocked = true);
-                                _toast(
-                                    'Serial unlocked (you can edit it now).');
-                              },
-                              child: TextFormField(
-                                controller: serialC,
-                                readOnly: !_serialUnlocked,
-                                decoration: InputDecoration(
-                                  labelText: 'Serial number',
-                                  hintText: '🎓-000001',
-                                  prefixIcon: const Icon(
-                                      Icons.confirmation_number_rounded),
-                                  suffixIcon: _serialUnlocked
-                                      ? IconButton(
-                                          tooltip: 'Lock',
-                                          icon: const Icon(
-                                              Icons.lock_open_rounded),
-                                          onPressed: () {
-                                            setState(() =>
-                                                _serialUnlocked = false);
-                                            _toast('Serial locked ✅');
-                                          },
-                                        )
-                                      : const Icon(Icons.lock_rounded),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _TextField(
-                              controller: nationalIdC,
-                              label: 'National ID',
-                              hint: 'Optional',
-                            ),
-                          ),
-                        ],
+                      _TextField(
+                        controller: nationalIdC,
+                        label: 'National ID',
+                        hint: 'Optional',
+                        prefixIcon: const Icon(Icons.credit_card_rounded),
                       ),
                     ],
                   ),
@@ -3559,179 +3599,162 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: phone1C,
-                              keyboardType: TextInputType.phone,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                    RegExp(r'[\d+\s-]')),
-                              ],
-                              validator: (v) {
-                                final t = (v ?? '').trim();
-                                if (t.isEmpty) return 'Required';
-                                final digits =
-                                    t.replaceAll(RegExp(r'[^0-9]'), '');
-                                if (digits.length < 9) return 'Too short';
-                                return null;
-                              },
-                              decoration: const InputDecoration(
-                                labelText: 'Phone 1',
-                                hintText: '0550 00 00 00',
-                                prefixIcon: Icon(Icons.phone_rounded),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextFormField(
-                              controller: phone2C,
-                              keyboardType: TextInputType.phone,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                    RegExp(r'[\d+\s-]')),
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: 'Phone 2',
-                                hintText: 'Optional',
-                                prefixIcon: Icon(Icons.phone_rounded),
-                              ),
-                            ),
-                          ),
+                      TextFormField(
+                        controller: phone1C,
+                        keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[\d+\s-]')),
                         ],
+                        validator: (v) {
+                          final t = (v ?? '').trim();
+                          if (t.isEmpty) return 'Required';
+                          final digits =
+                              t.replaceAll(RegExp(r'[^0-9]'), '');
+                          if (digits.length < 9) return 'Too short';
+                          return null;
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Phone 1',
+                          hintText: '0550 00 00 00',
+                          prefixIcon: Icon(Icons.phone_rounded),
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Autocomplete<String>(
-                              optionsBuilder: (_) => _countrySuggestions,
-                              initialValue:
-                                  TextEditingValue(text: _countryC.text),
-                              fieldViewBuilder:
-                                  (ctx, controller, focusNode, onSubmit) {
-                                _countryC.addListener(() {});
-                                return TextFormField(
-                                  controller: controller,
-                                  focusNode: focusNode,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Country',
-                                    hintText: 'Select country',
-                                    prefixIcon: Icon(Icons.public_rounded),
-                                  ),
-                                  onChanged: (v) {
-                                    if (v != _selectedCountry &&
-                                        _worldData.containsKey(v)) {
-                                      _onCountrySelected(v);
-                                    } else {
-                                      _countryC.text = v;
-                                      _countryC.selection =
-                                          TextSelection.fromPosition(
-                                        TextPosition(offset: v.length),
-                                      );
-                                    }
-                                  },
-                                );
-                              },
-                              onSelected: _onCountrySelected,
+                      TextFormField(
+                        controller: phone2C,
+                        keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(r'[\d+\s-]')),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Phone 2',
+                          hintText: 'Optional',
+                          prefixIcon: Icon(Icons.phone_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Autocomplete<String>(
+                        optionsBuilder: (_) => _countrySuggestions,
+                        initialValue:
+                            TextEditingValue(text: _countryC.text),
+                        fieldViewBuilder:
+                            (ctx, controller, focusNode, onSubmit) {
+                          _countryC.addListener(() {});
+                          return TextFormField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            decoration: const InputDecoration(
+                              labelText: 'Country',
+                              hintText: 'Select country',
+                              prefixIcon: Icon(Icons.public_rounded),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Autocomplete<String>(
-                              key: ValueKey(_selectedCountry),
-                              optionsBuilder: (value) =>
-                                  _cityOptionsFor(value.text),
-                              optionsViewBuilder:
-                                  (ctx, onSelected, options) {
-                                return Material(
-                                  elevation: 8,
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxHeight: 240,
-                                      maxWidth: 400,
-                                    ),
-                                    child: ListView.builder(
-                                      padding: EdgeInsets.zero,
-                                      itemCount: options.length,
-                                      itemBuilder: (ctx, i) {
-                                        final name = options.elementAt(i);
-                                        final city = _cityByName(name);
-                                        final subtitle = city == null
-                                            ? ''
-                                            : city.ascii != city.name
-                                                ? '${city.ascii} • ${city.lat}, ${city.lng}'
-                                                : '${city.lat}, ${city.lng}';
-                                        return ListTile(
-                                          dense: true,
-                                          title: Text(
-                                            name,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                          subtitle: subtitle.isNotEmpty
-                                              ? Text(
-                                                  subtitle,
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: _sectionColors[0]
-                                                        .withValues(
-                                                            alpha: 0.55),
-                                                  ),
-                                                )
-                                              : null,
-                                          onTap: () => onSelected(name),
-                                        );
-                                      },
-                                    ),
-                                  ),
+                            onChanged: (v) {
+                              if (v != _selectedCountry &&
+                                  _worldData.containsKey(v)) {
+                                _onCountrySelected(v);
+                              } else {
+                                _countryC.text = v;
+                                _countryC.selection =
+                                    TextSelection.fromPosition(
+                                  TextPosition(offset: v.length),
                                 );
-                              },
-                              initialValue:
-                                  TextEditingValue(text: _cityC.text),
-                              fieldViewBuilder:
-                                  (ctx, controller, focusNode, onSubmit) {
-                                return TextFormField(
-                                  controller: controller,
-                                  focusNode: focusNode,
-                                  decoration: InputDecoration(
-                                    labelText: 'City',
-                                    hintText: 'Select or type',
-                                    prefixIcon: const Icon(
-                                        Icons.location_city_rounded),
-                                    suffixIcon: _loadingCities
-                                        ? const Padding(
-                                            padding: EdgeInsets.all(12),
-                                            child: SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child:
-                                                  CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
+                              }
+                            },
+                          );
+                        },
+                        onSelected: _onCountrySelected,
+                      ),
+                      const SizedBox(height: 16),
+                      Autocomplete<String>(
+                        key: ValueKey(_selectedCountry),
+                        optionsBuilder: (value) =>
+                            _cityOptionsFor(value.text),
+                        optionsViewBuilder:
+                            (ctx, onSelected, options) {
+                          return Material(
+                            elevation: 8,
+                            borderRadius: BorderRadius.circular(6),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxHeight: 240,
+                                maxWidth: 400,
+                              ),
+                              child: ListView.builder(
+                                padding: EdgeInsets.zero,
+                                itemCount: options.length,
+                                itemBuilder: (ctx, i) {
+                                  final name = options.elementAt(i);
+                                  final city = _cityByName(name);
+                                  final subtitle = city == null
+                                      ? ''
+                                      : city.ascii != city.name
+                                          ? '${city.ascii} • ${city.lat}, ${city.lng}'
+                                          : '${city.lat}, ${city.lng}';
+                                  return ListTile(
+                                    dense: true,
+                                    title: Text(
+                                      name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    subtitle: subtitle.isNotEmpty
+                                        ? Text(
+                                            subtitle,
+                                            maxLines: 1,
+                                            overflow:
+                                                TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: _sectionColors[0]
+                                                  .withValues(
+                                                      alpha: 0.55),
                                             ),
                                           )
                                         : null,
-                                  ),
-                                  onChanged: _onCityChanged,
-                                );
-                              },
-                              onSelected: (v) {
-                                final city = _cityByName(v);
-                                if (city != null) _onCitySelected(city);
-                              },
+                                    onTap: () => onSelected(name),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                        ],
+                          );
+                        },
+                        initialValue:
+                            TextEditingValue(text: _cityC.text),
+                        fieldViewBuilder:
+                            (ctx, controller, focusNode, onSubmit) {
+                          return TextFormField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            decoration: InputDecoration(
+                              labelText: 'City',
+                              hintText: 'Select or type',
+                              prefixIcon: const Icon(
+                                  Icons.location_city_rounded),
+                              suffixIcon: _loadingCities
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(12),
+                                      child: SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child:
+                                            CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            onChanged: _onCityChanged,
+                          );
+                        },
+                        onSelected: (v) {
+                          final city = _cityByName(v);
+                          if (city != null) _onCitySelected(city);
+                        },
                       ),
                       const SizedBox(height: 16),
                       if (isEdit)
@@ -3744,6 +3767,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                                 enabled: false,
                                 decoration: const InputDecoration(
                                   labelText: 'Email *',
+                                  prefixIcon: Icon(Icons.email_rounded),
                                 ),
                               ),
                             ),
@@ -3771,6 +3795,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                             controller: emailC,
                             label: 'Email *',
                             hint: 'learner@email.com',
+                            prefixIcon: const Icon(Icons.email_rounded),
                             keyboardType: TextInputType.emailAddress,
                             validator: (v) {
                               final t = (v ?? '').trim();
@@ -3787,6 +3812,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                           label: 'Password *',
                           hint: 'Default: 12345678',
                           obscureText: false,
+                          prefixIcon: const Icon(Icons.lock_rounded),
                           validator: (v) {
                             final t = (v ?? '').trim();
                             if (t.isEmpty) return 'Required';
@@ -3871,6 +3897,7 @@ class _TextField extends StatelessWidget {
     this.keyboardType,
     this.validator,
     this.obscureText = false,
+    this.prefixIcon,
   });
 
   final TextEditingController controller;
@@ -3879,6 +3906,7 @@ class _TextField extends StatelessWidget {
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
   final bool obscureText;
+  final Widget? prefixIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -3892,6 +3920,7 @@ class _TextField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        prefixIcon: prefixIcon,
       ),
     );
   }
