@@ -5801,9 +5801,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
             Icon(
               option.icon(),
               color: selected ? Colors.white : tone,
-              size: 16,
+              size: 20,
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 5),
             Directionality(
               textDirection: TextDirection.rtl,
               child: Text(
@@ -5813,7 +5813,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                 style: TextStyle(
                   color: selected ? Colors.white : Brand.primaryBlue,
                   fontWeight: FontWeight.w900,
-                  fontSize: 12,
+                  fontSize: 16,
                 ),
               ),
             ),
@@ -6349,7 +6349,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                                       physics: const NeverScrollableScrollPhysics(),
                                       mainAxisSpacing: 5,
                                       crossAxisSpacing: 5,
-                                      childAspectRatio: 1.35,
+                                      childAspectRatio: 1.5,
                                       children: [
                                         for (final option in deliveryOptions)
                                           _deliveryCard(
