@@ -7113,7 +7113,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                         padding: EdgeInsets.all(contentPadding),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Stack(
                               clipBehavior: Clip.none,
@@ -7178,6 +7178,20 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                                 fontSize: tiny ? 12 : 14,
                               ),
                             ),
+                            if (!tiny) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                'الواجبات',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: compact ? 10 : 12,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       );
@@ -7264,7 +7278,7 @@ class _RemindersHomeCard extends StatelessWidget {
                 padding: EdgeInsets.all(contentPadding),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Stack(
                       clipBehavior: Clip.none,
@@ -7323,6 +7337,20 @@ class _RemindersHomeCard extends StatelessWidget {
                         fontSize: tiny ? 12 : (compact ? 12 : 14),
                       ),
                     ),
+                    if (!tiny) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'التذكيرات',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                          fontWeight: FontWeight.w700,
+                          fontSize: compact ? 10 : 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );
@@ -7395,7 +7423,7 @@ class _LearnerMailHomeCard extends StatelessWidget {
                 padding: EdgeInsets.all(contentPadding),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Stack(
                       clipBehavior: Clip.none,
@@ -7454,6 +7482,20 @@ class _LearnerMailHomeCard extends StatelessWidget {
                         fontSize: tiny ? 12 : (compact ? 12 : 14),
                       ),
                     ),
+                    if (!tiny) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'البريد',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                          fontWeight: FontWeight.w700,
+                          fontSize: compact ? 10 : 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );
@@ -7470,6 +7512,7 @@ class _VividShortcutCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.arabicSubtitle,
     required this.accent,
     required this.onTap,
     this.compact = false,
@@ -7478,6 +7521,7 @@ class _VividShortcutCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final String? arabicSubtitle;
   final Color accent;
   final VoidCallback onTap;
   final bool compact;
@@ -7554,6 +7598,20 @@ class _VividShortcutCard extends StatelessWidget {
                       fontSize: compact ? 10 : 12,
                     ),
                   ),
+                  if (arabicSubtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      arabicSubtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: p.text.withValues(alpha: 0.62),
+                        fontWeight: FontWeight.w700,
+                        fontSize: compact ? 10 : 12,
+                      ),
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -7576,6 +7634,7 @@ class _GalleryHomeCard extends StatelessWidget {
       icon: LearnerIcons.gallery,
       title: 'Gallery',
       subtitle: 'View media',
+      arabicSubtitle: 'عرض الوسائط',
       accent: const Color(0xFF7C3AED),
       onTap: () {
         unawaited(
@@ -7607,6 +7666,7 @@ class _StoriesHomeCard extends StatelessWidget {
       icon: LearnerIcons.stories,
       title: 'Stories',
       subtitle: 'Read & explore',
+      arabicSubtitle: 'اقرأ واستكشف',
       accent: const Color(0xFFEC4899),
       onTap: () {
         unawaited(
@@ -7638,6 +7698,7 @@ class _GamesHomeCard extends StatelessWidget {
       icon: LearnerIcons.games,
       title: 'Games',
       subtitle: 'Learn & play',
+      arabicSubtitle: 'تعلم والعب',
       accent: const Color(0xFFF59E0B),
       onTap: () {
         unawaited(
@@ -7717,60 +7778,70 @@ class _LearnerHomeWebRail extends StatelessWidget {
                     palette: palette,
                     icon: LearnerIcons.booking,
                     title: 'Booking',
+                    arabicSubtitle: 'الحجز',
                     onTap: onOpenBooking,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.mail,
                     title: 'Mail',
+                    arabicSubtitle: 'البريد',
                     onTap: onOpenMail,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.reminders,
                     title: 'Reminders',
+                    arabicSubtitle: 'التذكيرات',
                     onTap: onOpenReminders,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.homework,
                     title: 'Homework (from Courses)',
+                    arabicSubtitle: 'الواجبات',
                     onTap: onOpenHomework,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.gallery,
                     title: 'Gallery',
+                    arabicSubtitle: 'معرض الصور',
                     onTap: onOpenGallery,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.stories,
                     title: 'Stories',
+                    arabicSubtitle: 'القصص',
                     onTap: onOpenStories,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.games,
                     title: 'Games',
+                    arabicSubtitle: 'الألعاب',
                     onTap: onOpenGames,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.instructions,
                     title: 'Instructions',
+                    arabicSubtitle: 'التعليمات',
                     onTap: onOpenInstructions,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.studyCoach,
                     title: 'Study Coach',
+                    arabicSubtitle: 'المدرب الدراسي',
                     onTap: onOpenCoach,
                   ),
                   _DrawerTile(
                     palette: palette,
                     icon: LearnerIcons.profile,
                     title: 'Profile',
+                    arabicSubtitle: 'الملف الشخصي',
                     onTap: onOpenProfile,
                   ),
                 ],
@@ -7781,6 +7852,7 @@ class _LearnerHomeWebRail extends StatelessWidget {
               palette: palette,
               icon: LearnerIcons.logout,
               title: 'Logout',
+              arabicSubtitle: 'تسجيل الخروج',
               onTap: onLogout,
             ),
           ],
@@ -8022,6 +8094,7 @@ class _LearnerDrawer extends StatelessWidget {
                     icon: LearnerIcons.studyCoach,
                     accent: const Color(0xFF06B6D4),
                     title: 'Study Coach',
+                    arabicSubtitle: 'المدرب الدراسي',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenStudyCoach();
@@ -8033,6 +8106,7 @@ class _LearnerDrawer extends StatelessWidget {
                     icon: LearnerIcons.profile,
                     accent: const Color(0xFF2563EB),
                     title: 'Profile',
+                    arabicSubtitle: 'الملف الشخصي',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenProfile();
@@ -8044,6 +8118,7 @@ class _LearnerDrawer extends StatelessWidget {
                     icon: LearnerIcons.regulations,
                     accent: const Color(0xFFF59E0B),
                     title: 'Regulations',
+                    arabicSubtitle: 'اللوائح',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenRegulations();
@@ -8054,6 +8129,7 @@ class _LearnerDrawer extends StatelessWidget {
                     icon: LearnerIcons.instructions,
                     accent: const Color(0xFF6366F1),
                     title: 'Instructions',
+                    arabicSubtitle: 'التعليمات',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenInstructions();
@@ -8065,6 +8141,7 @@ class _LearnerDrawer extends StatelessWidget {
                     icon: Icons.settings_rounded,
                     accent: const Color(0xFF7C3AED),
                     title: 'Settings',
+                    arabicSubtitle: 'الإعدادات',
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenSettings();
@@ -8109,6 +8186,7 @@ class _DrawerTile extends StatelessWidget {
     required this.palette,
     required this.icon,
     required this.title,
+    this.arabicSubtitle,
     required this.onTap,
     this.targetKey,
     this.accent,
@@ -8117,6 +8195,7 @@ class _DrawerTile extends StatelessWidget {
   final _HomePalette palette;
   final IconData icon;
   final String title;
+  final String? arabicSubtitle;
   final VoidCallback onTap;
   final GlobalKey? targetKey;
   final Color? accent;
@@ -8170,6 +8249,17 @@ class _DrawerTile extends StatelessWidget {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
+                        if (arabicSubtitle != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            arabicSubtitle!,
+                            style: TextStyle(
+                              color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

@@ -4941,8 +4941,23 @@ class _CourseDetailsSheet extends StatefulWidget {
 }
 
 class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
-  int? _expandedCardIndex;
+  final _formKey = GlobalKey<FormState>();
+  final fullNameC = TextEditingController();
+  final phoneC = TextEditingController();
+  final dobC = TextEditingController();
+  final emailC = TextEditingController();
+  final promoC = TextEditingController();
+
   late final List<EnrollDeliveryOption> deliveryOptions;
+  late final PageController _deliveryPageController;
+  String? selectedDeliveryKey;
+  int _currentDeliveryIndex = 0;
+  String? _gender;
+  String _privateStudyMode = 'online';
+  bool saving = false;
+  AppliedPromo? _appliedPromo;
+  String? _promoMessage;
+  bool _promoError = false;
 
   _CourseLite get course => widget.course;
 
@@ -4956,11 +4971,98 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
           .where((e) => e.enabled)
           .toList(),
     );
+
+    if (deliveryOptions.isNotEmpty) {
+      final firstSelectable = deliveryOptions
+          .cast<EnrollDeliveryOption?>()
+          .firstWhere(
+            (e) => e?.isSelectable == true,
+            orElse: () => deliveryOptions.first,
+          );
+      selectedDeliveryKey = firstSelectable?.key;
+      _currentDeliveryIndex = deliveryOptions.indexWhere(
+        (e) => e.key == selectedDeliveryKey,
+      );
+      if (_currentDeliveryIndex < 0) _currentDeliveryIndex = 0;
+    }
+
+    _deliveryPageController = PageController(
+      viewportFraction: 0.82,
+      initialPage: _currentDeliveryIndex,
+    );
   }
 
   @override
   void dispose() {
+    _deliveryPageController.dispose();
+    fullNameC.dispose();
+    phoneC.dispose();
+    dobC.dispose();
+    emailC.dispose();
+    promoC.dispose();
     super.dispose();
+  }
+
+  void _clearPromo() {
+    promoC.clear();
+    _appliedPromo = null;
+    _promoMessage = null;
+    _promoError = false;
+  }
+
+  void _confirmPromo() {
+    final selected = _selectedOption;
+    final baseFee = selected?.fee ?? 0;
+    final code = PromoCode.normalize(promoC.text);
+
+    if (selected == null || baseFee <= 0) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Choose a priced study type first.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    if (code.isEmpty) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Enter a promo code first.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    final promo = selected.promoCodes[code];
+    final discount = promo?.discountFor(baseFee) ?? 0;
+    if (promo == null || !promo.enabled || discount <= 0) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = 'Promo code is not valid for this study type.';
+        _promoError = true;
+      });
+      return;
+    }
+
+    setState(() {
+      promoC.text = code;
+      _appliedPromo = AppliedPromo(
+        promo: promo,
+        originalFee: baseFee,
+        discountAmount: discount,
+      );
+      _promoMessage = 'Promo code applied.';
+      _promoError = false;
+    });
+  }
+
+  double _effectiveFee(EnrollDeliveryOption option) {
+    final applied = _appliedPromo;
+    if (applied != null &&
+        applied.promo.code == PromoCode.normalize(promoC.text)) {
+      return applied.finalFee;
+    }
+    return option.fee ?? 0;
   }
 
   List<EnrollDeliveryOption> _dedupeNormalizedOptions(
@@ -4992,157 +5094,13 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     return out;
   }
 
-
-  Widget _optionCard(EnrollDeliveryOption option, int index) {
-    final isExpanded = _expandedCardIndex == index;
-    final tone = _deliveryTone(option);
-    final tone2 = _deliveryTone2(option);
-    final compact = MediaQuery.sizeOf(context).width < 390;
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isExpanded ? Brand.accentCyan : Brand.uiBorder,
-          width: isExpanded ? 2 : 1,
-        ),
-        gradient: LinearGradient(
-          colors: isExpanded
-              ? [tone.withValues(alpha: 0.15), tone2.withValues(alpha: 0.08)]
-              : [Colors.white, Colors.white],
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () {
-              setState(() {
-                _expandedCardIndex = isExpanded ? null : index;
-              });
-            },
-            child: Padding(
-              padding: EdgeInsets.all(compact ? 10 : 12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: tone.withValues(alpha: 0.20),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(option.icon(), size: 22, color: tone),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          option.label,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: compact ? 13 : 14,
-                            color: Brand.primaryBlue,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _deliveryArabicLabel(option),
-                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Brand.primaryBlue.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      option.feeLabel(),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                        color: Brand.primaryBlue,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  AnimatedRotation(
-                    turns: isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    child: Icon(Icons.expand_more, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: _buildExpandedContent(option),
-            crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 300),
-            firstCurve: Curves.easeInOut,
-            secondCurve: Curves.easeInOut,
-            sizeCurve: Curves.easeInOut,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpandedContent(EnrollDeliveryOption option) {
-    final compact = MediaQuery.sizeOf(context).width < 390;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(compact ? 10 : 12, 0, compact ? 10 : 12, compact ? 10 : 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Divider(),
-          const SizedBox(height: 6),
-          Text(
-            _deliveryPitchAr(option),
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.45,
-              color: Colors.grey[700],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: _deliveryFeatureTags(option),
-          ),
-          const SizedBox(height: 14),
-          _EnrollmentForm(
-            option: option,
-            courseId: course.id,
-            courseTitle: course.title,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOptionGrid() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final itemW = (constraints.maxWidth - 8) / 2;
-        return Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: List.generate(deliveryOptions.length, (i) {
-            return SizedBox(width: itemW, child: _optionCard(deliveryOptions[i], i));
-          }),
-        );
-      },
-    );
+  EnrollDeliveryOption? get _selectedOption {
+    final key = selectedDeliveryKey;
+    if (key == null) return null;
+    for (final option in deliveryOptions) {
+      if (option.key == key) return option;
+    }
+    return null;
   }
 
   String _formatDuration(Duration d) {
@@ -5161,6 +5119,145 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
       }
     }
     return 'Lifetime access.';
+  }
+
+  Future<void> _pickDob() async {
+    FocusScope.of(context).unfocus();
+    final now = DateTime.now();
+    var initial = DateTime(now.year - 14, now.month, now.day);
+    final parts = dobC.text.trim().split('-');
+    if (parts.length == 3) {
+      final y = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      final d = int.tryParse(parts[2]);
+      if (y != null && m != null && d != null) initial = DateTime(y, m, d);
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1950),
+      lastDate: now,
+      helpText: 'Date of birth',
+    );
+    if (picked == null) return;
+
+    String two(int n) => n.toString().padLeft(2, '0');
+    setState(() {
+      dobC.text = '${picked.year}-${two(picked.month)}-${two(picked.day)}';
+    });
+  }
+
+  Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
+
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (saving) return;
+
+    final selected = _selectedOption;
+    if (selected == null || !selected.enabled) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(content: Text('Please choose a study type.')),
+      );
+      return;
+    }
+
+    if (selected.requiresStudyMode &&
+        normalizeStudyMode(_privateStudyMode).isEmpty) {
+      AppToast.fromSnackBar(
+        context,
+        const SnackBar(
+          content: Text('Please choose Online or In-Class for Private.'),
+        ),
+      );
+      return;
+    }
+
+    final can = await EnrollLimiter.canEnrollNow(course.id);
+    if (!can) {
+      final rem = await EnrollLimiter.remaining(course.id);
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            'Too many attempts. Please wait ${_formatDuration(rem)} and try again.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+
+    try {
+      final ref = FirebaseDatabase.instance.ref('subscriptions').push();
+      final studyMode = selected.requiresStudyMode
+          ? normalizeStudyMode(_privateStudyMode)
+          : '';
+      final studyModeText = selected.requiresStudyMode
+          ? studyModeLabel(_privateStudyMode)
+          : '';
+      final appliedPromo = _appliedPromo;
+      final selectedFee = _effectiveFee(selected);
+
+      await ref.set({
+        'courseId': course.id,
+        'courseTitle': course.title,
+        'fullName': fullNameC.text.trim(),
+        'phone': phoneC.text.trim(),
+        'gender': (_gender ?? '').trim(),
+        'dob': dobC.text.trim(),
+        'dateOfBirth': dobC.text.trim(),
+        'email': emailC.text.trim(),
+        'delivery': selected.label,
+        'paymentPlan': 'By delivery option',
+        'deliveryKey': selected.key,
+        'deliveryLabel': selected.label,
+        'studyMode': studyMode,
+        'studyModeLabel': studyModeText,
+        'selectedFee': selectedFee,
+        'originalFee': selected.fee,
+        'discountedFee': selectedFee,
+        'promoCode': appliedPromo?.promo.code,
+        'promoType': appliedPromo?.promo.type,
+        'promoValue': appliedPromo?.promo.value,
+        'discountAmount': appliedPromo?.discountAmount,
+        'accessMode': selected.accessMode,
+        'accessDurationMonths': selected.accessDurationMonths,
+        'accessLabel': _accessSummary(selected),
+        'additionalInfo': '',
+        'createdAt': ServerValue.timestamp,
+      });
+
+      await EnrollLimiter.markEnrolledNow(course.id);
+      if (!mounted) return;
+
+      await showGeneralDialog(
+        context: context,
+        barrierDismissible: false,
+        barrierLabel: '',
+        barrierColor: Colors.black54,
+        pageBuilder: (ctx, anim, sec) => const EnrollmentSuccessDialog(),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            toHumanError(
+              e,
+              fallback: 'Could not complete enrollment. Try again.',
+            ),
+          ),
+        ),
+      );
+      setState(() => saving = false);
+    }
   }
 
   String _fmtDate(int ms) {
@@ -5323,6 +5420,37 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     );
   }
 
+  Widget _hero() {
+    if (course.thumb.trim().isEmpty) {
+      return Container(
+        height: 190,
+        decoration: BoxDecoration(
+          color: Brand.appBg,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Brand.uiBorder),
+        ),
+        child: const Center(
+          child: Icon(Icons.school_rounded, size: 44, color: Brand.primaryBlue),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Image.network(
+          course.thumb,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => Container(
+            color: Brand.appBg,
+            child: const Center(child: Icon(Icons.image_not_supported)),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _rtlText(BuildContext context, String value, {double height = 1.55}) {
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -5333,6 +5461,42 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
           height: height,
           color: Brand.mainText.withValues(alpha: 0.85),
         ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDeco({
+    required String label,
+    required IconData icon,
+    String? hint,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: Icon(icon),
+      filled: true,
+      fillColor: Colors.white,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Brand.uiBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Brand.uiBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Brand.accentCyan, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 1.2),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
       ),
     );
   }
@@ -5449,6 +5613,121 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     }
   }
 
+  Widget _deliveryCard(EnrollDeliveryOption option, bool selected) {
+    final compact = MediaQuery.sizeOf(context).width < 390;
+    final tone = _deliveryTone(option);
+    final tone2 = _deliveryTone2(option);
+    return Semantics(
+      label: option.label,
+      button: true,
+      enabled: saving == false && option.isSelectable,
+      child: GestureDetector(
+        onTap: saving || !option.isSelectable
+            ? null
+            : () {
+                final index = deliveryOptions.indexOf(option);
+                setState(() {
+                  _currentDeliveryIndex = index;
+                  selectedDeliveryKey = option.key;
+                  _clearPromo();
+                });
+                _deliveryPageController.animateToPage(
+                  index,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                );
+              },
+        child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        margin: EdgeInsets.symmetric(horizontal: 6, vertical: selected ? 1 : 8),
+        padding: EdgeInsets.all(compact ? 10 : 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: selected
+                ? [tone, tone2]
+                : [tone.withValues(alpha: 0.18), tone2.withValues(alpha: 0.10)],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? Colors.white : tone.withValues(alpha: 0.35),
+            width: selected ? 2.2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: tone.withValues(alpha: selected ? 0.28 : 0.10),
+              blurRadius: selected ? 18 : 10,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              option.icon(),
+              color: selected ? Colors.white : tone,
+              size: compact ? 22 : 24,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              option.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected ? Colors.white : Brand.primaryBlue,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text(
+                _deliveryArabicLabel(option),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.92)
+                      : Brand.mainText.withValues(alpha: 0.72),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.20)
+                    : Colors.white.withValues(alpha: 0.86),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.35)
+                      : tone.withValues(alpha: 0.24),
+                ),
+              ),
+              child: Text(
+                option.feeLabel(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? Colors.white : tone,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  }
+
   List<Widget> _deliveryFeatureTags(EnrollDeliveryOption option) {
     final tone = _deliveryTone(option);
     List<({IconData icon, String label})> items;
@@ -5520,7 +5799,180 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     }).toList();
   }
 
-  String _moneyLabel(double value) => '${value.toStringAsFixed(0)} DA';
+  Widget _selectedDeliverySummary(EnrollDeliveryOption option) {
+    final tone = _deliveryTone(option);
+    final tone2 = _deliveryTone2(option);
+    final modeText = option.requiresStudyMode
+        ? studyModeLabel(_privateStudyMode)
+        : '';
+    final modeTextAr = option.requiresStudyMode
+        ? studyModeLabelAr(_privateStudyMode)
+        : '';
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [tone.withValues(alpha: 0.15), tone2.withValues(alpha: 0.08)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: tone.withValues(alpha: 0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [tone, tone2]),
+                  borderRadius: BorderRadius.circular(15),
+                  boxShadow: [
+                    BoxShadow(
+                      color: tone.withValues(alpha: 0.22),
+                      blurRadius: 12,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: Icon(option.icon(), color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      option.label,
+                      style: const TextStyle(
+                        color: Brand.primaryBlue,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: Text(
+                        _deliveryArabicLabel(option),
+                        style: TextStyle(
+                          color: Brand.mainText.withValues(alpha: 0.70),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.86),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: tone.withValues(alpha: 0.24)),
+                ),
+                child: Text(
+                  _appliedPromo == null
+                      ? option.feeLabel()
+                      : _moneyLabel(_effectiveFee(option)),
+                  style: TextStyle(color: tone, fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          if (modeText.isNotEmpty || modeTextAr.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              modeTextAr.isNotEmpty ? '$modeText • $modeTextAr' : modeText,
+              style: const TextStyle(
+                color: Brand.primaryBlue,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text(
+              _deliveryPitchAr(option),
+              style: TextStyle(
+                color: Brand.mainText.withValues(alpha: 0.86),
+                fontWeight: FontWeight.w800,
+                height: 1.55,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text(
+              option.bestForAr(),
+              style: const TextStyle(
+                color: Brand.primaryBlue,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _deliveryFeatureTags(option),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _genderPill(String value, FormFieldState<String> field) {
+    final selected = field.value == value;
+    final isMale = value == 'Male';
+    final icon = isMale ? Icons.male_rounded : Icons.female_rounded;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: saving
+            ? null
+            : () {
+                setState(() => _gender = value);
+                field.didChange(value);
+              },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          decoration: BoxDecoration(
+            color: selected ? Brand.primaryBlue : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? Brand.primaryBlue : Brand.uiBorder,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: selected ? Colors.white : Brand.primaryBlue),
+              const SizedBox(width: 6),
+              Text(
+                value,
+                style: TextStyle(
+                  color: selected ? Colors.white : Brand.primaryBlue,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _expandableSection({
     required IconData icon,
@@ -5553,8 +6005,108 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
     );
   }
 
+  String _moneyLabel(double value) => '${value.toStringAsFixed(0)} DA';
+
+  Widget _promoCodeBlock(EnrollDeliveryOption option) {
+    final applied = _appliedPromo;
+    final hasApplied = applied != null && !_promoError;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Brand.uiBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: promoC,
+                  enabled: !saving,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: _inputDeco(
+                    label: 'Promo code | كود الخصم',
+                    icon: Icons.local_offer_rounded,
+                    hint: 'CODE9',
+                  ),
+                  onChanged: (_) {
+                    if (_appliedPromo == null && _promoMessage == null) return;
+                    setState(() {
+                      _appliedPromo = null;
+                      _promoMessage = null;
+                      _promoError = false;
+                    });
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: saving ? null : _confirmPromo,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Brand.primaryBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                child: const Text(
+                  'Confirm',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+          if (_promoMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _promoMessage!,
+              style: TextStyle(
+                color: _promoError ? Colors.redAccent : const Color(0xFF059669),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+          if (hasApplied) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _PrettyChip(
+                  label:
+                      'Original ${_moneyLabel(applied.originalFee)} | السعر الأصلي ${applied.originalFee.toStringAsFixed(0)} د.ج',
+                  icon: Icons.payments_rounded,
+                ),
+                _PrettyChip(
+                  label:
+                      'Discount -${_moneyLabel(applied.discountAmount)} | الخصم ${applied.discountAmount.toStringAsFixed(0)} د.ج',
+                  icon: Icons.discount_rounded,
+                ),
+                _PrettyChip(
+                  label:
+                      'Total ${_moneyLabel(_effectiveFee(option))} | المجموع ${_effectiveFee(option).toStringAsFixed(0)} د.ج',
+                  icon: Icons.check_circle_rounded,
+                  accentColor: const Color(0xFF059669),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selected = _selectedOption;
+    final showPrivateMode = selected?.requiresStudyMode == true;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return SafeArea(
@@ -5617,6 +6169,8 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                               ),
                             ),
                             const SizedBox(height: 12),
+                            _hero(),
+                            const SizedBox(height: 14),
                             _cardShell(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -5639,79 +6193,437 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet> {
                                         style: TextStyle(fontWeight: FontWeight.w700),
                                       ),
                                     )
-                                  else
-                                    _buildOptionGrid(),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            _expandableSection(
-                              icon: Icons.info_rounded,
-                              title: 'More about this course',
-                              child: Column(
-                                children: [
-                                  if (course.content.trim().isNotEmpty)
-                                    _expandableSection(
-                                      icon: Icons.lightbulb_rounded,
-                                      title: 'What you will learn | ماذا ستتعلم',
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        child: _rtlText(context, course.content),
-                                      ),
-                                    ),
-                                  if (course.content.trim().isNotEmpty)
-                                    const SizedBox(height: 8),
-                                  if (course.longDesc.trim().isNotEmpty || course.shortDesc.trim().isNotEmpty)
-                                    _expandableSection(
-                                      icon: Icons.description_rounded,
-                                      title: 'Description | الوصف',
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        child: _rtlText(
-                                          context,
-                                          course.longDesc.trim().isEmpty ? course.shortDesc : course.longDesc,
+                                  else ...[
+                                    SizedBox(
+                                      height: MediaQuery.sizeOf(context).width < 390
+                                          ? 132
+                                          : 144,
+                                      child: PageView.builder(
+                                        controller: _deliveryPageController,
+                                        itemCount: deliveryOptions.length,
+                                        onPageChanged: saving
+                                            ? null
+                                            : (index) {
+                                                setState(() {
+                                                  _currentDeliveryIndex = index;
+                                                  selectedDeliveryKey =
+                                                      deliveryOptions[index].key;
+                                                  _clearPromo();
+                                                });
+                                              },
+                                        itemBuilder: (_, i) => _deliveryCard(
+                                          deliveryOptions[i],
+                                          i == _currentDeliveryIndex,
                                         ),
                                       ),
                                     ),
-                                  if (course.longDesc.trim().isNotEmpty || course.shortDesc.trim().isNotEmpty)
                                     const SizedBox(height: 8),
-                                  if (course.instructors.isNotEmpty)
-                                    _expandableSection(
-                                      icon: Icons.people_rounded,
-                                      title: 'Instructors',
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        child: Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          children: course.instructors
-                                              .map((teacher) => _TeacherChip(teacher: teacher))
-                                              .toList(),
-                                        ),
-                                      ),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: List.generate(deliveryOptions.length, (
+                                        i,
+                                      ) {
+                                        final active = i == _currentDeliveryIndex;
+                                        return AnimatedContainer(
+                                          duration: const Duration(milliseconds: 180),
+                                          width: active ? 20 : 8,
+                                          height: 8,
+                                          margin: const EdgeInsets.symmetric(
+                                            horizontal: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: active
+                                                ? Brand.primaryBlue
+                                                : Brand.uiBorder,
+                                            borderRadius: BorderRadius.circular(99),
+                                          ),
+                                        );
+                                      }),
                                     ),
-                                  if (course.instructors.isNotEmpty)
-                                    const SizedBox(height: 8),
-                                  _expandableSection(
-                                    icon: Icons.reviews_rounded,
-                                    title: 'Reviews',
-                                    child: _reviewsBlock(context),
-                                  ),
-                                  if (course.requirements.trim().isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    _expandableSection(
-                                      icon: Icons.checklist_rounded,
-                                      title: 'Requirements',
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        child: _rtlText(context, course.requirements, height: 1.45),
-                                      ),
-                                    ),
+                                    const SizedBox(height: 12),
+                                    if (selected != null) ...[
+                                      _selectedDeliverySummary(selected),
+                                      const SizedBox(height: 10),
+                                      if (selected.promoCodes.isNotEmpty)
+                                        _promoCodeBlock(selected),
+                                    ],
                                   ],
                                 ],
                               ),
                             ),
+                            if (showPrivateMode) ...[
+                              const SizedBox(height: 12),
+                              _cardShell(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _sectionTitle(
+                                      Icons.place_rounded,
+                                      'Private lesson mode | طريقة الحصة الخاصة',
+                                    ),
+                                    const SizedBox(height: 12),
+                                    DropdownButtonFormField<String>(
+                                      initialValue:
+                                          normalizeStudyMode(_privateStudyMode).isEmpty
+                                          ? 'online'
+                                          : normalizeStudyMode(_privateStudyMode),
+                                      decoration: _inputDeco(
+                                        label: 'Choose mode | اختر الطريقة',
+                                        icon: Icons.place_rounded,
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'online',
+                                          child: Text('Online | أونلاين'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'inclass',
+                                          child: Text('In-Class | حضوري'),
+                                        ),
+                                      ],
+                                      onChanged: saving
+                                          ? null
+                                          : (v) => setState(
+                                              () => _privateStudyMode = v ?? 'online',
+                                            ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            _cardShell(
+                              child: Form(
+                                key: _formKey,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _sectionTitle(
+                                      Icons.assignment_rounded,
+                                      '2. Enrollment details | بيانات التسجيل',
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextFormField(
+                                      controller: fullNameC,
+                                      textInputAction: TextInputAction.next,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
+                                      decoration: _inputDeco(
+                                        label: 'Full name | الاسم الكامل',
+                                        icon: Icons.person_rounded,
+                                        hint: 'Your full name | الاسم الكامل',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) {
+                                          return 'Please enter your full name.';
+                                        }
+                                        if (s.length < 3) {
+                                          return 'Name looks too short.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextFormField(
+                                      controller: phoneC,
+                                      keyboardType: TextInputType.phone,
+                                      textInputAction: TextInputAction.next,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
+                                      decoration: _inputDeco(
+                                        label: 'Phone number | رقم الهاتف',
+                                        icon: Icons.phone_rounded,
+                                        hint: 'e.g. 0550 00 00 00',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) {
+                                          return 'Please enter your phone number.';
+                                        }
+                                        if (s.length < 8) {
+                                          return 'Phone number looks too short.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextFormField(
+                                      controller: dobC,
+                                      readOnly: true,
+                                      onTap: saving ? null : _pickDob,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
+                                      decoration: _inputDeco(
+                                        label: 'Date of birth | تاريخ الميلاد',
+                                        icon: Icons.cake_rounded,
+                                        hint: 'YYYY-MM-DD',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) {
+                                          return 'Please select your date of birth.';
+                                        }
+                                        final p = s.split('-');
+                                        if (p.length != 3) {
+                                          return 'Use format YYYY-MM-DD.';
+                                        }
+                                        final y = int.tryParse(p[0]);
+                                        final m = int.tryParse(p[1]);
+                                        final d = int.tryParse(p[2]);
+                                        if (y == null || m == null || d == null) {
+                                          return 'Use format YYYY-MM-DD.';
+                                        }
+                                        final parsed = DateTime(y, m, d);
+                                        if (parsed.year != y ||
+                                            parsed.month != m ||
+                                            parsed.day != d) {
+                                          return 'Please choose a valid date.';
+                                        }
+                                        if (parsed.isAfter(DateTime.now())) {
+                                          return 'Date of birth cannot be in the future.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    FormField<String>(
+                                      initialValue: _gender,
+                                      validator: (v) {
+                                        if (![
+                                          'Male',
+                                          'Female',
+                                        ].contains((v ?? '').trim())) {
+                                          return 'Please select your gender.';
+                                        }
+                                        return null;
+                                      },
+                                      builder: (field) {
+                                        return Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Padding(
+                                              padding: EdgeInsets.only(
+                                                left: 4,
+                                                bottom: 7,
+                                              ),
+                                              child: Text(
+                                                'Gender | الجنس',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                            Row(
+                                              children: [
+                                                _genderPill('Male', field),
+                                                const SizedBox(width: 10),
+                                                _genderPill('Female', field),
+                                              ],
+                                            ),
+                                            if (field.errorText != null) ...[
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                field.errorText!,
+                                                style: TextStyle(
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.error,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 10),
+                                    TextFormField(
+                                      controller: emailC,
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.done,
+                                      scrollPadding: EdgeInsets.only(
+                                        bottom: bottomInset + 80,
+                                      ),
+                                      decoration: _inputDeco(
+                                        label:
+                                            'Email (optional) | البريد الإلكتروني (اختياري)',
+                                        icon: Icons.alternate_email_rounded,
+                                        hint: 'name@example.com',
+                                      ),
+                                      validator: (v) {
+                                        final s = (v ?? '').trim();
+                                        if (s.isEmpty) return null;
+                                        if (!s.contains('@') || !s.contains('.')) {
+                                          return 'Please enter a valid email address.';
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Brand.accentCyan.withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: Brand.uiBorder),
+                                      ),
+                                      child: const Row(
+                                        children: [
+                                          Icon(
+                                            Icons.info_outline_rounded,
+                                            color: Brand.primaryBlue,
+                                          ),
+                                          SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              'لا يوجد دفع الآن. سنقوم بالتواصل معك قريباً لتأكيد التسجيل والتفاصيل.',
+                                              textDirection: TextDirection.rtl,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _sectionTitle(Icons.info_rounded, 'More about this course'),
+                            const SizedBox(height: 8),
+                            Column(
+                              children: [
+                                if (course.content.trim().isNotEmpty)
+                                  _expandableSection(
+                                    icon: Icons.lightbulb_rounded,
+                                    title: 'What you will learn | ماذا ستتعلم',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: _rtlText(context, course.content),
+                                    ),
+                                  ),
+                                if (course.content.trim().isNotEmpty)
+                                  const SizedBox(height: 8),
+                                if (course.longDesc.trim().isNotEmpty ||
+                                    course.shortDesc.trim().isNotEmpty)
+                                  _expandableSection(
+                                    icon: Icons.description_rounded,
+                                    title: 'Description | الوصف',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: _rtlText(
+                                        context,
+                                        course.longDesc.trim().isEmpty
+                                            ? course.shortDesc
+                                            : course.longDesc,
+                                      ),
+                                    ),
+                                  ),
+                                if (course.longDesc.trim().isNotEmpty ||
+                                    course.shortDesc.trim().isNotEmpty)
+                                  const SizedBox(height: 8),
+                                if (course.instructors.isNotEmpty)
+                                  _expandableSection(
+                                    icon: Icons.people_rounded,
+                                    title: 'Instructors',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: course.instructors
+                                            .map(
+                                              (teacher) =>
+                                                  _TeacherChip(teacher: teacher),
+                                            )
+                                            .toList(),
+                                      ),
+                                    ),
+                                  ),
+                                if (course.instructors.isNotEmpty)
+                                  const SizedBox(height: 8),
+                                _expandableSection(
+                                  icon: Icons.reviews_rounded,
+                                  title: 'Reviews',
+                                  child: _reviewsBlock(context),
+                                ),
+                                if (course.requirements.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _expandableSection(
+                                    icon: Icons.checklist_rounded,
+                                    title: 'Requirements',
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      child: _rtlText(
+                                        context,
+                                        course.requirements,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ],
+                        ),
+                      ),
+                    ),
+                    ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            border: const Border(
+                              top: BorderSide(color: Brand.uiBorder),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 18,
+                                offset: Offset(0, -6),
+                              ),
+                            ],
+                          ),
+                          child: SizedBox(
+                            height: 52,
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              onPressed: saving ? null : _submit,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF10B981),
+                                foregroundColor: Colors.white,
+                                disabledBackgroundColor: const Color(
+                                  0xFF10B981,
+                                ).withValues(alpha: 0.55),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              icon: saving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check_circle_rounded),
+                              label: Text(
+                                saving ? 'Saving...' : 'Submit enrollment',
+                                style: const TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -6187,591 +7099,6 @@ class _TeacherChip extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// =====================================================================
-/// Self-contained enrollment form for one delivery option
-/// =====================================================================
-class _EnrollmentForm extends StatefulWidget {
-  const _EnrollmentForm({
-    required this.option,
-    required this.courseId,
-    required this.courseTitle,
-  });
-
-  final EnrollDeliveryOption option;
-  final String courseId;
-  final String courseTitle;
-
-  @override
-  State<_EnrollmentForm> createState() => _EnrollmentFormState();
-}
-
-class _EnrollmentFormState extends State<_EnrollmentForm> {
-  final _formKey = GlobalKey<FormState>();
-  final _fullNameC = TextEditingController();
-  final _phoneC = TextEditingController();
-  final _dobC = TextEditingController();
-  final _emailC = TextEditingController();
-  final _promoC = TextEditingController();
-
-  String? _gender;
-  String _studyMode = 'online';
-  bool _saving = false;
-  AppliedPromo? _appliedPromo;
-  String? _promoMessage;
-  bool _promoError = false;
-
-  @override
-  void dispose() {
-    _fullNameC.dispose();
-    _phoneC.dispose();
-    _dobC.dispose();
-    _emailC.dispose();
-    _promoC.dispose();
-    super.dispose();
-  }
-
-  double get _fee => widget.option.fee ?? 0;
-
-  double get _effectiveFee {
-    final applied = _appliedPromo;
-    if (applied != null) return applied.finalFee;
-    return _fee;
-  }
-
-  void _clearPromo() {
-    _promoC.clear();
-    setState(() {
-      _appliedPromo = null;
-      _promoMessage = null;
-      _promoError = false;
-    });
-  }
-
-  void _confirmPromo() {
-    final baseFee = _fee;
-    final code = PromoCode.normalize(_promoC.text);
-
-    if (baseFee <= 0) {
-      setState(() {
-        _appliedPromo = null;
-        _promoMessage = 'Choose a priced study type first.';
-        _promoError = true;
-      });
-      return;
-    }
-
-    if (code.isEmpty) {
-      setState(() {
-        _appliedPromo = null;
-        _promoMessage = 'Enter a promo code first.';
-        _promoError = true;
-      });
-      return;
-    }
-
-    final promo = widget.option.promoCodes[code];
-    final discount = promo?.discountFor(baseFee) ?? 0;
-    if (promo == null || !promo.enabled || discount <= 0) {
-      setState(() {
-        _appliedPromo = null;
-        _promoMessage = 'Promo code is not valid for this study type.';
-        _promoError = true;
-      });
-      return;
-    }
-
-    setState(() {
-      _promoC.text = code;
-      _appliedPromo = AppliedPromo(
-        promo: promo,
-        originalFee: baseFee,
-        discountAmount: discount,
-      );
-      _promoMessage = 'Promo code applied.';
-      _promoError = false;
-    });
-  }
-
-  Future<void> _pickDob() async {
-    FocusScope.of(context).unfocus();
-    final now = DateTime.now();
-    var initial = DateTime(now.year - 14, now.month, now.day);
-    final parts = _dobC.text.trim().split('-');
-    if (parts.length == 3) {
-      final y = int.tryParse(parts[0]);
-      final m = int.tryParse(parts[1]);
-      final d = int.tryParse(parts[2]);
-      if (y != null && m != null && d != null) initial = DateTime(y, m, d);
-    }
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1950),
-      lastDate: now,
-      helpText: 'Date of birth',
-    );
-    if (picked == null) return;
-
-    String two(int n) => n.toString().padLeft(2, '0');
-    setState(() {
-      _dobC.text = '${picked.year}-${two(picked.month)}-${two(picked.day)}';
-    });
-  }
-
-  Future<void> _submit() async {
-    FocusScope.of(context).unfocus();
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    if (_saving) return;
-    if (!widget.option.enabled) {
-      AppToast.fromSnackBar(
-        context,
-        const SnackBar(content: Text('This study type is not available.')),
-      );
-      return;
-    }
-
-    setState(() => _saving = true);
-
-    try {
-      final ref = FirebaseDatabase.instance.ref('subscriptions').push();
-      final studyMode = widget.option.requiresStudyMode
-          ? normalizeStudyMode(_studyMode)
-          : '';
-      final studyModeText = widget.option.requiresStudyMode
-          ? studyModeLabel(_studyMode)
-          : '';
-
-      final accessLabel = widget.option.accessMode == 'duration' &&
-              (widget.option.accessDurationMonths ?? 0) > 0
-          ? 'Access expires ${widget.option.accessDurationMonths} month${widget.option.accessDurationMonths == 1 ? '' : 's'} after enrollment.'
-          : 'Lifetime access.';
-
-      await ref.set({
-        'courseId': widget.courseId,
-        'courseTitle': widget.courseTitle,
-        'fullName': _fullNameC.text.trim(),
-        'phone': _phoneC.text.trim(),
-        'gender': (_gender ?? '').trim(),
-        'dob': _dobC.text.trim(),
-        'dateOfBirth': _dobC.text.trim(),
-        'email': _emailC.text.trim(),
-        'delivery': widget.option.label,
-        'paymentPlan': 'By delivery option',
-        'deliveryKey': widget.option.key,
-        'deliveryLabel': widget.option.label,
-        'studyMode': studyMode,
-        'studyModeLabel': studyModeText,
-        'selectedFee': _effectiveFee,
-        'originalFee': _fee,
-        'discountedFee': _effectiveFee,
-        'promoCode': _appliedPromo?.promo.code,
-        'promoType': _appliedPromo?.promo.type,
-        'promoValue': _appliedPromo?.promo.value,
-        'discountAmount': _appliedPromo?.discountAmount,
-        'accessMode': widget.option.accessMode,
-        'accessDurationMonths': widget.option.accessDurationMonths,
-        'accessLabel': accessLabel,
-        'additionalInfo': '',
-        'createdAt': ServerValue.timestamp,
-      });
-
-      if (!mounted) return;
-
-      await showGeneralDialog(
-        context: context,
-        barrierDismissible: false,
-        barrierLabel: '',
-        barrierColor: Colors.black54,
-        pageBuilder: (ctx, anim, sec) => const EnrollmentSuccessDialog(),
-      );
-      if (!mounted) return;
-      Navigator.pop(context, true);
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            toHumanError(
-              e,
-              fallback: 'Could not complete enrollment. Try again.',
-            ),
-          ),
-        ),
-      );
-      setState(() => _saving = false);
-    }
-  }
-
-  InputDecoration _inputDeco({
-    required String label,
-    required IconData icon,
-    String? hint,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixIcon: Icon(icon),
-      filled: true,
-      fillColor: Colors.white,
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Brand.uiBorder),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Brand.uiBorder),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Brand.accentCyan, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.redAccent),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
-      ),
-    );
-  }
-
-  Widget _genderPill(String value, FormFieldState<String> field) {
-    final selected = field.value == value;
-    final isMale = value == 'Male';
-    final icon = isMale ? Icons.male_rounded : Icons.female_rounded;
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: _saving
-            ? null
-            : () {
-                setState(() => _gender = value);
-                field.didChange(value);
-              },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          decoration: BoxDecoration(
-            color: selected ? Brand.primaryBlue : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: selected ? Brand.primaryBlue : Brand.uiBorder,
-            ),
-          ),
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 20, color: selected ? Colors.white : Brand.primaryBlue),
-              const SizedBox(width: 6),
-              Text(
-                value,
-                style: TextStyle(
-                  color: selected ? Colors.white : Brand.primaryBlue,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _promoCodeBlock() {
-    final applied = _appliedPromo;
-    final hasApplied = applied != null && !_promoError;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.86),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Brand.uiBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _promoC,
-                  enabled: !_saving,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: _inputDeco(
-                    label: 'Promo code | كود الخصم',
-                    icon: Icons.local_offer_rounded,
-                    hint: 'CODE9',
-                  ),
-                  onChanged: (_) {
-                    if (_appliedPromo == null && _promoMessage == null) return;
-                    setState(() {
-                      _appliedPromo = null;
-                      _promoMessage = null;
-                      _promoError = false;
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _saving ? null : _confirmPromo,
-                style: FilledButton.styleFrom(
-                  backgroundColor: Brand.primaryBlue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                child: const Text('Confirm'),
-              ),
-            ],
-          ),
-          if (_promoMessage != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                _promoMessage!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _promoError ? Colors.redAccent : Colors.green,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          if (hasApplied) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                _PrettyChip(label: 'Original: \$${_fee.toStringAsFixed(0)}'),
-                _PrettyChip(
-                  label: 'Discount: -\$${applied.discountAmount.toStringAsFixed(0)}',
-                  accentColor: Brand.actionOrange,
-                ),
-                _PrettyChip(
-                  label: 'Total: \$${applied.finalFee.toStringAsFixed(0)}',
-                  accentColor: Colors.green,
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 390;
-
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.option.requiresStudyMode) ...[
-            DropdownButtonFormField<String>(
-              value: normalizeStudyMode(_studyMode).isEmpty ? null : normalizeStudyMode(_studyMode),
-              decoration: _inputDeco(
-                label: 'Study mode | طريقة الدراسة',
-                icon: Icons.laptop_rounded,
-              ),
-              items: [
-                DropdownMenuItem(value: 'online', child: const Text('Online | أونلاين')),
-                DropdownMenuItem(value: 'inclass', child: const Text('In-Class | حضورياً')),
-              ],
-              onChanged: _saving ? null : (v) {
-                if (v != null) setState(() => _studyMode = v);
-              },
-              validator: widget.option.requiresStudyMode ? (v) {
-                if (v == null || normalizeStudyMode(v).isEmpty) return 'Select a study mode';
-                return null;
-              } : null,
-            ),
-            const SizedBox(height: 10),
-          ],
-          TextFormField(
-            controller: _fullNameC,
-            enabled: !_saving,
-            decoration: _inputDeco(
-              label: 'Full name | الاسم الكامل',
-              icon: Icons.person_rounded,
-            ),
-            textInputAction: TextInputAction.next,
-            textCapitalization: TextCapitalization.words,
-            validator: (v) {
-              if (v == null || v.trim().length < 3) return 'Enter your full name';
-              return null;
-            },
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _phoneC,
-            enabled: !_saving,
-            decoration: _inputDeco(
-              label: 'Phone | رقم الجوال',
-              icon: Icons.phone_rounded,
-            ),
-            keyboardType: TextInputType.phone,
-            textInputAction: TextInputAction.next,
-            validator: (v) {
-              if (v == null || v.trim().length < 8) return 'Enter a valid phone number';
-              return null;
-            },
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _dobC,
-            enabled: !_saving,
-            readOnly: true,
-            decoration: _inputDeco(
-              label: 'Date of birth | تاريخ الميلاد',
-              icon: Icons.calendar_today_rounded,
-              hint: 'YYYY-MM-DD',
-            ),
-            onTap: _pickDob,
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Select date of birth';
-              final parts = v.trim().split('-');
-              if (parts.length != 3) return 'Invalid date format';
-              final dt = DateTime.tryParse(v.trim());
-              if (dt == null || dt.isAfter(DateTime.now())) return 'Invalid date';
-              return null;
-            },
-          ),
-          const SizedBox(height: 10),
-          FormField<String>(
-            initialValue: _gender,
-            validator: (v) {
-              if (v == null || (v != 'Male' && v != 'Female')) return 'Select gender';
-              return null;
-            },
-            builder: (field) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Gender | الجنس',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _genderPill('Male', field),
-                      const SizedBox(width: 10),
-                      _genderPill('Female', field),
-                    ],
-                  ),
-                  if (field.errorText != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, left: 12),
-                      child: Text(
-                        field.errorText!,
-                        style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _emailC,
-            enabled: !_saving,
-            decoration: _inputDeco(
-              label: 'Email (optional)',
-              icon: Icons.email_rounded,
-            ),
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.done,
-            validator: (v) {
-              if (v != null && v.trim().isNotEmpty) {
-                if (!v.trim().contains('@') || !v.trim().contains('.')) {
-                  return 'Enter a valid email';
-                }
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Brand.appBg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Brand.uiBorder),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_rounded, size: 20, color: Brand.primaryBlue),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'You will not be charged right now.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (widget.option.promoCodes.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _promoCodeBlock(),
-          ],
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _saving ? null : _submit,
-              style: FilledButton.styleFrom(
-                backgroundColor: Brand.primaryBlue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              icon: _saving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.check_circle_rounded),
-              label: Text(_saving ? 'Saving...' : 'Submit enrollment'),
-            ),
-          ),
-        ],
       ),
     );
   }
