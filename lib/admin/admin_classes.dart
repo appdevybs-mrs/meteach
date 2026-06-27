@@ -829,7 +829,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   Future<void> _handleMassSms(
     List<Map<String, String>> learners,
-    Map<String, dynamic> sched,
+    Map<String, dynamic> cls,
   ) async {
     final phones = learners
         .map((l) => _learnerPhoneByUid(l['uid'] ?? ''))
@@ -888,7 +888,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         ].join('\n');
         break;
       case _QuickSmsTemplate.schedule:
-        body = _buildClassScheduleMessage(sched);
+        body = _buildClassScheduleMessage(cls);
         break;
     }
 
@@ -910,27 +910,39 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     } catch (_) {}
   }
 
-  String _buildClassScheduleMessage(Map<String, dynamic> sched) {
+  String _buildClassScheduleMessage(Map<String, dynamic> cls) {
+    final classTitle = (cls['course_title'] ?? '').toString().trim();
+    final teacher = (cls['instructor'] ?? '').toString().trim();
+    final schedRaw = cls['schedule'];
+    final sched = schedRaw is Map
+        ? schedRaw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
     final sessionsRaw = sched['sessions'];
-    if (sessionsRaw is! List) return '';
 
     final parts = <String>[];
-    for (final s in sessionsRaw) {
-      if (s is! Map) continue;
-      final day = (s['day'] ?? '').toString().trim();
-      final start = (s['start_time'] ?? '').toString().trim();
-      if (day.isEmpty && start.isEmpty) continue;
-      if (day.isEmpty) {
-        parts.add(start);
-      } else if (start.isEmpty) {
-        parts.add(day);
-      } else {
-        parts.add('$day $start');
+    if (sessionsRaw is List) {
+      for (final s in sessionsRaw) {
+        if (s is! Map) continue;
+        final day = (s['day'] ?? '').toString().trim();
+        final start = (s['start_time'] ?? '').toString().trim();
+        if (day.isEmpty && start.isEmpty) continue;
+        if (day.isEmpty) {
+          parts.add(start);
+        } else if (start.isEmpty) {
+          parts.add(day);
+        } else {
+          parts.add('$day $start');
+        }
       }
     }
 
-    if (parts.isEmpty) return 'لا يوجد جدول محدد حالياً.';
-    return parts.join('\n');
+    return [
+      'أهلاً بك في تطبيق "Your Bridge School".',
+      if (classTitle.isNotEmpty) 'Class: $classTitle',
+      if (teacher.isNotEmpty) 'Teacher: $teacher',
+      'Schedule:',
+      if (parts.isEmpty) 'لا يوجد جدول محدد حالياً.' else ...parts,
+    ].join('\n');
   }
 
   Widget _smallActionIcon({
@@ -1116,13 +1128,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     final serial = (learner['serial'] ?? '').trim();
     final name = (learner['name'] ?? '').trim();
     final query = serial.isNotEmpty ? serial : name;
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AdminLearnersScreen(initialSearch: query),
-      ),
-    ).then((_) {
-      if (mounted) _refreshClassesSnapshot();
-    });
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => AdminLearnersScreen(initialSearch: query),
+          ),
+        )
+        .then((_) {
+          if (mounted) _refreshClassesSnapshot();
+        });
   }
 
   bool _isTeacherRole(dynamic role) {
@@ -2394,15 +2408,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     );
   }
 
-  int _parseSessionsCountFromDurationText(String raw) {
-    final t = raw.trim();
-    if (t.isEmpty) return 0;
-    final match = RegExp(r'(\d+)').firstMatch(t);
-    if (match == null) return 0;
-    final n = int.tryParse(match.group(1) ?? '') ?? 0;
-    return n > 0 ? n : 0;
-  }
-
   int _classHeldSessionsCount(Map<String, dynamic> cls) {
     final attendanceRaw = cls['attendance'];
     if (attendanceRaw is! Map) return 0;
@@ -2446,7 +2451,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     return out;
   }
 
-  int _classTotalSessionsFromScheduleOrCourse(Map<String, dynamic> cls) {
+  int _classPlannedMeetingsCount(Map<String, dynamic> cls) {
     final schedule = (cls['schedule'] is Map)
         ? Map<String, dynamic>.from(cls['schedule'])
         : <String, dynamic>{};
@@ -2455,10 +2460,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     final byClass = _asInt(cls['sessions_count']);
     if (byClass > 0) return byClass;
-
-    final durationText = (cls['course_duration'] ?? '').toString();
-    final byDuration = _parseSessionsCountFromDurationText(durationText);
-    if (byDuration > 0) return byDuration;
 
     return 0;
   }
@@ -2575,25 +2576,26 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       (cls['variantKey'] ?? '').toString(),
     );
 
-    final heldSessions = _classHeldSessionsCount(cls);
-    final coveredSessions = _classCoveredSessionIds(cls).length;
-    final currentSessions = coveredSessions;
+    final heldMeetings = _classHeldSessionsCount(cls);
+    final plannedMeetings = _classPlannedMeetingsCount(cls);
+    final coveredSyllabusSessions = _classCoveredSessionIds(cls).length;
 
-    var totalSessions = _classTotalSessionsFromScheduleOrCourse(cls);
-    if (totalSessions <= 0 && courseId.isNotEmpty) {
-      totalSessions = await _loadSyllabusSessionCount(
+    var totalSyllabusSessions = 0;
+    if (courseId.isNotEmpty) {
+      totalSyllabusSessions = await _loadSyllabusSessionCount(
         courseId: courseId,
         syllabusVariant: syllabusVariantForScheduledAttendance(variantKey),
       );
     }
 
-    final courseProgressValue = totalSessions > 0
-        ? (currentSessions / totalSessions).clamp(0.0, 1.0)
+    final courseProgressValue = totalSyllabusSessions > 0
+        ? (coveredSyllabusSessions / totalSyllabusSessions).clamp(0.0, 1.0)
         : 0.0;
-
     return _ClassTabMetrics(
-      currentSessions: currentSessions,
-      totalSessions: totalSessions,
+      coveredSyllabusSessions: coveredSyllabusSessions,
+      totalSyllabusSessions: totalSyllabusSessions,
+      heldMeetings: heldMeetings,
+      plannedMeetings: plannedMeetings,
       courseProgressValue: courseProgressValue,
     );
   }
@@ -2604,7 +2606,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   }) {
     if (learner == null) return const _LearnerPaymentProgress.empty();
 
-    final isExam = learner['examMode'] == true ||
+    final isExam =
+        learner['examMode'] == true ||
         learner['examMode']?.toString() == 'true';
     if (isExam) return const _LearnerPaymentProgress.empty();
 
@@ -5105,15 +5108,14 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                     ),
                                     IconButton(
                                       tooltip: 'Mass SMS',
-                                      icon: Icon(
+                                      icon: const Icon(
                                         Icons.sms_rounded,
                                         size: 20,
-                                        color: Colors.blueGrey.shade400,
+                                        color: AdminLearnersScreen.accentCyan,
                                       ),
                                       onPressed: learners.isEmpty
                                           ? null
-                                          : () =>
-                                                _handleMassSms(learners, sched),
+                                          : () => _handleMassSms(learners, cls),
                                     ),
                                     IconButton(
                                       tooltip: expanded
@@ -5220,9 +5222,10 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                           children: [
                                             Expanded(
                                               child: Text(
-                                                metrics.totalSessions > 0
-                                                    ? 'Course progress: ${metrics.currentSessions} / ${metrics.totalSessions}'
-                                                    : 'Course progress: ${metrics.currentSessions} / -',
+                                                metrics.totalSyllabusSessions >
+                                                        0
+                                                    ? 'Course progress: ${metrics.coveredSyllabusSessions} / ${metrics.totalSyllabusSessions}'
+                                                    : 'Course progress: ${metrics.coveredSyllabusSessions} / -',
                                                 style: TextStyle(
                                                   color: Colors.grey.shade800,
                                                   fontWeight: FontWeight.w700,
@@ -5290,9 +5293,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                         ),
                                         const SizedBox(height: 6),
                                         Text(
-                                          metrics.totalSessions > 0
-                                              ? 'Current sessions: ${metrics.currentSessions} / ${metrics.totalSessions}'
-                                              : 'Current sessions: ${metrics.currentSessions}',
+                                          metrics.plannedMeetings > 0
+                                              ? 'Class meetings: ${metrics.heldMeetings} / ${metrics.plannedMeetings}'
+                                              : 'Class meetings: ${metrics.heldMeetings}',
                                           style: TextStyle(
                                             color: Colors.grey.shade700,
                                             fontWeight: FontWeight.w700,
@@ -5349,14 +5352,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                   ),
                                               leading: ProfileAvatar(
                                                 name: name,
-                                                photoUrl:
-                                                    _learnerPhotoUrl(
-                                                      learnerByUid[
-                                                          learnerUid],
-                                                    ),
+                                                photoUrl: _learnerPhotoUrl(
+                                                  learnerByUid[learnerUid],
+                                                ),
                                                 radius: 16,
-                                                borderColor: paymentProgress
-                                                        .isOver
+                                                borderColor:
+                                                    paymentProgress.isOver
                                                     ? Colors.red.shade400
                                                     : null,
                                               ),
@@ -5447,39 +5448,42 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                                                     CrossAxisAlignment.start,
                                                 children: [
                                                   Text.rich(
-                                                     TextSpan(
-                                                       text: paymentProgress
-                                                               .hasPackage
-                                                           ? 'Payment: ${paymentProgress.consumedSessions} / ${paymentProgress.paidSessions}'
-                                                           : 'Payment: no package',
-                                                       style: TextStyle(
-                                                         color: Colors
-                                                             .grey.shade700,
-                                                         fontSize: 11,
-                                                         fontWeight:
-                                                             FontWeight.w700,
-                                                       ),
-                                                       children: paymentProgress
-                                                                   .hasPackage &&
-                                                               paymentProgress
-                                                                   .isOver
-                                                           ? [
-                                                               TextSpan(
-                                                                 text:
-                                                                     '  Over:${paymentProgress.overSessions}',
-                                                                 style: const TextStyle(
-                                                                   color: Colors
-                                                                       .red,
-                                                                   fontSize: 11,
-                                                                   fontWeight:
-                                                                       FontWeight
-                                                                           .w700,
-                                                                 ),
-                                                               ),
-                                                             ]
-                                                           : null,
-                                                     ),
-                                                   ),
+                                                    TextSpan(
+                                                      text:
+                                                          paymentProgress
+                                                              .hasPackage
+                                                          ? 'Payment: ${paymentProgress.consumedSessions} / ${paymentProgress.paidSessions}'
+                                                          : 'Payment: no package',
+                                                      style: TextStyle(
+                                                        color: Colors
+                                                            .grey
+                                                            .shade700,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                      children:
+                                                          paymentProgress
+                                                                  .hasPackage &&
+                                                              paymentProgress
+                                                                  .isOver
+                                                          ? [
+                                                              TextSpan(
+                                                                text:
+                                                                    '  Over:${paymentProgress.overSessions}',
+                                                                style: const TextStyle(
+                                                                  color: Colors
+                                                                      .red,
+                                                                  fontSize: 11,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w700,
+                                                                ),
+                                                              ),
+                                                            ]
+                                                          : null,
+                                                    ),
+                                                  ),
                                                   const SizedBox(height: 3),
                                                   ClipRRect(
                                                     borderRadius:
@@ -7718,13 +7722,17 @@ class _ClassLearnerProgressRow {
 }
 
 class _ClassTabMetrics {
-  final int currentSessions;
-  final int totalSessions;
+  final int coveredSyllabusSessions;
+  final int totalSyllabusSessions;
+  final int heldMeetings;
+  final int plannedMeetings;
   final double courseProgressValue;
 
   const _ClassTabMetrics({
-    required this.currentSessions,
-    required this.totalSessions,
+    required this.coveredSyllabusSessions,
+    required this.totalSyllabusSessions,
+    required this.heldMeetings,
+    required this.plannedMeetings,
     required this.courseProgressValue,
   });
 }
