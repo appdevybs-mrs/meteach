@@ -13,6 +13,8 @@ import '../services/learner_notification_settings_service.dart';
 import '../services/audit_action_keys.dart';
 import '../services/audit_log_service.dart';
 import '../services/secure_window_service.dart';
+import '../services/internal_mail_service.dart';
+import '../services/mail_consistency_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/watermark_background.dart';
@@ -296,6 +298,90 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     return result == true;
   }
 
+  Future<bool> _confirmLateCancellationConsumesSession() async {
+    var isArabic = true;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final title = isArabic
+              ? 'إلغاء خلال 24 ساعة'
+              : 'Cancel within 24 hours';
+          final message = isArabic
+              ? 'هذه الحصة تبدأ خلال أقل من 24 ساعة. يمكنك الإلغاء، لكن سيتم احتساب هذه الحصة من رصيد حصصك المدفوعة. هل تريد المتابعة؟'
+              : 'This class starts in less than 24 hours. You can cancel, but this session will still be counted from your paid sessions. Do you want to continue?';
+          return Directionality(
+            textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+              title: Row(
+                children: [
+                  const YbsBusyLogo(size: 32),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: isArabic
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('العربية'),
+                        selected: isArabic,
+                        onSelected: (_) => setDialogState(() {
+                          isArabic = true;
+                        }),
+                      ),
+                      ChoiceChip(
+                        label: const Text('English'),
+                        selected: !isArabic,
+                        onSelected: (_) => setDialogState(() {
+                          isArabic = false;
+                        }),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(message, style: const TextStyle(height: 1.35)),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx, false),
+                  child: Text(isArabic ? 'لا' : 'No'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: actionOrange),
+                  onPressed: () => Navigator.pop(dialogCtx, true),
+                  child: Text(
+                    isArabic
+                        ? 'نعم، إلغاء واحتساب الحصة'
+                        : 'Yes, cancel and count session',
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    return result == true;
+  }
+
   String _two(int n) => n < 10 ? '0$n' : '$n';
 
   String _dateKey(DateTime d) => '${d.year}-${_two(d.month)}-${_two(d.day)}';
@@ -475,8 +561,8 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       ? 'لا توجد حجوزات قادمة للإلغاء.'
       : 'No upcoming bookings to cancel.';
 
-  String _cancelLockedLabel() =>
-      lessonChoiceArabic ? 'مغلق (أقل من 24 ساعة)' : 'Locked (<24h)';
+  String _cancelCountsLabel() =>
+      lessonChoiceArabic ? 'سيتم احتساب الحصة' : 'Session will count';
 
   String _cancelActionLabel() => lessonChoiceArabic ? 'إلغاء' : 'Cancel';
 
@@ -3647,8 +3733,9 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     String cid,
     String dayKey,
     String hhmm,
-    String teacherId,
-  ) async {
+    String teacherId, {
+    bool allowWithin24h = false,
+  }) async {
     try {
       final slotStart = _parseSlotStart(dayKey, hhmm);
       if (slotStart == null) {
@@ -3657,7 +3744,7 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       final locked = !slotStart.isAfter(
         DateTime.now().add(const Duration(hours: 24)),
       );
-      if (locked) {
+      if (locked && !allowWithin24h) {
         return _CancelBookingStatus.locked;
       }
 
@@ -3793,6 +3880,128 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
     }
   }
 
+  Future<void> _recordLateCancellationConsumedSession({
+    required String cid,
+    required _MyBooking booking,
+  }) async {
+    final bookingKey = _bookingKey(cid, booking.dayKey, booking.time);
+    final onlineRef = _db.child(
+      'booking_progress/$myUid/$cid/online_attendance/$bookingKey',
+    );
+    final existing = await onlineRef.get();
+    final existingMap = existing.exists && existing.value is Map
+        ? Map<String, dynamic>.from(existing.value as Map)
+        : <String, dynamic>{};
+    final createdAt = existingMap['createdAt'];
+
+    await onlineRef.set({
+      ...existingMap,
+      'bookingKey': bookingKey,
+      'courseId': cid,
+      'dayKey': booking.dayKey,
+      'time': booking.time,
+      'startAt': booking.start.millisecondsSinceEpoch,
+      'teacherUid': booking.teacherId,
+      'teacherName': booking.teacherName,
+      'sessionNo': booking.sessionNo,
+      'countedCredit': true,
+      'creditCountReason': 'learner_cancel_within_24h',
+      'cancelledByLearner': true,
+      'cancelledAt': ServerValue.timestamp,
+      'createdAt': createdAt ?? ServerValue.timestamp,
+      'updatedAt': ServerValue.timestamp,
+    });
+  }
+
+  String _lateCancellationMailBody({
+    required String learnerName,
+    required String courseTitle,
+    required _MyBooking booking,
+  }) {
+    final sessionLabel = booking.sessionNo > 0
+        ? 'Session ${booking.sessionNo}'
+        : 'Session -';
+    final arabicSessionLabel = booking.sessionNo > 0
+        ? 'الحصة ${booking.sessionNo}'
+        : 'الحصة -';
+    return '''إلغاء حجز بطلب من المتعلم
+
+قام $learnerName بإلغاء $arabicSessionLabel في دورة $courseTitle.
+
+التاريخ: ${booking.dayKey}
+الوقت: ${booking.time}
+المعلم: ${booking.teacherName}
+
+تم الإلغاء بطلب من المتعلم خلال أقل من 24 ساعة، ولذلك تم احتساب الحصة من رصيد الحصص المدفوعة.
+
+Learner cancellation request
+
+$learnerName cancelled $sessionLabel for $courseTitle.
+
+Date: ${booking.dayKey}
+Time: ${booking.time}
+Teacher: ${booking.teacherName}
+
+This cancellation was requested by the learner within 24 hours, so the session was counted as consumed.''';
+  }
+
+  Future<void> _sendLateCancellationMails({
+    required String cid,
+    required _MyBooking booking,
+  }) async {
+    final learnerName = await _getMyFullName();
+    final safeCourseTitle = (courseTitleById[cid] ?? courseTitle).trim().isEmpty
+        ? 'Course'
+        : (courseTitleById[cid] ?? courseTitle).trim();
+    final subject = 'إلغاء خلال 24 ساعة | Cancellation within 24 hours';
+    final body = _lateCancellationMailBody(
+      learnerName: learnerName,
+      courseTitle: safeCourseTitle,
+      booking: booking,
+    );
+
+    final recipients = <String, _LateCancelMailRecipient>{};
+    if (booking.teacherId.trim().isNotEmpty) {
+      recipients[booking.teacherId.trim()] = _LateCancelMailRecipient(
+        uid: booking.teacherId.trim(),
+        name: booking.teacherName.trim().isEmpty
+            ? 'Teacher'
+            : booking.teacherName.trim(),
+        role: 'teacher',
+      );
+    }
+
+    final adminUids = await PushDispatchService.loadAdminUids();
+    for (final adminUid in adminUids) {
+      final uid = adminUid.trim();
+      if (uid.isEmpty) continue;
+      final label = await MailConsistencyService.fetchUserLabel(
+        FirebaseDatabase.instance,
+        uid,
+      );
+      recipients[uid] = _LateCancelMailRecipient(
+        uid: uid,
+        name: (label['name'] ?? '').trim().isEmpty
+            ? 'Admin'
+            : (label['name'] ?? 'Admin'),
+        role: 'admin',
+      );
+    }
+
+    for (final recipient in recipients.values) {
+      await InternalMailService.sendAutoMail(
+        senderUid: myUid,
+        senderName: learnerName,
+        senderRole: 'learner',
+        receiverUid: recipient.uid,
+        receiverName: recipient.name,
+        receiverRole: recipient.role,
+        subject: subject,
+        body: body,
+      );
+    }
+  }
+
   Future<void> _cancelUpcomingBooking(String cid, _MyBooking b) async {
     final start = _parseSlotStart(b.dayKey, b.time);
     if (start == null) {
@@ -3803,18 +4012,18 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
       DateTime.now().add(const Duration(hours: 24)),
     );
     if (locked) {
-      _toast('This booking is within 24 hours and cannot be cancelled.');
-      return;
+      final ok = await _confirmLateCancellationConsumesSession();
+      if (!mounted || ok != true) return;
+    } else {
+      final ok = await _confirmWithLogo(
+        title: 'Cancel booking',
+        message:
+            'Cancel this class with ${b.teacherName} on ${_friendlyDate(start)} at ${b.time}?',
+        confirmLabel: 'Yes, Cancel',
+        confirmColor: actionOrange,
+      );
+      if (!mounted || ok != true) return;
     }
-
-    final ok = await _confirmWithLogo(
-      title: 'Cancel booking',
-      message:
-          'Cancel this class with ${b.teacherName} on ${_friendlyDate(start)} at ${b.time}?',
-      confirmLabel: 'Yes, Cancel',
-      confirmColor: actionOrange,
-    );
-    if (!mounted || ok != true) return;
 
     await _runBusy('Cancelling booking...', () async {
       final status = await _cancelBookingByKey(
@@ -3822,8 +4031,12 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
         b.dayKey,
         b.time,
         b.teacherId,
+        allowWithin24h: locked,
       );
       if (status == _CancelBookingStatus.cancelled) {
+        if (locked) {
+          await _recordLateCancellationConsumedSession(cid: cid, booking: b);
+        }
         try {
           await NotificationService.I.init();
           await NotificationService.I.cancelSessionReminderSeries(
@@ -3833,6 +4046,13 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
           );
         } catch (_) {}
         await _sendCancelNotifications(b, cid: cid);
+        if (locked) {
+          try {
+            await _sendLateCancellationMails(cid: cid, booking: b);
+          } catch (_) {
+            _toast('Booking cancelled, but mail notification failed.');
+          }
+        }
         _toast('Booking cancelled successfully.');
         await _loadReservationsSummary(cid);
         await _generateSlots(cid);
@@ -4076,44 +4296,58 @@ class _LearnerBookingScreenState extends State<LearnerBookingScreen>
                                                 ],
                                               ),
                                             ),
-                                            if (locked)
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 7,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.grey.shade200,
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: [
+                                                if (locked) ...[
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 6,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(
+                                                        0xFFFFF1E3,
                                                       ),
-                                                ),
-                                                child: Text(
-                                                  _cancelLockedLabel(),
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 12,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      _cancelCountsLabel(),
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        fontSize: 11,
+                                                        color: Color(
+                                                          0xFF9A3412,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                ],
+                                                FilledButton(
+                                                  style: FilledButton.styleFrom(
+                                                    backgroundColor:
+                                                        actionOrange,
+                                                  ),
+                                                  onPressed: () async {
+                                                    Navigator.of(ctx).pop();
+                                                    await _cancelUpcomingBooking(
+                                                      cid,
+                                                      b,
+                                                    );
+                                                  },
+                                                  child: Text(
+                                                    _cancelActionLabel(),
                                                   ),
                                                 ),
-                                              )
-                                            else
-                                              FilledButton(
-                                                style: FilledButton.styleFrom(
-                                                  backgroundColor: actionOrange,
-                                                ),
-                                                onPressed: () async {
-                                                  Navigator.of(ctx).pop();
-                                                  await _cancelUpcomingBooking(
-                                                    cid,
-                                                    b,
-                                                  );
-                                                },
-                                                child: Text(
-                                                  _cancelActionLabel(),
-                                                ),
-                                              ),
+                                              ],
+                                            ),
                                           ],
                                         ),
                                         AnimatedSize(
@@ -8446,6 +8680,18 @@ class _MyBooking {
     required this.teacherId,
     required this.teacherName,
     required this.sessionNo,
+  });
+}
+
+class _LateCancelMailRecipient {
+  final String uid;
+  final String name;
+  final String role;
+
+  const _LateCancelMailRecipient({
+    required this.uid,
+    required this.name,
+    required this.role,
   });
 }
 

@@ -760,8 +760,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     }
 
     final isLive = _isLiveBooking(slot);
-    final reason = isLive ? await _pickCancelReason() : null;
-    if (isLive && reason == null) return;
+    final reason = await _pickCancelReason();
+    if (reason == null) return;
+    if (!mounted) return;
 
     if (!isLive) {
       final ok = await showDialog<bool>(
@@ -1092,9 +1093,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return out;
   }
 
-  Future<_CourseSyllabus> _loadCourseSessionChoices(
-    String courseId,
-  ) async {
+  Future<_CourseSyllabus> _loadCourseSessionChoices(String courseId) async {
     final cid = courseId.trim();
     if (cid.isEmpty) return const _CourseSyllabus(units: []);
 
@@ -1122,33 +1121,38 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               final session = sessionRaw.map(
                 (k, v) => MapEntry(k.toString(), v),
               );
-              unitSessions.add(_SessionChoiceInfo(
-                sessionNo: globalNo,
-                title: (session['sessionTitle'] ?? session['title'] ?? '')
-                    .toString()
-                    .trim(),
-                skillType: (session['skillType'] ?? '').toString().trim(),
-                objective: (session['objective'] ?? '').toString().trim(),
-              ));
+              unitSessions.add(
+                _SessionChoiceInfo(
+                  sessionNo: globalNo,
+                  title: (session['sessionTitle'] ?? session['title'] ?? '')
+                      .toString()
+                      .trim(),
+                  skillType: (session['skillType'] ?? '').toString().trim(),
+                  objective: (session['objective'] ?? '').toString().trim(),
+                ),
+              );
               globalNo += 1;
             }
 
             if (unitSessions.isNotEmpty) {
-              units.add(_SyllabusUnit(
-                id: (unit['id'] ?? '').toString(),
-                title: (unit['title'] ?? 'Unit').toString(),
-                description: (unit['description'] ?? '').toString().trim(),
-                order: _toInt(unit['order'], fallback: 0),
-                sessions: unitSessions,
-              ));
+              units.add(
+                _SyllabusUnit(
+                  id: (unit['id'] ?? '').toString(),
+                  title: (unit['title'] ?? 'Unit').toString(),
+                  description: (unit['description'] ?? '').toString().trim(),
+                  order: _toInt(unit['order'], fallback: 0),
+                  sessions: unitSessions,
+                ),
+              );
             }
           }
         }
       }
 
       // booking_curriculum extras (sessions not in flexible syllabus)
-      final curricSnap =
-          await _db.child('booking_curriculum/$cid/sessions').get();
+      final curricSnap = await _db
+          .child('booking_curriculum/$cid/sessions')
+          .get();
       if (curricSnap.exists && curricSnap.value is Map) {
         final root = (curricSnap.value as Map).map(
           (k, v) => MapEntry(k.toString(), v),
@@ -1170,21 +1174,25 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
           if (no <= 0) no = _toInt(m['order'], fallback: 0);
           if (no <= 0) no = keyNo;
           if (no <= 0 || existingNos.contains(no)) continue;
-          extra.add(_SessionChoiceInfo(
-            sessionNo: no,
-            title: (m['sessionTitle'] ?? m['title'] ?? '').toString().trim(),
-            skillType: (m['skillType'] ?? '').toString().trim(),
-            objective: (m['objective'] ?? '').toString().trim(),
-          ));
+          extra.add(
+            _SessionChoiceInfo(
+              sessionNo: no,
+              title: (m['sessionTitle'] ?? m['title'] ?? '').toString().trim(),
+              skillType: (m['skillType'] ?? '').toString().trim(),
+              objective: (m['objective'] ?? '').toString().trim(),
+            ),
+          );
         }
         if (extra.isNotEmpty) {
           extra.sort((a, b) => a.sessionNo.compareTo(b.sessionNo));
-          units.add(_SyllabusUnit(
-            id: '',
-            title: 'Other sessions',
-            sessions: extra,
-            order: 9999,
-          ));
+          units.add(
+            _SyllabusUnit(
+              id: '',
+              title: 'Other sessions',
+              sessions: extra,
+              order: 9999,
+            ),
+          );
         }
       }
     } catch (_) {}
@@ -1311,11 +1319,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                 padding: const EdgeInsets.only(bottom: 3),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(8),
-                                  onTap: () =>
-                                      setInner(() => selectedNo = session.sessionNo),
+                                  onTap: () => setInner(
+                                    () => selectedNo = session.sessionNo,
+                                  ),
                                   child: AnimatedContainer(
-                                    duration:
-                                        const Duration(milliseconds: 150),
+                                    duration: const Duration(milliseconds: 150),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 10,
                                       vertical: 10,
@@ -1327,8 +1335,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
                                         color: isSelected
-                                            ? actionOrange
-                                                .withValues(alpha: 0.50)
+                                            ? actionOrange.withValues(
+                                                alpha: 0.50,
+                                              )
                                             : uiBorder.withValues(alpha: 0.30),
                                       ),
                                     ),
@@ -1384,10 +1393,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                                 );
                                               },
                                               style: TextButton.styleFrom(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 2,
-                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
                                                 minimumSize: Size.zero,
                                                 tapTargetSize:
                                                     MaterialTapTargetSize
@@ -1401,9 +1411,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                               ),
                                               label: const Text(
                                                 '',
-                                                style: TextStyle(
-                                                  fontSize: 0,
-                                                ),
+                                                style: TextStyle(fontSize: 0),
                                               ),
                                             ),
                                           ),
@@ -1428,8 +1436,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                       child: SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: () =>
-                              Navigator.pop(context, selectedNo),
+                          onPressed: () => Navigator.pop(context, selectedNo),
                           icon: const Icon(Icons.check_rounded),
                           label: const Text(
                             'Continue',
@@ -1743,6 +1750,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
     final rescheduleReason = await _pickRescheduleReason();
     if (rescheduleReason == null) return;
+    if (!mounted) return;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -1934,6 +1942,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     if (chosen == null || chosen == slot.sessionNo) return;
     if (!mounted) return;
 
+    final changeReason = await _pickRescheduleReason();
+    if (changeReason == null) return;
+    if (!mounted) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -2017,6 +2029,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             learnerUids: slot.learnerUids,
           ),
           learnerUids: slot.learnerUids,
+          rescheduleReason: changeReason,
         );
       } catch (e) {
         _toast('Session updated, but notifications failed.');
@@ -2107,6 +2120,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     if (chosen == null || chosen == slot.sessionNo) return;
     if (!mounted) return;
 
+    final changeReason = await _pickRescheduleReason();
+    if (changeReason == null) return;
+    if (!mounted) return;
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -2189,6 +2206,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             learnerUids: slot.learnerUids,
           ),
           learnerUids: slot.learnerUids,
+          rescheduleReason: changeReason,
         );
       } catch (e) {
         _toast('Group session updated, but notifications failed.');
@@ -2237,7 +2255,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             ),
             content: RadioGroup<String>(
               groupValue: selected,
-              onChanged: (v) { if (v != null) setDialogState(() => selected = v); },
+              onChanged: (v) {
+                if (v != null) setDialogState(() => selected = v);
+              },
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2318,7 +2338,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
             ),
             content: RadioGroup<String>(
               groupValue: selected,
-              onChanged: (v) { if (v != null) setDialogState(() => selected = v); },
+              onChanged: (v) {
+                if (v != null) setDialogState(() => selected = v);
+              },
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2364,9 +2386,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                 child: const Text('Back'),
               ),
               FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: actionOrange,
-                ),
+                style: FilledButton.styleFrom(backgroundColor: actionOrange),
                 onPressed: () {
                   completer.complete(selected);
                   Navigator.pop(ctx);
@@ -2398,11 +2418,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
     final isLive = _isLiveBooking(slot);
 
-    String? reason;
-    if (isLive) {
-      reason = await _pickCancelReason();
-      if (reason == null) return;
-    }
+    final reason = await _pickCancelReason();
+    if (reason == null) return;
+    if (!mounted) return;
 
     if (!isLive) {
       final ok = await showDialog<bool>(
@@ -2421,7 +2439,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
               child: const Text('No'),
             ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade600,
+              ),
               onPressed: () => Navigator.pop(context, true),
               child: const Text('Yes, Cancel Group'),
             ),
@@ -2731,8 +2751,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                   ...session,
                   'unitTitle': (unit['title'] ?? '').toString().trim(),
                   'unitOrder': _toInt(unit['order'], fallback: 0),
-                  'unitOtherTitle':
-                      (unit['otherTitle'] ?? '').toString().trim(),
+                  'unitOtherTitle': (unit['otherTitle'] ?? '')
+                      .toString()
+                      .trim(),
                 };
                 break;
               }
@@ -2757,8 +2778,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       final duration = _toInt(found['durationMinutes'], fallback: 0);
       final unitTitle = (found['unitTitle'] ?? '').toString().trim();
       final unitOrder = _toInt(found['unitOrder'], fallback: 0);
-      final unitOtherTitle =
-          (found['unitOtherTitle'] ?? '').toString().trim();
+      final unitOtherTitle = (found['unitOtherTitle'] ?? '').toString().trim();
       final materialsUrl = (found['materialsUrl'] ?? '').toString().trim();
       final homeworkUrl = (found['homeworkUrl'] ?? '').toString().trim();
 
@@ -2992,11 +3012,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                         SizedBox(
                           height: 28,
                           child: TextButton.icon(
-                            onPressed: () =>
-                                _showSessionObjectiveSheet(
-                                  courseId: slot.courseId,
-                                  sessionNo: slot.sessionNo,
-                                ),
+                            onPressed: () => _showSessionObjectiveSheet(
+                              courseId: slot.courseId,
+                              sessionNo: slot.sessionNo,
+                            ),
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -3350,7 +3369,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                                       vertical: 10,
                                                     ),
                                               ),
-                                              onPressed: (busyAction || (isPast && !isLive))
+                                              onPressed:
+                                                  (busyAction ||
+                                                      (isPast && !isLive))
                                                   ? null
                                                   : () =>
                                                         _cancelLearnerFromSlot(
@@ -3474,7 +3495,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-
                         // Level chips
                         _buildCompactSelectors(),
                         const SizedBox(height: 6),
@@ -3484,8 +3504,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                             Expanded(
                               flex: 5,
                               child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
                                   borderRadius: BorderRadius.circular(12),
@@ -3535,8 +3556,9 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                       : (v) async {
                                           if (v == null) return;
                                           setState(() {
-                                            selectedCourseId =
-                                                v == 'all' ? null : v;
+                                            selectedCourseId = v == 'all'
+                                                ? null
+                                                : v;
                                             teacherFilter = 'all';
                                           });
                                         },
@@ -3551,8 +3573,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                 decoration: InputDecoration(
                                   hintText: 'Search',
                                   isDense: true,
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(
+                                  contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 12,
                                     vertical: 10,
                                   ),
@@ -3560,26 +3581,21 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                     Icons.search_rounded,
                                     size: 20,
                                   ),
-                                  suffixIcon:
-                                      searchC.text.trim().isEmpty
-                                          ? null
-                                          : IconButton(
-                                              onPressed: () =>
-                                                  searchC.clear(),
-                                              icon: const Icon(
-                                                Icons.close_rounded,
-                                                size: 18,
-                                              ),
-                                            ),
+                                  suffixIcon: searchC.text.trim().isEmpty
+                                      ? null
+                                      : IconButton(
+                                          onPressed: () => searchC.clear(),
+                                          icon: const Icon(
+                                            Icons.close_rounded,
+                                            size: 18,
+                                          ),
+                                        ),
                                   border: OutlineInputBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                   enabledBorder: OutlineInputBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12),
-                                    borderSide:
-                                        BorderSide(color: uiBorder),
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: uiBorder),
                                   ),
                                 ),
                               ),
@@ -3655,12 +3671,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: primaryBlue,
                                   side: BorderSide(
-                                    color: primaryBlue
-                                        .withValues(alpha: 0.20),
+                                    color: primaryBlue.withValues(alpha: 0.20),
                                   ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(999),
+                                    borderRadius: BorderRadius.circular(999),
                                   ),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 10,
@@ -3707,7 +3721,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-
                                 Container(
                                   decoration: BoxDecoration(
                                     color: Colors.white,
@@ -4566,11 +4579,7 @@ class _SectionCard extends StatelessWidget {
 }
 
 class _UrlChip extends StatelessWidget {
-  const _UrlChip({
-    required this.icon,
-    required this.label,
-    required this.url,
-  });
+  const _UrlChip({required this.icon, required this.label, required this.url});
 
   final IconData icon;
   final String label;
@@ -4588,9 +4597,7 @@ class _UrlChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: _primaryBlue.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: _primaryBlue.withValues(alpha: 0.15),
-          ),
+          border: Border.all(color: _primaryBlue.withValues(alpha: 0.15)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

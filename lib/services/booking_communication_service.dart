@@ -316,28 +316,42 @@ class BookingCommunicationService {
     switch (request.action) {
       case BookingChangeAction.cancelLearner:
       case BookingChangeAction.cancelGroup:
-        return '$learnerPart in ${before.courseTitle} was canceled for ${before.dayKey} at ${before.time}.';
-      case BookingChangeAction.cancelGroupLive: {
-        final reason = request.cancelReason ?? 'other';
-        switch (reason) {
-          case 'technical':
-            return '\u26a1 Your session was cancelled \u2014 teacher had a connectivity issue. No credit used.';
-          case 'emergency':
-            return '\uD83D\uDEA8 Your session was cancelled due to a teacher emergency. No credit used.';
-          default:
-            return '\u274C Your session was cancelled by admin. No credit used.';
+        {
+          final reason = request.cancelReason;
+          final reasonPart = reason != null
+              ? ' Reason: ${_cancelReasonText(reason)}'
+              : '';
+          return '$learnerPart in ${before.courseTitle} was canceled for ${before.dayKey} at ${before.time}.$reasonPart';
         }
-      }
+      case BookingChangeAction.cancelGroupLive:
+        {
+          final reason = request.cancelReason ?? 'other';
+          switch (reason) {
+            case 'technical':
+              return '\u26a1 Your session was cancelled \u2014 teacher had a connectivity issue. No credit used.';
+            case 'emergency':
+              return '\uD83D\uDEA8 Your session was cancelled due to a teacher emergency. No credit used.';
+            default:
+              return '\u274C Your session was cancelled by admin. No credit used.';
+          }
+        }
       case BookingChangeAction.rescheduleLearner:
-      case BookingChangeAction.rescheduleGroup: {
-        final reason = request.rescheduleReason;
-        final reasonPart = reason != null ? ' Reason: ${_rescheduleReasonText(reason)}' : '';
-        return '$learnerPart in ${before.courseTitle} moved from ${before.dayKey} ${before.time} to ${after?.dayKey ?? ''} ${after?.time ?? ''}.$reasonPart'
-            .trim();
-      }
+      case BookingChangeAction.rescheduleGroup:
+        {
+          final reason = request.rescheduleReason;
+          final reasonPart = reason != null
+              ? ' Reason: ${_rescheduleReasonText(reason)}'
+              : '';
+          return '$learnerPart in ${before.courseTitle} moved from ${before.dayKey} ${before.time} to ${after?.dayKey ?? ''} ${after?.time ?? ''}.$reasonPart'
+              .trim();
+        }
       case BookingChangeAction.changeSessionSingle:
       case BookingChangeAction.changeSessionGroup:
-        return '$learnerPart in ${before.courseTitle} changed from Session ${before.sessionNo} to Session ${after?.sessionNo ?? before.sessionNo}.';
+        final reason = request.rescheduleReason;
+        final reasonPart = reason != null
+            ? ' Reason: ${_rescheduleReasonText(reason)}'
+            : '';
+        return '$learnerPart in ${before.courseTitle} changed from Session ${before.sessionNo} to Session ${after?.sessionNo ?? before.sessionNo}.$reasonPart';
     }
   }
 
@@ -427,6 +441,9 @@ Your session has been cancelled by admin.
     switch (request.action) {
       case BookingChangeAction.cancelLearner:
       case BookingChangeAction.cancelGroup:
+        if (request.cancelReason != null) {
+          lines.add('Reason: ${_cancelReasonText(request.cancelReason!)}');
+        }
         lines.add('Status: booking canceled.');
         break;
       case BookingChangeAction.cancelGroupLive:
@@ -434,12 +451,19 @@ Your session has been cancelled by admin.
       case BookingChangeAction.rescheduleLearner:
       case BookingChangeAction.rescheduleGroup:
         if (request.rescheduleReason != null) {
-          lines.add('Reason: ${_rescheduleReasonText(request.rescheduleReason!)}');
+          lines.add(
+            'Reason: ${_rescheduleReasonText(request.rescheduleReason!)}',
+          );
         }
         lines.add('Status: booking rescheduled.');
         break;
       case BookingChangeAction.changeSessionSingle:
       case BookingChangeAction.changeSessionGroup:
+        if (request.rescheduleReason != null) {
+          lines.add(
+            'Reason: ${_rescheduleReasonText(request.rescheduleReason!)}',
+          );
+        }
         lines.add(
           'Status: session number changed while keeping the booking slot.',
         );
@@ -498,6 +522,14 @@ Your session has been cancelled by admin.
       'student_request' => 'Student request',
       'makeup' => 'Makeup session',
       _ => 'Other reason',
+    };
+  }
+
+  static String _cancelReasonText(String reason) {
+    return switch (reason) {
+      'technical' => 'Teacher had a technical issue (internet/power)',
+      'emergency' => 'Teacher had an emergency',
+      _ => 'Cancelled by admin',
     };
   }
 }
