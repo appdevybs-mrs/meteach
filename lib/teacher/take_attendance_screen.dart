@@ -1361,17 +1361,24 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
               ),
             ),
             const Divider(height: 24),
-            Row(
-              children: [
-                const Icon(Icons.event, size: 20, color: primaryBlue),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Date: ${_dateStr(_date)}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                FilledButton.icon(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stackDatePicker = constraints.maxWidth < 330;
+                final dateText = Row(
+                  children: [
+                    const Icon(Icons.event, size: 20, color: primaryBlue),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Date: ${_dateStr(_date)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                );
+                final dateButton = FilledButton.icon(
                   onPressed: _pickDate,
                   style: FilledButton.styleFrom(
                     backgroundColor: actionOrange,
@@ -1380,7 +1387,7 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                       horizontal: 12,
                       vertical: 10,
                     ),
-                    minimumSize: const Size.fromHeight(48),
+                    minimumSize: const Size(0, 44),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -1388,10 +1395,27 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   icon: const Icon(Icons.edit_calendar_rounded, size: 16),
                   label: const Text(
                     'Change Date',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontWeight: FontWeight.w800),
                   ),
-                ),
-              ],
+                );
+
+                if (stackDatePicker) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [dateText, const SizedBox(height: 8), dateButton],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: dateText),
+                    const SizedBox(width: 10),
+                    Flexible(flex: 0, child: dateButton),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 8),
             Row(
@@ -1741,13 +1765,17 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
                   children: [
                     const Icon(Icons.history_edu, size: 20, color: primaryBlue),
                     const SizedBox(width: 10),
-                    Text(
-                      _homeworkDueDate.isEmpty
-                          ? "No Due Date"
-                          : "Due: $_homeworkDueDate",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    Expanded(
+                      child: Text(
+                        _homeworkDueDate.isEmpty
+                            ? "No Due Date"
+                            : "Due: $_homeworkDueDate",
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     const Icon(
                       Icons.calendar_month,
                       size: 18,
@@ -1829,7 +1857,11 @@ class _TakeAttendanceScreenState extends State<TakeAttendanceScreen> {
         ),
         leading: CircleAvatar(
           backgroundColor: Colors.purple.withValues(alpha: 0.1),
-          child: const Icon(Icons.school_rounded, color: Colors.purple, size: 20),
+          child: const Icon(
+            Icons.school_rounded,
+            color: Colors.purple,
+            size: 20,
+          ),
         ),
       ),
     );
