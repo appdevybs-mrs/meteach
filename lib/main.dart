@@ -242,7 +242,9 @@ class _AppStartupGateState extends State<AppStartupGate> {
       if (cached.hasCachedFile && File(cached.cachedFilePath).existsSync()) {
         await _initVideo(cached.url, cachedFile: cached.cachedFilePath);
       } else {
-        unawaited(_downloadAndCacheVideo(cached, initializeAfterDownload: false));
+        unawaited(
+          _downloadAndCacheVideo(cached, initializeAfterDownload: false),
+        );
       }
     } else if (cached.isImage && cached.url.isNotEmpty) {
       if (!cached.hasCachedFile || !File(cached.cachedFilePath).existsSync()) {
@@ -286,7 +288,9 @@ class _AppStartupGateState extends State<AppStartupGate> {
         _videoInitialized = false;
         setState(() => _splashConfig = fresh);
         if (fresh.isVideo && fresh.url.isNotEmpty) {
-          unawaited(_downloadAndCacheVideo(fresh, initializeAfterDownload: false));
+          unawaited(
+            _downloadAndCacheVideo(fresh, initializeAfterDownload: false),
+          );
         } else if (fresh.isImage && fresh.url.isNotEmpty) {
           await _cacheMediaFile(fresh);
         }
@@ -4956,14 +4960,20 @@ class _PrettyChip extends StatelessWidget {
         color: useAccent ? accentColor!.withValues(alpha: 0.12) : Brand.appBg,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: useAccent ? accentColor!.withValues(alpha: 0.4) : Brand.uiBorder,
+          color: useAccent
+              ? accentColor!.withValues(alpha: 0.4)
+              : Brand.uiBorder,
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 14, color: useAccent ? accentColor : Brand.primaryBlue),
+            Icon(
+              icon,
+              size: 14,
+              color: useAccent ? accentColor : Brand.primaryBlue,
+            ),
             const SizedBox(width: 6),
           ],
           Flexible(
@@ -5044,9 +5054,10 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 1.0, end: 1.04).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
+    _pulseAnim = Tween<double>(
+      begin: 1.0,
+      end: 1.04,
+    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
 
     _sharePulseCtrl = AnimationController(
       vsync: this,
@@ -5340,11 +5351,16 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
 
   String _deliveryLabelAr(String key) {
     switch (normalizeDeliveryKey(key)) {
-      case 'inclass':  return 'حضوري';
-      case 'flexible': return 'مرن';
-      case 'private':  return 'خاص';
-      case 'recorded': return 'مسجل';
-      default:         return key;
+      case 'inclass':
+        return 'حضوري';
+      case 'flexible':
+        return 'مرن';
+      case 'private':
+        return 'خاص';
+      case 'recorded':
+        return 'مسجل';
+      default:
+        return key;
     }
   }
 
@@ -5404,7 +5420,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
 
       buf.writeln('────────────────');
       buf.writeln();
-      buf.writeln('#YourBridgeSchool #YBS #تعلم_الإنجليزية #LearnEnglish #EnglishCourse');
+      buf.writeln(
+        '#YourBridgeSchool #YBS #تعلم_الإنجليزية #LearnEnglish #EnglishCourse',
+      );
 
       final text = buf.toString();
 
@@ -5414,16 +5432,16 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
           final response = await http
               .get(uri)
               .timeout(const Duration(seconds: 10));
-          if (response.statusCode == 200 && response.bodyBytes.length < 5 * 1024 * 1024) {
+          if (response.statusCode == 200 &&
+              response.bodyBytes.length < 5 * 1024 * 1024) {
             final dir = await getTemporaryDirectory();
             final safeId = c.id.replaceAll(RegExp(r'[^\w-]'), '_');
             final file = File('${dir.path}/course_share_$safeId.jpg');
             await file.writeAsBytes(response.bodyBytes, flush: true);
             if (mounted) {
-              await Share.shareXFiles(
-                [XFile(file.path, mimeType: 'image/jpeg')],
-                text: text,
-              );
+              await Share.shareXFiles([
+                XFile(file.path, mimeType: 'image/jpeg'),
+              ], text: text);
             }
             return;
           }
@@ -5791,7 +5809,11 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     }
   }
 
-  Widget _deliveryCard(EnrollDeliveryOption option, bool selected, {VoidCallback? onSelected}) {
+  Widget _deliveryCard(
+    EnrollDeliveryOption option,
+    bool selected, {
+    VoidCallback? onSelected,
+  }) {
     final compact = MediaQuery.sizeOf(context).width < 390;
     final tone = _deliveryTone(option);
     final tone2 = _deliveryTone2(option);
@@ -5810,57 +5832,60 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                 onSelected?.call();
               },
         child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        margin: const EdgeInsets.all(1),
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: selected
-                ? [tone, tone2]
-                : [tone.withValues(alpha: 0.18), tone2.withValues(alpha: 0.10)],
-          ),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: selected ? Colors.white : tone.withValues(alpha: 0.35),
-            width: selected ? 2.2 : 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: tone.withValues(alpha: selected ? 0.28 : 0.10),
-              blurRadius: selected ? 18 : 10,
-              offset: const Offset(0, 8),
+          duration: const Duration(milliseconds: 220),
+          margin: const EdgeInsets.all(1),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: selected
+                  ? [tone, tone2]
+                  : [
+                      tone.withValues(alpha: 0.18),
+                      tone2.withValues(alpha: 0.10),
+                    ],
             ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              option.icon(),
-              color: selected ? Colors.white : tone,
-              size: 22,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: selected ? Colors.white : tone.withValues(alpha: 0.35),
+              width: selected ? 2.2 : 1,
             ),
-            const SizedBox(height: 5),
-            Directionality(
-              textDirection: TextDirection.rtl,
-              child: Text(
-                _deliveryArabicLabel(option),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: selected ? Colors.white : Brand.primaryBlue,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
+            boxShadow: [
+              BoxShadow(
+                color: tone.withValues(alpha: selected ? 0.28 : 0.10),
+                blurRadius: selected ? 18 : 10,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                option.icon(),
+                color: selected ? Colors.white : tone,
+                size: 22,
+              ),
+              const SizedBox(height: 5),
+              Directionality(
+                textDirection: TextDirection.rtl,
+                child: Text(
+                  _deliveryArabicLabel(option),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? Colors.white : Brand.primaryBlue,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   List<Widget> _deliveryFeatureTags(EnrollDeliveryOption option) {
@@ -6060,7 +6085,11 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     );
   }
 
-  Widget _genderPill(String value, FormFieldState<String> field, {Color accent = Brand.primaryBlue}) {
+  Widget _genderPill(
+    String value,
+    FormFieldState<String> field, {
+    Color accent = Brand.primaryBlue,
+  }) {
     final selected = field.value == value;
     final isMale = value == 'Male';
     final icon = isMale ? Icons.male_rounded : Icons.female_rounded;
@@ -6079,9 +6108,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
           decoration: BoxDecoration(
             color: selected ? accent : Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: selected ? accent : Brand.uiBorder,
-            ),
+            border: Border.all(color: selected ? accent : Brand.uiBorder),
           ),
           alignment: Alignment.center,
           child: Row(
@@ -6139,7 +6166,10 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
 
   String _moneyLabel(double value) => '${value.toStringAsFixed(0)} DA';
 
-  Widget _promoCodeBlock(EnrollDeliveryOption option, {Color accent = Brand.primaryBlue}) {
+  Widget _promoCodeBlock(
+    EnrollDeliveryOption option, {
+    Color accent = Brand.primaryBlue,
+  }) {
     final applied = _appliedPromo;
     final hasApplied = applied != null && !_promoError;
     return Container(
@@ -6239,7 +6269,9 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
   @override
   Widget build(BuildContext context) {
     final selected = _selectedOption;
-    final accent = selected != null ? _deliveryTone(selected) : Brand.primaryBlue;
+    final accent = selected != null
+        ? _deliveryTone(selected)
+        : Brand.primaryBlue;
     final showPrivateMode = selected?.requiresStudyMode == true;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
@@ -6292,7 +6324,8 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                       child: SingleChildScrollView(
                         controller: _scrollController,
                         padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
-                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -6300,11 +6333,16 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                               children: [
                                 Expanded(
                                   child: Text(
-                                    course.title.isEmpty ? 'Course' : course.title,
-                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.w900,
-                                      color: Brand.primaryBlue,
-                                    ),
+                                    course.title.isEmpty
+                                        ? 'Course'
+                                        : course.title,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w900,
+                                          color: Brand.primaryBlue,
+                                        ),
                                     overflow: TextOverflow.ellipsis,
                                     maxLines: 2,
                                   ),
@@ -6326,16 +6364,26 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
                                       child: Container(
                                         decoration: BoxDecoration(
                                           gradient: const LinearGradient(
-                                            colors: [Brand.primaryBlue, Brand.accentCyan],
+                                            colors: [
+                                              Brand.primaryBlue,
+                                              Brand.accentCyan,
+                                            ],
                                           ),
-borderRadius: BorderRadius.circular(20),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
                                         ),
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 8,
+                                        ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
-                                              _sharing ? Icons.hourglass_top_rounded : Icons.ios_share_rounded,
+                                              _sharing
+                                                  ? Icons.hourglass_top_rounded
+                                                  : Icons.ios_share_rounded,
                                               size: 16,
                                               color: Colors.white,
                                             ),
@@ -6374,18 +6422,23 @@ borderRadius: BorderRadius.circular(20),
                                       decoration: BoxDecoration(
                                         color: Brand.appBg,
                                         borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(color: Brand.uiBorder),
+                                        border: Border.all(
+                                          color: Brand.uiBorder,
+                                        ),
                                       ),
                                       child: const Text(
                                         'No study options are available for this course right now.',
-                                        style: TextStyle(fontWeight: FontWeight.w700),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     )
                                   else ...[
                                     GridView.count(
                                       crossAxisCount: 2,
                                       shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
                                       mainAxisSpacing: 5,
                                       crossAxisSpacing: 5,
                                       childAspectRatio: 1.65,
@@ -6397,14 +6450,14 @@ borderRadius: BorderRadius.circular(20),
                                             onSelected: () {
                                               WidgetsBinding.instance
                                                   .addPostFrameCallback((_) {
-                                                _scrollController.animateTo(
-                                                  280,
-                                                  duration: const Duration(
-                                                    milliseconds: 400,
-                                                  ),
-                                                  curve: Curves.easeOut,
-                                                );
-                                              });
+                                                    _scrollController.animateTo(
+                                                      280,
+                                                      duration: const Duration(
+                                                        milliseconds: 400,
+                                                      ),
+                                                      curve: Curves.easeOut,
+                                                    );
+                                                  });
                                             },
                                           ),
                                       ],
@@ -6414,7 +6467,10 @@ borderRadius: BorderRadius.circular(20),
                                       _selectedDeliverySummary(selected),
                                       const SizedBox(height: 10),
                                       if (selected.promoCodes.isNotEmpty)
-                                        _promoCodeBlock(selected, accent: accent),
+                                        _promoCodeBlock(
+                                          selected,
+                                          accent: accent,
+                                        ),
                                     ],
                                   ],
                                 ],
@@ -6433,9 +6489,13 @@ borderRadius: BorderRadius.circular(20),
                                     const SizedBox(height: 12),
                                     DropdownButtonFormField<String>(
                                       initialValue:
-                                          normalizeStudyMode(_privateStudyMode).isEmpty
+                                          normalizeStudyMode(
+                                            _privateStudyMode,
+                                          ).isEmpty
                                           ? 'online'
-                                          : normalizeStudyMode(_privateStudyMode),
+                                          : normalizeStudyMode(
+                                              _privateStudyMode,
+                                            ),
                                       decoration: _inputDeco(
                                         label: 'Choose mode | اختر الطريقة',
                                         icon: Icons.place_rounded,
@@ -6454,7 +6514,8 @@ borderRadius: BorderRadius.circular(20),
                                       onChanged: saving
                                           ? null
                                           : (v) => setState(
-                                              () => _privateStudyMode = v ?? 'online',
+                                              () => _privateStudyMode =
+                                                  v ?? 'online',
                                             ),
                                     ),
                                   ],
@@ -6547,7 +6608,9 @@ borderRadius: BorderRadius.circular(20),
                                         final y = int.tryParse(p[0]);
                                         final m = int.tryParse(p[1]);
                                         final d = int.tryParse(p[2]);
-                                        if (y == null || m == null || d == null) {
+                                        if (y == null ||
+                                            m == null ||
+                                            d == null) {
                                           return 'Use format YYYY-MM-DD.';
                                         }
                                         final parsed = DateTime(y, m, d);
@@ -6576,7 +6639,8 @@ borderRadius: BorderRadius.circular(20),
                                       },
                                       builder: (field) {
                                         return Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             const Padding(
                                               padding: EdgeInsets.only(
@@ -6592,9 +6656,17 @@ borderRadius: BorderRadius.circular(20),
                                             ),
                                             Row(
                                               children: [
-                                                _genderPill('Male', field, accent: accent),
+                                                _genderPill(
+                                                  'Male',
+                                                  field,
+                                                  accent: accent,
+                                                ),
                                                 const SizedBox(width: 10),
-                                                _genderPill('Female', field, accent: accent),
+                                                _genderPill(
+                                                  'Female',
+                                                  field,
+                                                  accent: accent,
+                                                ),
                                               ],
                                             ),
                                             if (field.errorText != null) ...[
@@ -6632,7 +6704,8 @@ borderRadius: BorderRadius.circular(20),
                                       validator: (v) {
                                         final s = (v ?? '').trim();
                                         if (s.isEmpty) return null;
-                                        if (!s.contains('@') || !s.contains('.')) {
+                                        if (!s.contains('@') ||
+                                            !s.contains('.')) {
                                           return 'Please enter a valid email address.';
                                         }
                                         return null;
@@ -6651,10 +6724,16 @@ borderRadius: BorderRadius.circular(20),
                                       child: Container(
                                         padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
-                                          color: Brand.accentCyan.withValues(alpha: 0.10),
-                                          borderRadius: BorderRadius.circular(16),
+                                          color: Brand.accentCyan.withValues(
+                                            alpha: 0.10,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
                                           border: Border.all(
-                                            color: accent.withValues(alpha: 0.35),
+                                            color: accent.withValues(
+                                              alpha: 0.35,
+                                            ),
                                             width: 1.5,
                                           ),
                                         ),
@@ -6669,7 +6748,8 @@ borderRadius: BorderRadius.circular(20),
                                             Expanded(
                                               child: Text(
                                                 'لا يوجد دفع الآن. سنقوم بالتواصل معك قريباً لتأكيد التسجيل والتفاصيل.',
-                                                textDirection: TextDirection.rtl,
+                                                textDirection:
+                                                    TextDirection.rtl,
                                                 style: TextStyle(
                                                   fontWeight: FontWeight.w900,
                                                   fontSize: 13,
@@ -6687,13 +6767,18 @@ borderRadius: BorderRadius.circular(20),
                             const SizedBox(height: 12),
                             _expandableSection(
                               icon: Icons.info_rounded,
-                              title: 'More about this course | المزيد عن الدورة',
+                              title:
+                                  'More about this course | المزيد عن الدورة',
                               onExpandedChanged: (v) {
                                 if (v) {
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
                                     _scrollController.animateTo(
                                       220,
-                                      duration: const Duration(milliseconds: 400),
+                                      duration: const Duration(
+                                        milliseconds: 400,
+                                      ),
                                       curve: Curves.easeOut,
                                     );
                                   });
@@ -6704,10 +6789,14 @@ borderRadius: BorderRadius.circular(20),
                                   if (course.content.trim().isNotEmpty)
                                     _expandableSection(
                                       icon: Icons.lightbulb_rounded,
-                                      title: 'What you will learn | ماذا ستتعلم',
+                                      title:
+                                          'What you will learn | ماذا ستتعلم',
                                       child: SizedBox(
                                         width: double.infinity,
-                                        child: _rtlText(context, course.content),
+                                        child: _rtlText(
+                                          context,
+                                          course.content,
+                                        ),
                                       ),
                                     ),
                                   if (course.content.trim().isNotEmpty)
@@ -6741,8 +6830,9 @@ borderRadius: BorderRadius.circular(20),
                                           runSpacing: 8,
                                           children: course.instructors
                                               .map(
-                                                (teacher) =>
-                                                    _TeacherChip(teacher: teacher),
+                                                (teacher) => _TeacherChip(
+                                                  teacher: teacher,
+                                                ),
                                               )
                                               .toList(),
                                         ),
@@ -6755,7 +6845,9 @@ borderRadius: BorderRadius.circular(20),
                                     title: 'Reviews | التقييمات',
                                     child: _reviewsBlock(context),
                                   ),
-                                  if (course.requirements.trim().isNotEmpty) ...[
+                                  if (course.requirements
+                                      .trim()
+                                      .isNotEmpty) ...[
                                     const SizedBox(height: 8),
                                     _expandableSection(
                                       icon: Icons.checklist_rounded,
@@ -6803,7 +6895,9 @@ borderRadius: BorderRadius.circular(20),
                               style: FilledButton.styleFrom(
                                 backgroundColor: accent,
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor: accent.withValues(alpha: 0.55),
+                                disabledBackgroundColor: accent.withValues(
+                                  alpha: 0.55,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -6820,7 +6914,9 @@ borderRadius: BorderRadius.circular(20),
                                   : const Icon(Icons.check_circle_rounded),
                               label: Text(
                                 saving ? 'Saving...' : 'Submit enrollment',
-                                style: const TextStyle(fontWeight: FontWeight.w900),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
                               ),
                             ),
                           ),
