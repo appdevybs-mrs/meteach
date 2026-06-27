@@ -225,10 +225,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
     );
   }
 
-  Future<void> _deleteInstruction(
-    String id,
-    Map<String, dynamic> item,
-  ) async {
+  Future<void> _deleteInstruction(String id, Map<String, dynamic> item) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -262,9 +259,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
       if (!mounted) return;
       AppToast.fromSnackBar(
         context,
-        SnackBar(
-          content: Text(toHumanError(e, fallback: 'Could not delete.')),
-        ),
+        SnackBar(content: Text(toHumanError(e, fallback: 'Could not delete.'))),
       );
     }
   }
@@ -323,8 +318,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
     String uploadedThumbnail = (existing?['thumbnail'] ?? '').toString().trim();
     String uploadedFileName = _fileNameFromUrl(uploadedUrl);
     String uploadedThumbFileName = _fileNameFromUrl(uploadedThumbnail);
-    String selectedStatus =
-        (existing?['status'] ?? 'ready').toString().trim();
+    String selectedStatus = (existing?['status'] ?? 'ready').toString().trim();
 
     await showModalBottomSheet<void>(
       context: context,
@@ -466,9 +460,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
               if (link.isEmpty) {
                 AppToast.fromSnackBar(
                   context,
-                  const SnackBar(
-                    content: Text('Please upload the HTML file.'),
-                  ),
+                  const SnackBar(content: Text('Please upload the HTML file.')),
                 );
                 return;
               }
@@ -479,15 +471,19 @@ class _InstructionsTabState extends State<_InstructionsTab>
                 if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
-                  const SnackBar(content: Text('Could not load admin details.')),
+                  const SnackBar(
+                    content: Text('Could not load admin details.'),
+                  ),
                 );
                 return;
               }
 
-              final firstName =
-                  (currentUser['first_name'] ?? '').toString().trim();
-              final lastName =
-                  (currentUser['last_name'] ?? '').toString().trim();
+              final firstName = (currentUser['first_name'] ?? '')
+                  .toString()
+                  .trim();
+              final lastName = (currentUser['last_name'] ?? '')
+                  .toString()
+                  .trim();
               final email = (currentUser['email'] ?? '').toString().trim();
               final serial = (currentUser['serial'] ?? '').toString().trim();
               final now = ServerValue.timestamp;
@@ -533,9 +529,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
                   context,
                   SnackBar(
                     content: Text(
-                      isEdit
-                          ? 'Instruction updated.'
-                          : 'Instruction added.',
+                      isEdit ? 'Instruction updated.' : 'Instruction added.',
                     ),
                   ),
                 );
@@ -545,10 +539,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
                   context,
                   SnackBar(
                     content: Text(
-                      toHumanError(
-                        e,
-                        fallback: 'Could not save instruction.',
-                      ),
+                      toHumanError(e, fallback: 'Could not save instruction.'),
                     ),
                   ),
                 );
@@ -598,12 +589,13 @@ class _InstructionsTabState extends State<_InstructionsTab>
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        initialValue: const [
-                          'draft',
-                          'ready',
-                          'hidden',
-                          'archived',
-                        ].contains(selectedStatus)
+                        initialValue:
+                            const [
+                              'draft',
+                              'ready',
+                              'hidden',
+                              'archived',
+                            ].contains(selectedStatus)
                             ? selectedStatus
                             : 'ready',
                         decoration: const InputDecoration(
@@ -611,8 +603,14 @@ class _InstructionsTabState extends State<_InstructionsTab>
                           border: OutlineInputBorder(),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'draft', child: Text('Draft')),
-                          DropdownMenuItem(value: 'ready', child: Text('Ready')),
+                          DropdownMenuItem(
+                            value: 'draft',
+                            child: Text('Draft'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'ready',
+                            child: Text('Ready'),
+                          ),
                           DropdownMenuItem(
                             value: 'hidden',
                             child: Text('Hidden'),
@@ -660,10 +658,8 @@ class _InstructionsTabState extends State<_InstructionsTab>
                         fileName: uploadedThumbFileName,
                         uploading: localUploadingThumb,
                         progress: localThumbProgress,
-                        onUpload:
-                            localUploadingThumb ? null : uploadThumbnail,
-                        onReplace:
-                            localUploadingThumb ? null : uploadThumbnail,
+                        onUpload: localUploadingThumb ? null : uploadThumbnail,
+                        onReplace: localUploadingThumb ? null : uploadThumbnail,
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
@@ -749,9 +745,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
           ],
           if (uploading) ...[
             const SizedBox(height: 10),
-            LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
-            ),
+            LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
           ],
         ],
       ),
@@ -766,7 +760,9 @@ class _InstructionsTabState extends State<_InstructionsTab>
       final segments = path.split('/').where((s) => s.isNotEmpty).toList();
       if (segments.isEmpty) return cleanUrl;
       final last = segments.last;
-      return last.length <= 48 ? last : '${last.substring(0, 32)}...${last.substring(last.length - 12)}';
+      return last.length <= 48
+          ? last
+          : '${last.substring(0, 32)}...${last.substring(last.length - 12)}';
     } catch (_) {
       return cleanUrl;
     }
@@ -779,13 +775,17 @@ class _InstructionsTabState extends State<_InstructionsTab>
     return StreamBuilder<DatabaseEvent>(
       stream: _instructionsRef.onValue,
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting && snap.data == null) {
+        if (snap.connectionState == ConnectionState.waiting &&
+            snap.data == null) {
           return const Center(child: CircularProgressIndicator());
         }
 
         final value = snap.data?.snapshot.value;
         if (value == null || value is! Map) {
-          return _buildEmptyState();
+          return _buildListWithToolbar(
+            const [],
+            emptyState: _buildEmptyState(),
+          );
         }
 
         final raw = Map<dynamic, dynamic>.from(value);
@@ -806,22 +806,22 @@ class _InstructionsTabState extends State<_InstructionsTab>
         items.sort((a, b) {
           switch (_sortBy) {
             case 'name_asc':
-              return _itemName(a.value).toLowerCase().compareTo(
-                _itemName(b.value).toLowerCase(),
-              );
+              return _itemName(
+                a.value,
+              ).toLowerCase().compareTo(_itemName(b.value).toLowerCase());
             case 'name_desc':
-              return _itemName(b.value).toLowerCase().compareTo(
-                _itemName(a.value).toLowerCase(),
-              );
+              return _itemName(
+                b.value,
+              ).toLowerCase().compareTo(_itemName(a.value).toLowerCase());
             case 'created_desc':
-              return _toInt(b.value['createdAt']).compareTo(
-                _toInt(a.value['createdAt']),
-              );
+              return _toInt(
+                b.value['createdAt'],
+              ).compareTo(_toInt(a.value['createdAt']));
             case 'updated_desc':
             default:
-              return _toInt(b.value['updatedAt']).compareTo(
-                _toInt(a.value['updatedAt']),
-              );
+              return _toInt(
+                b.value['updatedAt'],
+              ).compareTo(_toInt(a.value['updatedAt']));
           }
         });
 
@@ -830,26 +830,40 @@ class _InstructionsTabState extends State<_InstructionsTab>
         }).toList();
 
         if (filtered.isEmpty) {
-          return _buildEmptyState(searching: _searchQuery.isNotEmpty || _statusFilter != 'all');
+          return _buildListWithToolbar(
+            const [],
+            emptyState: _buildEmptyState(
+              searching: _searchQuery.isNotEmpty || _statusFilter != 'all',
+            ),
+          );
         }
 
-        return Column(
-          children: [
-            _buildToolbar(filtered.length),
-            Expanded(
-              child: ListView.builder(
+        return _buildListWithToolbar(filtered);
+      },
+    );
+  }
+
+  Widget _buildListWithToolbar(
+    List<MapEntry<String, Map<String, dynamic>>> items, {
+    Widget? emptyState,
+  }) {
+    return Column(
+      children: [
+        _buildToolbar(items.length),
+        Expanded(
+          child:
+              emptyState ??
+              ListView.builder(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
-                itemCount: filtered.length,
+                itemCount: items.length,
                 itemBuilder: (context, index) {
-                  final item = filtered[index].value;
-                  final id = filtered[index].key;
+                  final item = items[index].value;
+                  final id = items[index].key;
                   return _buildInstructionCard(id, item);
                 },
               ),
-            ),
-          ],
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -909,14 +923,8 @@ class _InstructionsTabState extends State<_InstructionsTab>
                 value: 'created_desc',
                 child: Text('Newest First'),
               ),
-              const PopupMenuItem(
-                value: 'name_asc',
-                child: Text('Name A-Z'),
-              ),
-              const PopupMenuItem(
-                value: 'name_desc',
-                child: Text('Name Z-A'),
-              ),
+              const PopupMenuItem(value: 'name_asc', child: Text('Name A-Z')),
+              const PopupMenuItem(value: 'name_desc', child: Text('Name Z-A')),
             ],
           ),
           const SizedBox(width: 4),
@@ -1039,9 +1047,9 @@ class _InstructionsTabState extends State<_InstructionsTab>
                         if (createdAt > 0) ...[
                           const SizedBox(width: 8),
                           Text(
-                            DateTime.fromMillisecondsSinceEpoch(createdAt)
-                                .toString()
-                                .substring(0, 10),
+                            DateTime.fromMillisecondsSinceEpoch(
+                              createdAt,
+                            ).toString().substring(0, 10),
                             style: TextStyle(
                               fontSize: 10,
                               color: Colors.grey.shade500,
@@ -1071,14 +1079,9 @@ class _InstructionsTabState extends State<_InstructionsTab>
                   const PopupMenuItem(value: 'edit', child: Text('Edit')),
                   PopupMenuItem(
                     value: 'archive',
-                    child: Text(
-                      status == 'archived' ? 'Restore' : 'Archive',
-                    ),
+                    child: Text(status == 'archived' ? 'Restore' : 'Archive'),
                   ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Delete'),
-                  ),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete')),
                 ],
               ),
             ],
@@ -1105,10 +1108,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
               searching
                   ? 'No instructions match your filters.'
                   : 'No instructions yet.',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
