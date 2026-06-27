@@ -368,11 +368,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
                 if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
-                  SnackBar(
-                    content: Text(
-                      toHumanError(e, fallback: 'Could not upload file.'),
-                    ),
-                  ),
+                  SnackBar(content: Text(_uploadErrorText(e))),
                 );
               } finally {
                 setLocalState(() {
@@ -423,11 +419,7 @@ class _InstructionsTabState extends State<_InstructionsTab>
                 if (!context.mounted) return;
                 AppToast.fromSnackBar(
                   context,
-                  SnackBar(
-                    content: Text(
-                      toHumanError(e, fallback: 'Could not upload thumbnail.'),
-                    ),
-                  ),
+                  SnackBar(content: Text(_uploadErrorText(e))),
                 );
               } finally {
                 setLocalState(() {
@@ -766,6 +758,18 @@ class _InstructionsTabState extends State<_InstructionsTab>
     } catch (_) {
       return cleanUrl;
     }
+  }
+
+  String _uploadErrorText(Object error) {
+    final human = toHumanError(error, fallback: '');
+    if (human.isNotEmpty) return human;
+
+    final raw = error
+        .toString()
+        .replaceFirst(RegExp(r'^Exception:\s*'), '')
+        .trim();
+    if (raw.isNotEmpty && raw.length <= 160) return raw;
+    return 'Could not upload file.';
   }
 
   @override

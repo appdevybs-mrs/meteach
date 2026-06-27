@@ -71,6 +71,11 @@
       }
     },
 
+    "instructions": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+    },
+
     "website": {
       ".read": true,
       ".write": false,

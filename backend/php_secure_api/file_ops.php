@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/bootstrap.php';
 
-const ALLOWED_ROOTS = ['courses', 'games', 'stories', 'shared_files', 'certificates', 'splash'];
+const ALLOWED_ROOTS = ['courses', 'games', 'stories', 'shared_files', 'certificates', 'splash', 'instructions'];
 
 function storage_root_dir(): string
 {
