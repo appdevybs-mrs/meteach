@@ -1679,50 +1679,79 @@ class _AdminCertFormSheetState extends State<_AdminCertFormSheet> {
                               ],
                             ),
                             const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: _cvn.isNotEmpty
-                                            ? Colors.green
-                                            : _uiBorder,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      _cvn.isNotEmpty ? _cvn : 'Not generated',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 15,
-                                        color: _cvn.isNotEmpty
-                                            ? _primaryBlue
-                                            : _softText,
-                                        letterSpacing: 1.2,
-                                      ),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final stackControls =
+                                    constraints.maxWidth < 330;
+                                final cvnBox = Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: _cvn.isNotEmpty
+                                          ? Colors.green
+                                          : _uiBorder,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                FilledButton.tonalIcon(
+                                  child: Text(
+                                    _cvn.isNotEmpty ? _cvn : 'Not generated',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 15,
+                                      color: _cvn.isNotEmpty
+                                          ? _primaryBlue
+                                          : _softText,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
+                                );
+                                final generateButton = FilledButton.tonalIcon(
                                   onPressed: _generateCvn,
                                   icon: const Icon(
                                     Icons.auto_fix_high,
                                     size: 18,
                                   ),
-                                  label: const Text('Generate'),
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size.fromHeight(48),
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                  label: const Text(
+                                    'Generate',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
-                              ],
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(0, 44),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                  ),
+                                );
+
+                                if (stackControls) {
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      cvnBox,
+                                      const SizedBox(height: 8),
+                                      generateButton,
+                                    ],
+                                  );
+                                }
+
+                                return Row(
+                                  children: [
+                                    Expanded(child: cvnBox),
+                                    const SizedBox(width: 8),
+                                    Flexible(flex: 0, child: generateButton),
+                                  ],
+                                );
+                              },
                             ),
                             if (_cvn.isNotEmpty) ...[
                               const SizedBox(height: 6),
@@ -2242,14 +2271,15 @@ class _AdminCertCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
                       children: [
                         _MiniChip(
                           icon: Icons.calendar_today,
                           label: certificate.issueDate,
                         ),
-                        if (cvn.isNotEmpty) ...[
-                          const SizedBox(width: 8),
+                        if (cvn.isNotEmpty)
                           GestureDetector(
                             onTap: () {
                               Clipboard.setData(ClipboardData(text: cvn));
@@ -2260,6 +2290,7 @@ class _AdminCertCard extends StatelessWidget {
                               );
                             },
                             child: Container(
+                              constraints: const BoxConstraints(maxWidth: 210),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                                 vertical: 4,
@@ -2277,15 +2308,19 @@ class _AdminCertCard extends StatelessWidget {
                                     color: _primaryBlue.withValues(alpha: 0.7),
                                   ),
                                   const SizedBox(width: 4),
-                                  Text(
-                                    cvn,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: _primaryBlue.withValues(
-                                        alpha: 0.8,
+                                  Flexible(
+                                    child: Text(
+                                      cvn,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: _primaryBlue.withValues(
+                                          alpha: 0.8,
+                                        ),
+                                        letterSpacing: 0.8,
                                       ),
-                                      letterSpacing: 0.8,
                                     ),
                                   ),
                                   const SizedBox(width: 4),
@@ -2298,7 +2333,6 @@ class _AdminCertCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ],
@@ -2458,6 +2492,8 @@ class _AdminCertViewSheet extends StatelessWidget {
                             const SizedBox(height: 2),
                             Text(
                               cvn,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
@@ -3398,91 +3434,102 @@ class _CertificateListItem extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                InkWell(
-                  onTap: () => _copyToClipboard(context, certificate.cvn),
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _primaryBlue.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          certificate.cvn,
-                          style: const TextStyle(
-                            color: _primaryBlue,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      InkWell(
+                        onTap: () => _copyToClipboard(context, certificate.cvn),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _primaryBlue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  certificate.cvn,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: _primaryBlue,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.copy,
+                                size: 14,
+                                color: _primaryBlue.withValues(alpha: 0.7),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.copy,
-                          size: 14,
-                          color: _primaryBlue.withValues(alpha: 0.7),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _getStatusColor(),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _getStatusLabel(),
+                            style: TextStyle(
+                              color: _getStatusColor(),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (certificate.certificateKind != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: certificate.certificateKind == 'milestone'
+                                ? const Color(0xFFFEF3C7)
+                                : const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            certificate.certificateKind == 'milestone'
+                                ? 'Milestone'
+                                : 'Course',
+                            style: TextStyle(
+                              color: certificate.certificateKind == 'milestone'
+                                  ? const Color(0xFF92400E)
+                                  : const Color(0xFF166534),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _getStatusColor(),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _getStatusLabel(),
-                      style: TextStyle(
-                        color: _getStatusColor(),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-                if (certificate.certificateKind != null) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: certificate.certificateKind == 'milestone'
-                          ? const Color(0xFFFEF3C7)
-                          : const Color(0xFFDCFCE7),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      certificate.certificateKind == 'milestone'
-                          ? 'Milestone'
-                          : 'Course',
-                      style: TextStyle(
-                        color: certificate.certificateKind == 'milestone'
-                            ? const Color(0xFF92400E)
-                            : const Color(0xFF166534),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ],
-                const Spacer(),
                 GestureDetector(
                   onTap: onPrint,
                   child: Container(
@@ -3614,10 +3661,7 @@ class _CertificateViewSheet extends StatelessWidget {
               children: [
                 CircularProgressIndicator(strokeWidth: 2),
                 SizedBox(height: 16),
-                Text(
-                  'Generating PDF...',
-                  textAlign: TextAlign.center,
-                ),
+                Text('Generating PDF...', textAlign: TextAlign.center),
               ],
             ),
           ),
@@ -3908,6 +3952,8 @@ class _DetailRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   value,
+                  maxLines: copyable ? 1 : 3,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _primaryBlue,
                     fontSize: 16,
