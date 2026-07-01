@@ -2,6 +2,17 @@
 AddType application/wasm .wasm
 AddType text/plain .symbols
 
+# Gzip compression for faster downloads
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json application/manifest+json image/svg+xml
+    AddOutputFilterByType DEFLATE application/wasm
+    <IfModule mod_setenvif.c>
+        BrowserMatch ^Mozilla/4 gzip-only-text/html
+        BrowserMatch ^Mozilla/4\.0[678] no-gzip
+        BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
+    </IfModule>
+</IfModule>
+
 # SPA fallback — serve index.html for any non-file route
 <IfModule mod_rewrite.c>
     RewriteEngine On

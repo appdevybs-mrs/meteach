@@ -34,6 +34,10 @@
   <title>Your Bridge School | Learn English Online and In Class</title>
   <link rel="manifest" href="manifest.json">
 
+  <!-- Preload main bundles -->
+  <link rel="preload" href="main.dart.js" as="script">
+  <link rel="preload" href="flutter.js" as="script">
+
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -69,9 +73,42 @@
       height: 1px;
       overflow: hidden;
     }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #F4F7F9;
+      z-index: 9999;
+      font-family: system-ui, sans-serif;
+    }
+    #loading img {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    #loading p {
+      margin-top: 18px;
+      color: #1A2B48;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.3px;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.7; }
+      50% { transform: scale(1.08); opacity: 1; }
+    }
   </style>
 </head>
 <body>
+  <div id="loading">
+    <img src="icons/Icon-512.png" alt="Loading">
+    <p>Your Bridge School</p>
+  </div>
   <main class="seo-fallback" aria-hidden="true">
     <h1>Your Bridge School</h1>
     <p>Learn English online and in class with Your Bridge School. Not for the certificate, for the skill.</p>
