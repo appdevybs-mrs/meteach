@@ -2,6 +2,8 @@ part of '../main.dart';
 
 enum _HomeSection { courses, gallery, world, games, stories }
 
+enum _AppMode { courses, gallery, world, games, stories }
+
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -19,6 +21,7 @@ class _HomeShellState extends State<HomeShell> {
   final PageController _heroPageController = PageController();
   Timer? _heroTimer;
   bool _isArabic = false;
+  _AppMode _appMode = _AppMode.gallery;
 
   String _tr(String en, String ar) => _isArabic ? ar : en;
 
@@ -31,7 +34,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    _startHeroAutoSlide();
+    if (kIsWeb) _startHeroAutoSlide();
   }
 
   void _startHeroAutoSlide() {
@@ -84,6 +87,70 @@ class _HomeShellState extends State<HomeShell> {
       case _HomeSection.stories:
         return _tr('Stories', 'القصص');
     }
+  }
+
+  String _labelForAppMode(_AppMode value) {
+    switch (value) {
+      case _AppMode.courses:
+        return 'Courses';
+      case _AppMode.gallery:
+        return 'Gallery';
+      case _AppMode.world:
+        return 'World';
+      case _AppMode.games:
+        return 'Games';
+      case _AppMode.stories:
+        return 'Stories';
+    }
+  }
+
+  Widget _buildPhoneAppShell(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Brand.appBg,
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: IndexedStack(
+          index: _appMode.index,
+          children: const [
+            AssistantHome(),
+            GalleryHome(),
+            WorldGraduatesHome(),
+            GamesHome(),
+            StoriesHome(),
+          ],
+        ),
+      ),
+      floatingActionButton: _PulsingLoginFab(
+        onPressed: () => _openLogin(context),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _appMode.index,
+        onDestinationSelected: (i) =>
+            setState(() => _appMode = _AppMode.values[i]),
+        destinations: [
+          NavigationDestination(
+            icon: const Icon(Icons.auto_stories_rounded),
+            label: _labelForAppMode(_AppMode.courses),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.photo_library_rounded),
+            label: _labelForAppMode(_AppMode.gallery),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.public_rounded),
+            label: _labelForAppMode(_AppMode.world),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.sports_esports_rounded),
+            label: _labelForAppMode(_AppMode.games),
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.menu_book_rounded),
+            label: _labelForAppMode(_AppMode.stories),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _scrollToSection(_HomeSection section) async {
@@ -645,6 +712,8 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (!kIsWeb) return _buildPhoneAppShell(context);
+
     return Scaffold(
       backgroundColor: Brand.appBg,
       body: Column(
