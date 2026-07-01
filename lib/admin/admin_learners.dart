@@ -3179,6 +3179,36 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         }
       }
 
+      // Archive promo usage and remove source subscription after approval
+      if (isCreate &&
+          prefill != null &&
+          prefill.sourceSubscriptionId.trim().isNotEmpty &&
+          prefill.promoCode.trim().isNotEmpty) {
+        final subRef =
+            _db.ref('subscriptions/${prefill.sourceSubscriptionId}');
+        final subSnap = await subRef.get();
+        if (subSnap.value is Map) {
+          final subMap =
+              (subSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+          await _db
+              .ref('promo_usage_history/${prefill.sourceSubscriptionId}')
+              .set({
+            'promoCode': prefill.promoCode.trim(),
+            'promoType': prefill.promoType.trim(),
+            'promoValue': prefill.promoValue,
+            'discountAmount': prefill.discountAmount,
+            'selectedFee': prefill.selectedFee,
+            'originalFee': prefill.originalFee,
+            'discountedFee': prefill.discountedFee,
+            'fullName': '${prefill.firstName} ${prefill.lastName}'.trim(),
+            'courseTitle': prefill.courseTitle,
+            'createdAt': subMap['createdAt'] ?? ServerValue.timestamp,
+            'archivedAt': ServerValue.timestamp,
+          });
+        }
+        await subRef.remove();
+      }
+
       if (!mounted) return;
       Navigator.of(context).pop(learner);
     } on FirebaseAuthException catch (e) {

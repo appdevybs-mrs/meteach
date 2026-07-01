@@ -15,6 +15,8 @@ import 'app_theme.dart';
 import 'material_webview_screen.dart';
 import 'shared_pdf_reader_screen.dart';
 import 'story_audio_controller.dart';
+import 'web_audio_player.dart';
+import 'web_embedded_view.dart';
 
 class SharedStoryStudyScreen extends StatefulWidget {
   const SharedStoryStudyScreen({
@@ -71,22 +73,26 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   @override
   void initState() {
     super.initState();
-    _audio = StoryAudioController()..addListener(_onAudioChanged);
-    if (_hasAudio) {
-      unawaited(_audio.ensureLoaded(widget.audioUrl.trim()));
+    if (!kIsWeb) {
+      _audio = StoryAudioController()..addListener(_onAudioChanged);
+      if (_hasAudio) {
+        unawaited(_audio.ensureLoaded(widget.audioUrl.trim()));
+      }
     }
     if (_hasHtml && !kIsWeb) {
       _setupInlineHtml();
     }
-    if (_hasPdf) {
+    if (_hasPdf && !kIsWeb) {
       unawaited(_preparePdf());
     }
   }
 
   @override
   void dispose() {
-    _audio.removeListener(_onAudioChanged);
-    _audio.dispose();
+    if (!kIsWeb) {
+      _audio.removeListener(_onAudioChanged);
+      _audio.dispose();
+    }
     super.dispose();
   }
 
@@ -321,6 +327,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
           ),
           child: ListView(
             physics: const BouncingScrollPhysics(),
+            cacheExtent: 800,
             padding: EdgeInsets.fromLTRB(
               compact ? 10 : 12,
               12,
@@ -375,6 +382,22 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     );
   }
 
+  Future<void> _openWebDocumentFullscreen(String url) async {
+    final target = url.trim();
+    if (target.isEmpty || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MaterialWebViewScreen.fromUrl(
+          title: widget.title,
+          url: target,
+          audioController: kIsWeb ? null : _audio,
+          viewerMode: MaterialViewerMode.document,
+          onReadInteraction: _trackReadInteractionOnce,
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyCard(_StudyPalette p, bool compact) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -391,6 +414,17 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
   }
 
   Widget _buildPdfCard(_StudyPalette p, double pdfHeight, bool compact) {
+    if (kIsWeb) {
+      return _buildWebDocumentCard(
+        p,
+        viewerHeight: pdfHeight,
+        compact: compact,
+        url: widget.pdfUrl.trim(),
+        icon: Icons.picture_as_pdf_rounded,
+        label: 'Reading',
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: p.cardBg,
@@ -563,105 +597,119 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
         border: Border.all(color: p.border.withValues(alpha: 0.9)),
       ),
       padding: EdgeInsets.all(compact ? 10 : 12),
-      child: Column(
-        children: [
-          Slider(
-            value: _audio.position.inMilliseconds.toDouble().clamp(
-              0,
-              _audio.duration.inMilliseconds > 0
-                  ? _audio.duration.inMilliseconds.toDouble()
-                  : 1,
-            ),
-            max: _audio.duration.inMilliseconds > 0
-                ? _audio.duration.inMilliseconds.toDouble()
-                : 1,
-            onChanged: (value) => _seekTo(value),
-          ),
-          Row(
-            children: [
-              Text(
-                _format(_audio.position),
-                style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
-              ),
-              const Spacer(),
-              Text(
-                _format(_audio.duration),
-                style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+      child: kIsWeb
+          ? WebAudioPlayer(url: widget.audioUrl.trim())
+          : Column(
               children: [
-                _iconControl(
-                  icon: _audio.playerState == PlayerState.playing
-                      ? Icons.pause_rounded
-                      : Icons.play_arrow_rounded,
-                  onTap: _togglePlayPause,
-                  color: _audio.playerState == PlayerState.playing
-                      ? const Color(0xFFEF6C00)
-                      : p.primary,
-                ),
-                const SizedBox(width: 8),
-                _iconControl(
-                  icon: Icons.repeat_rounded,
-                  onTap: () {
-                    setState(() {
-                      _repeatMode = _repeatMode == _RepeatMode.off
-                          ? _RepeatMode.one
-                          : _RepeatMode.off;
-                    });
-                    _audio.toggleRepeatOne();
-                  },
-                  color: _repeatMode == _RepeatMode.one
-                      ? p.accent
-                      : p.text.withValues(alpha: 0.70),
-                ),
-                const SizedBox(width: 8),
-                for (final speed in const <double>[0.75, 1.0, 1.25]) ...[
-                  _speedChip(
-                    label: '${speed}x',
-                    onTap: () => _setSpeed(speed),
-                    selected: _audio.speed == speed,
-                    palette: p,
+                Slider(
+                  value: _audio.position.inMilliseconds.toDouble().clamp(
+                    0,
+                    _audio.duration.inMilliseconds > 0
+                        ? _audio.duration.inMilliseconds.toDouble()
+                        : 1,
                   ),
-                  const SizedBox(width: 8),
-                ],
-              ],
-            ),
-          ),
-          if (_audio.loading)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'Loading audio...',
-                style: TextStyle(color: p.text, fontSize: compact ? 12 : 14),
-              ),
-            ),
-          if (_audio.error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _audio.error!,
+                  max: _audio.duration.inMilliseconds > 0
+                      ? _audio.duration.inMilliseconds.toDouble()
+                      : 1,
+                  onChanged: (value) => _seekTo(value),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      _format(_audio.position),
                       style: TextStyle(
-                        color: p.accent,
+                        color: p.text,
                         fontSize: compact ? 12 : 14,
-                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _format(_audio.duration),
+                      style: TextStyle(
+                        color: p.text,
+                        fontSize: compact ? 12 : 14,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _iconControl(
+                        icon: _audio.playerState == PlayerState.playing
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        onTap: _togglePlayPause,
+                        color: _audio.playerState == PlayerState.playing
+                            ? const Color(0xFFEF6C00)
+                            : p.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      _iconControl(
+                        icon: Icons.repeat_rounded,
+                        onTap: () {
+                          setState(() {
+                            _repeatMode = _repeatMode == _RepeatMode.off
+                                ? _RepeatMode.one
+                                : _RepeatMode.off;
+                          });
+                          _audio.toggleRepeatOne();
+                        },
+                        color: _repeatMode == _RepeatMode.one
+                            ? p.accent
+                            : p.text.withValues(alpha: 0.70),
+                      ),
+                      const SizedBox(width: 8),
+                      for (final speed in const <double>[0.75, 1.0, 1.25]) ...[
+                        _speedChip(
+                          label: '${speed}x',
+                          onTap: () => _setSpeed(speed),
+                          selected: _audio.speed == speed,
+                          palette: p,
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ],
+                  ),
+                ),
+                if (_audio.loading)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Loading audio...',
+                      style: TextStyle(
+                        color: p.text,
+                        fontSize: compact ? 12 : 14,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  TextButton(onPressed: _loadAudio, child: const Text('Retry')),
-                ],
-              ),
+                if (_audio.error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _audio.error!,
+                            style: TextStyle(
+                              color: p.accent,
+                              fontSize: compact ? 12 : 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: _loadAudio,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
     );
   }
 
@@ -730,6 +778,17 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
     double viewerHeight,
     bool compact,
   ) {
+    if (kIsWeb) {
+      return _buildWebDocumentCard(
+        p,
+        viewerHeight: viewerHeight,
+        compact: compact,
+        url: widget.htmlUrl.trim(),
+        icon: Icons.language_rounded,
+        label: 'Reading',
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: p.cardBg,
@@ -768,7 +827,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
             height: viewerHeight,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(14),
-              child: kIsWeb
+              child: _htmlController == null
                   ? Container(
                       color: p.soft,
                       alignment: Alignment.center,
@@ -781,20 +840,7 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                         ),
                       ),
                     )
-                  : (_htmlController == null
-                        ? Container(
-                            color: p.soft,
-                            alignment: Alignment.center,
-                            child: Text(
-                              'Loading',
-                              style: TextStyle(
-                                color: p.text,
-                                fontWeight: FontWeight.w700,
-                                fontSize: compact ? 12 : 14,
-                              ),
-                            ),
-                          )
-                        : WebViewWidget(controller: _htmlController!)),
+                  : WebViewWidget(controller: _htmlController!),
             ),
           ),
           if (_htmlLoading)
@@ -837,6 +883,62 @@ class _SharedStoryStudyScreenState extends State<SharedStoryStudyScreen> {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWebDocumentCard(
+    _StudyPalette p, {
+    required double viewerHeight,
+    required bool compact,
+    required String url,
+    required IconData icon,
+    required String label,
+  }) {
+    _trackReadInteractionOnce();
+    return Container(
+      decoration: BoxDecoration(
+        color: p.cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: p.border.withValues(alpha: 0.9)),
+      ),
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: p.accent),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: p.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 12 : 14,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: () => _openWebDocumentFullscreen(url),
+                icon: Icon(Icons.open_in_new_rounded, color: p.primary),
+                tooltip: 'Open in viewer',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: viewerHeight,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: WebEmbeddedContent(
+                url: url,
+                title: widget.title,
+                backgroundColor: p.soft,
+              ),
+            ),
+          ),
         ],
       ),
     );

@@ -244,6 +244,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                       child: Image.network(
                         thumbnail,
                         filterQuality: FilterQuality.low,
+                        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
                         cacheWidth:
                             (MediaQuery.of(context).size.width *
                                     MediaQuery.of(context).devicePixelRatio)
@@ -875,6 +876,7 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
                           thumbnail,
                           fit: BoxFit.cover,
                           filterQuality: FilterQuality.low,
+                          webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
                           cacheWidth: thumbCacheWidth,
                           cacheHeight: thumbCacheHeight,
                           loadingBuilder: (context, child, progress) {
@@ -1173,6 +1175,14 @@ class _LearnerGamesScreenState extends State<LearnerGamesScreen> {
 
     if (!widget.showScaffold) return body;
 
-    return Scaffold(body: body);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Games'),
+        backgroundColor: Colors.white,
+        foregroundColor: Theme.of(context).colorScheme.primary,
+        surfaceTintColor: Colors.white,
+      ),
+      body: body,
+    );
   }
 }

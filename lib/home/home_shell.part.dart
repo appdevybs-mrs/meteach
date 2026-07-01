@@ -1,6 +1,6 @@
 part of '../main.dart';
 
-enum AppMode { courses, gallery, world, games, stories }
+enum _HomeSection { courses, gallery, world, games, stories }
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -10,9 +10,17 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  AppMode mode = AppMode.gallery;
+  final ScrollController _scrollController = ScrollController();
+  final _coursesKey = GlobalKey();
+  final _galleryKey = GlobalKey();
+  final _worldKey = GlobalKey();
+  final _gamesKey = GlobalKey();
+  final _storiesKey = GlobalKey();
+  final PageController _heroPageController = PageController();
+  Timer? _heroTimer;
+  bool _isArabic = false;
 
-  static const double _desktopShellMinWidth = 1100;
+  String _tr(String en, String ar) => _isArabic ? ar : en;
 
   Future<void> _openLogin(BuildContext context) async {
     await Navigator.of(
@@ -20,170 +28,667 @@ class _HomeShellState extends State<HomeShell> {
     ).push(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
-  bool _isDesktopShell(BuildContext context) {
-    return kIsWeb && MediaQuery.sizeOf(context).width >= _desktopShellMinWidth;
+  @override
+  void initState() {
+    super.initState();
+    _startHeroAutoSlide();
   }
 
-  String _labelForMode(AppMode value) {
+  void _startHeroAutoSlide() {
+    _heroTimer?.cancel();
+    _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_heroPageController.hasClients) {
+        final next = _heroPageController.page!.round() + 1;
+        _heroPageController.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 700),
+          curve: Curves.easeInOutCubic,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _heroTimer?.cancel();
+    _heroPageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  GlobalKey _keyForSection(_HomeSection value) {
     switch (value) {
-      case AppMode.courses:
-        return 'Courses';
-      case AppMode.gallery:
-        return 'Gallery';
-      case AppMode.world:
-        return 'World';
-      case AppMode.games:
-        return 'Games';
-      case AppMode.stories:
-        return 'Stories';
+      case _HomeSection.courses:
+        return _coursesKey;
+      case _HomeSection.gallery:
+        return _galleryKey;
+      case _HomeSection.world:
+        return _worldKey;
+      case _HomeSection.games:
+        return _gamesKey;
+      case _HomeSection.stories:
+        return _storiesKey;
     }
   }
 
-  Widget _buildDesktopShell(BuildContext context) {
-    final pages = const <Widget>[
-      AssistantHome(),
-      GalleryHome(),
-      WorldGraduatesHome(),
-      GamesHome(),
-      StoriesHome(),
-    ];
-    return SafeArea(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 10, 18),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.95),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Brand.uiBorder),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 22,
-                    offset: const Offset(0, 10),
+  String _labelForSection(_HomeSection value) {
+    switch (value) {
+      case _HomeSection.courses:
+        return _tr('Courses', 'الدورات');
+      case _HomeSection.gallery:
+        return _tr('Gallery', 'المعرض');
+      case _HomeSection.world:
+        return _tr('World', 'العالم');
+      case _HomeSection.games:
+        return _tr('Games', 'الألعاب');
+      case _HomeSection.stories:
+        return _tr('Stories', 'القصص');
+    }
+  }
+
+  Future<void> _scrollToSection(_HomeSection section) async {
+    final context = _keyForSection(section).currentContext;
+    if (context == null) return;
+    await Scrollable.ensureVisible(
+      context,
+      duration: const Duration(milliseconds: 520),
+      curve: Curves.easeOutCubic,
+      alignment: 0.04,
+    );
+  }
+
+  void _openWebsiteExperience(Widget screen) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    final isDesktop = context.isDesktopOrWider;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.97),
+        border: Border(
+          bottom: BorderSide(color: Brand.uiBorder.withValues(alpha: 0.72)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: context.responsive<double>(
+              phone: 12,
+              tablet: 18,
+              desktop: 28,
+              largeDesktop: 36,
+            ),
+            vertical: isDesktop ? 10 : 8,
+          ),
+          child: Row(
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  _scrollController.animateTo(
+                    0,
+                    duration: const Duration(milliseconds: 520),
+                    curve: Curves.easeOutCubic,
+                  );
+                },
+                child: _StaticBrandLogo(
+                  size: context.responsive<double>(
+                    phone: 34,
+                    tablet: 38,
+                    desktop: 42,
                   ),
-                ],
+                ),
               ),
-              child: NavigationRail(
-                extended: true,
-                minExtendedWidth: 208,
-                backgroundColor: Colors.transparent,
-                selectedIndex: mode.index,
-                useIndicator: true,
-                labelType: NavigationRailLabelType.none,
-                onDestinationSelected: (i) =>
-                    setState(() => mode = AppMode.values[i]),
-                destinations: const [
-                  NavigationRailDestination(
-                    icon: Icon(Icons.auto_stories_rounded),
-                    label: Text('Courses'),
+              const Spacer(),
+              IconButton(
+                icon: Text(
+                  _isArabic ? 'EN' : 'AR',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                    color: Brand.primaryBlue,
                   ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.photo_library_rounded),
-                    label: Text('Gallery'),
+                ),
+                tooltip: _isArabic ? 'English' : 'العربية',
+                onPressed: () => setState(() => _isArabic = !_isArabic),
+              ),
+              const SizedBox(width: 4),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: Brand.actionOrange,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: context.responsive<double>(
+                      phone: 12,
+                      tablet: 16,
+                      desktop: 18,
+                    ),
+                    vertical: 11,
                   ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.public_rounded),
-                    label: Text('World'),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.sports_esports_rounded),
-                    label: Text('Games'),
-                  ),
-                  NavigationRailDestination(
-                    icon: Icon(Icons.menu_book_rounded),
-                    label: Text('Stories'),
-                  ),
-                ],
-                leading: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const YbsBusyLogo(size: 42),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Your Bridge School',
-                        style: TextStyle(
-                          color: Brand.primaryBlue,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Browse the public app with a desktop-ready shell.',
-                        style: TextStyle(
-                          color: Brand.mainText.withValues(alpha: 0.72),
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
-                        ),
-                      ),
+                ),
+                onPressed: () => _openLogin(context),
+                icon: const Icon(Icons.login_rounded, size: 18),
+                label: Text(
+                  _tr('Login', 'تسجيل الدخول'),
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHero(BuildContext context) {
+    final isDesktop = context.isDesktopOrWider;
+    return Container(
+      height: context.responsive<double>(phone: 440, tablet: 520, desktop: 620),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(isDesktop ? 32 : 24),
+        boxShadow: [
+          BoxShadow(
+            color: Brand.primaryBlue.withValues(alpha: 0.18),
+            blurRadius: 28,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          StreamBuilder<DatabaseEvent>(
+            stream: FirebaseDatabase.instance
+                .ref()
+                .child('public_gallery_teasers')
+                .onValue,
+            builder: (context, snap) {
+              final photos = <String>[];
+              if (snap.hasData && snap.data!.snapshot.value is Map) {
+                (snap.data!.snapshot.value as Map).forEach((_, val) {
+                  if (val is! Map) return;
+                  final type = (val['type'] ?? '').toString().trim();
+                  final url = (val['url'] ?? '').toString().trim();
+                  if (type == 'photo' && url.isNotEmpty) photos.add(url);
+                });
+              }
+              if (photos.isEmpty) {
+                return _buildFallbackHero();
+              }
+              return PageView.builder(
+                controller: _heroPageController,
+                onPageChanged: (i) {
+                  if (i >= photos.length - 1) {
+                    _heroPageController.animateToPage(
+                      0,
+                      duration: const Duration(milliseconds: 700),
+                      curve: Curves.easeInOutCubic,
+                    );
+                  }
+                },
+                itemCount: photos.length,
+                itemBuilder: (_, i) => Image.network(
+                  photos[i],
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                  errorBuilder: (_, _, _) => _buildFallbackHero(),
+                ),
+              );
+            },
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF10213D).withValues(alpha: 0.78),
+                      const Color(0xFF1A2B48).withValues(alpha: 0.52),
+                      Colors.black.withValues(alpha: 0.62),
                     ],
                   ),
                 ),
               ),
             ),
           ),
-          Expanded(
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 18, 18, 18),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.56),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: Brand.uiBorder.withValues(alpha: 0.9),
+              padding: EdgeInsets.fromLTRB(
+                context.responsive<double>(phone: 18, tablet: 26, desktop: 42),
+                0,
+                context.responsive<double>(phone: 18, tablet: 26, desktop: 42),
+                context.responsive<double>(phone: 28, tablet: 38, desktop: 56),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Text(
+                      _tr(
+                        'English skills for real life',
+                        'مهارات إنجليزية للحياة الحقيقية',
+                      ),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 12,
+                      ),
+                    ),
                   ),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(27),
-                  child: Column(
+                  const SizedBox(height: 16),
+                  Text(
+                    _tr(
+                      'Learn English with Your Bridge School',
+                      'تعلم الإنجليزية مع أكاديمية دريم',
+                    ),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: context.responsive<double>(
+                        phone: 34,
+                        tablet: 46,
+                        desktop: 58,
+                        largeDesktop: 64,
+                      ),
+                      height: 0.98,
+                      letterSpacing: -1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    _tr(
+                      'Not for the certificate, for the skill.',
+                      'ليس من أجل الشهادة، بل من أجل المهارة.',
+                    ),
+                    style: TextStyle(
+                      color: Brand.actionOrange,
+                      fontWeight: FontWeight.w900,
+                      fontSize: context.responsiveFontSize(
+                        phone: 18,
+                        tablet: 21,
+                        desktop: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _tr(
+                      'Practical English courses, teacher-led learning, and a global community.',
+                      'دورات إنجليزية عملية، تعليم بإشراف معلمين، ومجتمع عالمي.',
+                    ),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      fontWeight: FontWeight.w600,
+                      fontSize: context.responsiveFontSize(
+                        phone: 15,
+                        tablet: 16,
+                        desktop: 17,
+                      ),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _labelForMode(mode),
-                                    style: TextStyle(
-                                      color: Brand.primaryBlue,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 24,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Desktop navigation keeps the current design while using larger screens intentionally.',
-                                    style: TextStyle(
-                                      color: Brand.mainText.withValues(
-                                        alpha: 0.72,
-                                      ),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () => _openLogin(context),
-                              icon: const Icon(Icons.login_rounded),
-                              label: const Text('Login'),
-                            ),
-                          ],
+                      FilledButton.icon(
+                        onPressed: () => _scrollToSection(_HomeSection.courses),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Brand.actionOrange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 15,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        icon: const Icon(Icons.auto_stories_rounded),
+                        label: Text(
+                          _tr('Explore Courses', 'استعرض الدورات'),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
                         ),
                       ),
-                      const Divider(height: 1),
-                      Expanded(
-                        child: IndexedStack(index: mode.index, children: pages),
+                      OutlinedButton.icon(
+                        onPressed: () => _openLogin(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 15,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        icon: const Icon(Icons.login_rounded),
+                        label: Text(
+                          _tr('Student / Teacher Login', 'تسجيل دخول'),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
                       ),
                     ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFallbackHero() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF10213D), Color(0xFF1A2B48), Color(0xFF28466F)],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDirectionality({required Widget child}) {
+    if (!_isArabic) return child;
+    return Directionality(textDirection: TextDirection.rtl, child: child);
+  }
+
+  Widget _buildWebsiteSection({
+    required GlobalKey key,
+    required String eyebrow,
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Container(
+      key: key,
+      padding: EdgeInsets.only(
+        top: context.responsive<double>(phone: 34, tablet: 44, desktop: 56),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _WebsiteSectionHeader(
+            eyebrow: eyebrow,
+            title: title,
+            subtitle: subtitle,
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoursesSection() {
+    return _buildWebsiteSection(
+      key: _coursesKey,
+      eyebrow: _tr('Courses', 'الدورات'),
+      title: _tr(
+        'Choose the English path that fits your life.',
+        'اختر مسار الإنجليزية الذي يناسب حياتك.',
+      ),
+      subtitle: _tr(
+        'Browse live, flexible, in-class, private, and recorded learning options.',
+        'تصفح خيارات التعلم المباشر والمرن والمسجل والخاص.',
+      ),
+      child: const _CoursesByCategory(),
+    );
+  }
+
+  Widget _buildGallerySection() {
+    return _buildWebsiteSection(
+      key: _galleryKey,
+      eyebrow: _tr('Gallery', 'المعرض'),
+      title: _tr(
+        'See the learning community in action.',
+        'شاهد مجتمع التعلم أثناء العمل.',
+      ),
+      subtitle: _tr(
+        'Photos, videos, and teacher activity from the public YBS gallery.',
+        'صور وفيديوهات وأنشطة المعلمين من معرض YBS العام.',
+      ),
+      child: SizedBox(
+        height: context.responsive<double>(
+          phone: 460,
+          tablet: 560,
+          desktop: 640,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Brand.uiBorder),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: const _PublicGalleryShowcase(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorldSection() {
+    return _buildWebsiteSection(
+      key: _worldKey,
+      eyebrow: _tr('World', 'العالم'),
+      title: _tr(
+        'A school community beyond one classroom.',
+        'مجتمع مدرسي يتجاوز الفصل الدراسي الواحد.',
+      ),
+      subtitle: _tr(
+        'Explore public learner pins and graduates from the YBS family around the world.',
+        'استكشف بطاقات المتعلمين والخريجين من عائلة YBS حول العالم.',
+      ),
+      child: SizedBox(
+        height: context.responsive<double>(
+          phone: 430,
+          tablet: 520,
+          desktop: 620,
+        ),
+        child: const _WebsiteWorldMapCard(),
+      ),
+    );
+  }
+
+  Widget _buildGamesAndStoriesSection() {
+    return _buildWebsiteSection(
+      key: _gamesKey,
+      eyebrow: _tr('Practice', 'التدرب'),
+      title: _tr(
+        'Learn by practicing, reading, and playing.',
+        'تعلم بالممارسة والقراءة واللعب.',
+      ),
+      subtitle: _tr(
+        'Games and stories open on demand so the homepage stays fast and focused.',
+        'الألعاب والقصص تُفتح عند الطلب لتبقى الصفحة الرئيسية سريعة ومركزة.',
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stack = constraints.maxWidth < 760;
+              final cards = [
+                Expanded(
+                  child: _ExperienceLaunchCard(
+                    icon: Icons.sports_esports_rounded,
+                    title: _tr('Practice With Games', 'تدرب مع الألعاب'),
+                    subtitle: _tr(
+                      'Open the games area for interactive English practice.',
+                      'افتح منطقة الألعاب للممارسة التفاعلية.',
+                    ),
+                    buttonLabel: _tr('Open Games', 'افتح الألعاب'),
+                    color: const Color(0xFF5A6AE6),
+                    onTap: () => _openWebsiteExperience(
+                      const LearnerGamesScreen(showScaffold: true),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _ExperienceLaunchCard(
+                    icon: Icons.menu_book_rounded,
+                    title: _tr('Read Stories', 'اقرأ القصص'),
+                    subtitle: _tr(
+                      'Open the stories area for reading and listening practice.',
+                      'افتح منطقة القصص لممارسة القراءة والاستماع.',
+                    ),
+                    buttonLabel: _tr('Open Stories', 'افتح القصص'),
+                    color: Brand.actionOrange,
+                    onTap: () => _openWebsiteExperience(
+                      const LearnerStoriesScreen(showAppBar: true),
+                    ),
+                  ),
+                ),
+              ];
+              if (stack) {
+                return Column(
+                  children: [cards[0], const SizedBox(height: 14), cards[1]],
+                );
+              }
+              return Row(
+                children: [cards[0], const SizedBox(width: 16), cards[1]],
+              );
+            },
+          ),
+          Container(key: _storiesKey),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 56),
+      padding: EdgeInsets.all(
+        context.responsive<double>(phone: 20, tablet: 26, desktop: 32),
+      ),
+      decoration: BoxDecoration(
+        color: Brand.primaryBlue,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      child: _buildDirectionality(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final stack = constraints.maxWidth < 780;
+            final brand = _FooterBrand(
+              onLogin: () => _openLogin(context),
+              isArabic: _isArabic,
+            );
+            final links = _FooterLinks(
+              onCourses: () => _scrollToSection(_HomeSection.courses),
+              onGallery: () => _scrollToSection(_HomeSection.gallery),
+              onWorld: () => _scrollToSection(_HomeSection.world),
+              onJobs: () => _openWebsiteExperience(const JobsHome()),
+              onCertificate: () =>
+                  _openWebsiteExperience(const VerifyCertificateScreen()),
+              isArabic: _isArabic,
+            );
+            if (stack) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [brand, const SizedBox(height: 24), links],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 5, child: brand),
+                const SizedBox(width: 28),
+                Expanded(flex: 4, child: links),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Brand.appBg,
+      body: Column(
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1240),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      context.responsive<double>(
+                        phone: 14,
+                        tablet: 22,
+                        desktop: 30,
+                      ),
+                      context.responsive<double>(
+                        phone: 16,
+                        tablet: 24,
+                        desktop: 34,
+                      ),
+                      context.responsive<double>(
+                        phone: 14,
+                        tablet: 22,
+                        desktop: 30,
+                      ),
+                      0,
+                    ),
+                    child: _buildDirectionality(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildHero(context),
+                          _buildCoursesSection(),
+                          _buildGallerySection(),
+                          _buildWorldSection(),
+                          _buildGamesAndStoriesSection(),
+                          _buildFooter(context),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -193,53 +698,336 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
   }
+}
+
+class _StaticBrandLogo extends StatelessWidget {
+  const _StaticBrandLogo({required this.size, this.tint});
+
+  final double size;
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Brand.appBg,
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: IndexedStack(
-          index: mode.index,
-          children: const [
-            AssistantHome(),
-            GalleryHome(),
-            WorldGraduatesHome(),
-            GamesHome(),
-            StoriesHome(),
-          ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.24),
+      child: Image.asset(
+        'assets/images/ybs_logo.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        color: tint,
+        errorBuilder: (_, _, _) => Icon(
+          Icons.school_rounded,
+          size: size * 0.82,
+          color: tint ?? Brand.primaryBlue,
         ),
       ),
-      floatingActionButton: _PulsingLoginFab(
-        onPressed: () => _openLogin(context),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: mode.index,
-        onDestinationSelected: (i) => setState(() => mode = AppMode.values[i]),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.auto_stories_rounded),
-            label: 'Courses',
+    );
+  }
+}
+
+class _WebsiteSectionHeader extends StatelessWidget {
+  const _WebsiteSectionHeader({
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 820),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            eyebrow.toUpperCase(),
+            style: const TextStyle(
+              color: Brand.actionOrange,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.3,
+              fontSize: 12,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.photo_library_rounded),
-            label: 'Gallery',
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: Brand.primaryBlue,
+              fontWeight: FontWeight.w900,
+              fontSize: context.responsive<double>(
+                phone: 26,
+                tablet: 34,
+                desktop: 42,
+              ),
+              height: 1.06,
+              letterSpacing: -0.6,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.public_rounded),
-            label: 'World',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.sports_esports_rounded),
-            label: 'Games',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.menu_book_rounded),
-            label: 'Stories',
+          const SizedBox(height: 10),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: Brand.mainText.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w600,
+              fontSize: context.responsiveFontSize(
+                phone: 14,
+                tablet: 15,
+                desktop: 16,
+              ),
+              height: 1.5,
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WebsiteWorldMapCard extends StatelessWidget {
+  const _WebsiteWorldMapCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Brand.uiBorder),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: StreamBuilder<DatabaseEvent>(
+            stream: FirebaseDatabase.instance.ref('graduate_world_map').onValue,
+            builder: (context, snapshot) {
+              final graduates = _GraduateMapPerson.fromSnapshot(
+                snapshot.data?.snapshot.value,
+              );
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: YbsBusyLogo());
+              }
+              return StreamBuilder<DatabaseEvent>(
+                stream: FirebaseDatabase.instance
+                    .ref('public_learner_pins')
+                    .onValue,
+                builder: (context, pinsSnapshot) {
+                  final pinsData = pinsSnapshot.data?.snapshot.value;
+                  final learners = _parseLearnerPins(
+                    pinsData is Map ? pinsData.cast<String, dynamic>() : null,
+                  );
+                  if (graduates.isEmpty && learners.isEmpty) {
+                    return const _EmptyWorldGraduates();
+                  }
+                  return _GraduatesWorldMap(
+                    graduates: graduates,
+                    learners: learners,
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExperienceLaunchCard extends StatelessWidget {
+  const _ExperienceLaunchCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.buttonLabel,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String buttonLabel;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Brand.uiBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 9),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: Brand.primaryBlue,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: Brand.mainText.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w600,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: onTap,
+            style: FilledButton.styleFrom(
+              backgroundColor: color,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: Text(
+              buttonLabel,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FooterBrand extends StatelessWidget {
+  const _FooterBrand({required this.onLogin, required this.isArabic});
+
+  final VoidCallback onLogin;
+  final bool isArabic;
+
+  String _tr(String en, String ar) => isArabic ? ar : en;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const _StaticBrandLogo(size: 38),
+            const SizedBox(width: 10),
+            Text(
+              _tr('Your Bridge School', 'أكاديمية دريم'),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(
+          _tr(
+            'Not for the certificate, for the skill. Learn, practice, verify, and grow with the YBS community.',
+            'ليس من أجل الشهادة، بل من أجل المهارة. تعلم، تدرب، تحقق، وانمُ مع مجتمع YBS.',
+          ),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.78),
+            fontWeight: FontWeight.w600,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 18),
+        OutlinedButton.icon(
+          onPressed: onLogin,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.36)),
+          ),
+          icon: const Icon(Icons.login_rounded),
+          label: Text(_tr('Login', 'تسجيل الدخول')),
+        ),
+      ],
+    );
+  }
+}
+
+class _FooterLinks extends StatelessWidget {
+  const _FooterLinks({
+    required this.onCourses,
+    required this.onGallery,
+    required this.onWorld,
+    required this.onJobs,
+    required this.onCertificate,
+    required this.isArabic,
+  });
+
+  final VoidCallback onCourses;
+  final VoidCallback onGallery;
+  final VoidCallback onWorld;
+  final VoidCallback onJobs;
+  final VoidCallback onCertificate;
+  final bool isArabic;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _FooterLink(label: isArabic ? 'الدورات' : 'Courses', onTap: onCourses),
+        _FooterLink(label: isArabic ? 'المعرض' : 'Gallery', onTap: onGallery),
+        _FooterLink(label: isArabic ? 'العالم' : 'World', onTap: onWorld),
+        _FooterLink(label: isArabic ? 'الوظائف' : 'Jobs', onTap: onJobs),
+        _FooterLink(
+          label: isArabic ? 'التحقق من الشهادة' : 'Verify Certificate',
+          onTap: onCertificate,
+        ),
+      ],
+    );
+  }
+}
+
+class _FooterLink extends StatelessWidget {
+  const _FooterLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white,
+        backgroundColor: Colors.white.withValues(alpha: 0.08),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -671,15 +1459,12 @@ class _GraduatePhotoPin extends StatelessWidget {
               ),
             ],
           ),
-          child: CircleAvatar(
+          child: _PublicCirclePhoto(
+            photoUrl: person.photoUrl,
             radius: 20,
             backgroundColor: Brand.actionOrange,
-            backgroundImage: person.photoUrl.isEmpty
-                ? null
-                : NetworkImage(person.photoUrl),
-            child: person.photoUrl.isEmpty
-                ? const Icon(Icons.person_rounded, color: Colors.white)
-                : null,
+            foregroundColor: Colors.white,
+            iconSize: 24,
           ),
         ),
         Icon(Icons.arrow_drop_down_rounded, color: Brand.actionOrange),
@@ -731,19 +1516,12 @@ class _LearnerMapPin extends StatelessWidget {
                 ),
               ],
             ),
-            child: CircleAvatar(
+            child: _PublicCirclePhoto(
+              photoUrl: learner.photoUrl,
               radius: 14,
               backgroundColor: Brand.primaryBlue,
-              backgroundImage: learner.photoUrl.isEmpty
-                  ? null
-                  : NetworkImage(learner.photoUrl),
-              child: learner.photoUrl.isEmpty
-                  ? const Icon(
-                      Icons.person_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    )
-                  : null,
+              foregroundColor: Colors.white,
+              iconSize: 18,
             ),
           ),
           const Icon(Icons.arrow_drop_down_rounded, color: Brand.primaryBlue),
@@ -813,19 +1591,12 @@ class _LearnerProfileDialog extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircleAvatar(
+                    _PublicCirclePhoto(
+                      photoUrl: learner.photoUrl,
                       radius: 36,
                       backgroundColor: Brand.primaryBlue,
-                      backgroundImage: learner.photoUrl.isEmpty
-                          ? null
-                          : NetworkImage(learner.photoUrl),
-                      child: learner.photoUrl.isEmpty
-                          ? const Icon(
-                              Icons.person_rounded,
-                              color: Colors.white,
-                              size: 36,
-                            )
-                          : null,
+                      foregroundColor: Colors.white,
+                      iconSize: 36,
                     ),
                     const SizedBox(height: 14),
                     Text(
@@ -916,26 +1687,22 @@ class _LearnerStackPin extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: CircleAvatar(
+                child: _PublicCirclePhoto(
+                  photoUrl: first.photoUrl,
                   radius: 14,
                   backgroundColor: Brand.primaryBlue,
-                  backgroundImage: first.photoUrl.isEmpty
-                      ? null
-                      : NetworkImage(first.photoUrl),
-                  child: first.photoUrl.isEmpty
-                      ? const Icon(
-                          Icons.person_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        )
-                      : null,
+                  foregroundColor: Colors.white,
+                  iconSize: 18,
                 ),
               ),
               Positioned(
                 right: -6,
                 top: -6,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: Brand.primaryBlue,
                     shape: BoxShape.circle,
@@ -1066,16 +1833,12 @@ class _LearnerClusterDialog extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        CircleAvatar(
+                        _PublicCirclePhoto(
+                          photoUrl: l.photoUrl,
                           radius: 20,
                           backgroundColor: Brand.primaryBlue,
-                          backgroundImage: l.photoUrl.isEmpty
-                              ? null
-                              : NetworkImage(l.photoUrl),
-                          child: l.photoUrl.isEmpty
-                              ? const Icon(Icons.person_rounded,
-                                  color: Colors.white)
-                              : null,
+                          foregroundColor: Colors.white,
+                          iconSize: 24,
                         ),
                         const SizedBox(width: 11),
                         Expanded(
@@ -1290,13 +2053,12 @@ class _PrivacyPhoto extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget photo = CircleAvatar(
+    Widget photo = _PublicCirclePhoto(
+      photoUrl: photoUrl,
       radius: radius,
       backgroundColor: Brand.primaryBlue.withValues(alpha: 0.08),
-      backgroundImage: photoUrl.isEmpty ? null : NetworkImage(photoUrl),
-      child: photoUrl.isEmpty
-          ? Icon(Icons.person_rounded, size: radius, color: Brand.primaryBlue)
-          : null,
+      foregroundColor: Brand.primaryBlue,
+      iconSize: radius,
     );
     if (blur) {
       photo = ImageFiltered(
@@ -1317,6 +2079,56 @@ class _PrivacyPhoto extends StatelessWidget {
         ],
       ),
       child: photo,
+    );
+  }
+}
+
+class _PublicCirclePhoto extends StatelessWidget {
+  const _PublicCirclePhoto({
+    required this.photoUrl,
+    required this.radius,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.iconSize,
+  });
+
+  final String photoUrl;
+  final double radius;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = radius * 2;
+    Widget fallback() {
+      return Container(
+        width: size,
+        height: size,
+        color: backgroundColor,
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.person_rounded,
+          color: foregroundColor,
+          size: iconSize,
+        ),
+      );
+    }
+
+    final url = photoUrl.trim();
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: url.isEmpty
+            ? fallback()
+            : Image.network(
+                url,
+                fit: BoxFit.cover,
+                webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                errorBuilder: (_, _, _) => fallback(),
+              ),
+      ),
     );
   }
 }
@@ -1438,13 +2250,12 @@ class _GraduateClusterPin extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 2),
         ),
-        child: CircleAvatar(
+        child: _PublicCirclePhoto(
+          photoUrl: g.photoUrl,
           radius: _radius,
           backgroundColor: Brand.actionOrange,
-          backgroundImage: g.photoUrl.isEmpty ? null : NetworkImage(g.photoUrl),
-          child: g.photoUrl.isEmpty
-              ? const Icon(Icons.person_rounded, size: 14, color: Colors.white)
-              : null,
+          foregroundColor: Colors.white,
+          iconSize: 14,
         ),
       );
       if (g.blurPhoto) {
@@ -1514,14 +2325,12 @@ class _GraduateStackPin extends StatelessWidget {
           ),
         ],
       ),
-      child: CircleAvatar(
+      child: _PublicCirclePhoto(
+        photoUrl: first.photoUrl,
         radius: 20,
         backgroundColor: Brand.actionOrange,
-        backgroundImage:
-            first.photoUrl.isEmpty ? null : NetworkImage(first.photoUrl),
-        child: first.photoUrl.isEmpty
-            ? const Icon(Icons.person_rounded, color: Colors.white)
-            : null,
+        foregroundColor: Colors.white,
+        iconSize: 24,
       ),
     );
     if (first.blurPhoto) {
@@ -1547,7 +2356,10 @@ class _GraduateStackPin extends StatelessWidget {
                 right: -6,
                 top: -6,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Brand.actionOrange,
                     shape: BoxShape.circle,

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Mirrors the _courseCertificateUnlocked logic:
 /// Certificate is unlocked when _totalUnits > 0 && _completedUnits == _totalUnits
 /// A unit is completed when ALL its sessions are completed
-/// Session completion uses OR logic (video OR materials)
+/// Session completion requires verified video when a video exists.
 bool isCertificateUnlocked({
   required int totalUnits,
   required int completedUnits,
@@ -20,7 +20,7 @@ bool isUnitCompleted({
   return completedSessions == totalSessions;
 }
 
-/// Mirrors the _resolveCompleted / _isSessionCompleted OR logic
+/// Mirrors the _resolveCompleted / _isSessionCompleted logic
 bool isSessionCompleted({
   required bool requiresVideo,
   required bool requiresMaterials,
@@ -29,7 +29,7 @@ bool isSessionCompleted({
 }) {
   if (!requiresVideo && !requiresMaterials) return true;
   if (requiresVideo && requiresMaterials) {
-    return videoCompleted || materialsCompleted;
+    return videoCompleted;
   }
   if (requiresVideo) return videoCompleted;
   if (requiresMaterials) return materialsCompleted;
@@ -69,19 +69,23 @@ void main() {
     });
   });
 
-  group('Session completion (OR logic) for certificate flow', () {
+  group('Session completion for certificate flow', () {
     test('video-only session: needs videoCompleted', () {
       expect(
         isSessionCompleted(
-          requiresVideo: true, requiresMaterials: false,
-          videoCompleted: true, materialsCompleted: false,
+          requiresVideo: true,
+          requiresMaterials: false,
+          videoCompleted: true,
+          materialsCompleted: false,
         ),
         true,
       );
       expect(
         isSessionCompleted(
-          requiresVideo: true, requiresMaterials: false,
-          videoCompleted: false, materialsCompleted: false,
+          requiresVideo: true,
+          requiresMaterials: false,
+          videoCompleted: false,
+          materialsCompleted: false,
         ),
         false,
       );
@@ -90,20 +94,33 @@ void main() {
     test('materials-only session: needs materialsCompleted', () {
       expect(
         isSessionCompleted(
-          requiresVideo: false, requiresMaterials: true,
-          videoCompleted: false, materialsCompleted: true,
+          requiresVideo: false,
+          requiresMaterials: true,
+          videoCompleted: false,
+          materialsCompleted: true,
         ),
         true,
       );
     });
 
-    test('both required: OR logic — video done is sufficient for cert progress', () {
+    test('both required: video done is required for cert progress', () {
       expect(
         isSessionCompleted(
-          requiresVideo: true, requiresMaterials: true,
-          videoCompleted: true, materialsCompleted: false,
+          requiresVideo: true,
+          requiresMaterials: true,
+          videoCompleted: true,
+          materialsCompleted: false,
         ),
         true,
+      );
+      expect(
+        isSessionCompleted(
+          requiresVideo: true,
+          requiresMaterials: true,
+          videoCompleted: false,
+          materialsCompleted: true,
+        ),
+        false,
       );
     });
   });
@@ -143,38 +160,49 @@ void main() {
         isSessionCompleted: (i) => true,
       );
 
-      final completedUnits = (isUnitComplete(unit1Total, unit1Done) ? 1 : 0) +
+      final completedUnits =
+          (isUnitComplete(unit1Total, unit1Done) ? 1 : 0) +
           (isUnitComplete(unit2Total, unit2Done) ? 1 : 0);
 
-      expect(isCertificateUnlocked(totalUnits: 2, completedUnits: completedUnits), true);
+      expect(
+        isCertificateUnlocked(totalUnits: 2, completedUnits: completedUnits),
+        true,
+      );
     });
 
-    test('certificate stays locked if one session in one unit is incomplete', () {
-      // Unit 1: all 3 done
-      // Unit 2: only 2 of 3 done → unit not complete
-      // → certificate should NOT be unlocked
+    test(
+      'certificate stays locked if one session in one unit is incomplete',
+      () {
+        // Unit 1: all 3 done
+        // Unit 2: only 2 of 3 done → unit not complete
+        // → certificate should NOT be unlocked
 
-      int countCompletedSessions(int total, bool Function(int) check) {
-        int c = 0;
-        for (int i = 0; i < total; i++) {
-          if (check(i)) c++;
+        int countCompletedSessions(int total, bool Function(int) check) {
+          int c = 0;
+          for (int i = 0; i < total; i++) {
+            if (check(i)) c++;
+          }
+          return c;
         }
-        return c;
-      }
 
-      bool isUnitComplete(int total, int completed) =>
-          total > 0 && completed == total;
+        bool isUnitComplete(int total, int completed) =>
+            total > 0 && completed == total;
 
-      final unit1Total = 3;
-      final unit1Done = countCompletedSessions(unit1Total, (i) => true);
+        final unit1Total = 3;
+        final unit1Done = countCompletedSessions(unit1Total, (i) => true);
 
-      final unit2Total = 3;
-      final unit2Done = countCompletedSessions(unit2Total, (i) => i != 0);
+        final unit2Total = 3;
+        final unit2Done = countCompletedSessions(unit2Total, (i) => i != 0);
 
-      final completedUnits = (isUnitComplete(unit1Total, unit1Done) ? 1 : 0) +
-          (isUnitComplete(unit2Total, unit2Done) ? 1 : 0);
+        final completedUnits =
+            (isUnitComplete(unit1Total, unit1Done) ? 1 : 0) +
+            (isUnitComplete(unit2Total, unit2Done) ? 1 : 0);
 
-      expect(isCertificateUnlocked(totalUnits: 2, completedUnits: completedUnits), false);
-    });
+        expect(
+          isCertificateUnlocked(totalUnits: 2, completedUnits: completedUnits),
+          false,
+        );
+      },
+    );
   });
 }

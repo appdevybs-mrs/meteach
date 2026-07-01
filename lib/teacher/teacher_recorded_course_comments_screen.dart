@@ -28,7 +28,7 @@ class TeacherRecordedCourseCommentsScreen extends StatefulWidget {
       _TeacherRecordedCourseCommentsScreenState();
 }
 
-enum _CourseCommentFilter { approved, all, pending, reported, removed }
+enum _CourseCommentFilter { approved, all, pending, reported, removed, notApproved }
 
 class _RecordedLessonMeta {
   const _RecordedLessonMeta({
@@ -102,11 +102,16 @@ class _TeacherRecordedCourseCommentsScreenState
     return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 
-  bool _isPending(LessonCommentItem item) => item.status == 'pending';
+  bool _isApproved(LessonCommentItem item) =>
+      item.status == CourseFeedbackService.statusVisible;
+  bool _isPending(LessonCommentItem item) =>
+      item.status == CourseFeedbackService.statusPending;
+  bool _isNotApproved(LessonCommentItem item) =>
+      item.status == CourseFeedbackService.statusNotApproved;
+  bool _isRemoved(LessonCommentItem item) =>
+      item.status == CourseFeedbackService.statusRemoved;
   bool _isReported(LessonCommentItem item) =>
-      item.reportCount > 0 && item.status != 'removed';
-  bool _isApproved(LessonCommentItem item) => item.status == 'visible';
-  bool _isRemoved(LessonCommentItem item) => item.status == 'removed';
+      item.reportCount > 0 && item.status != CourseFeedbackService.statusRemoved;
 
   List<LessonCommentItem> get _filteredComments {
     return _comments.where((item) {
@@ -121,6 +126,8 @@ class _TeacherRecordedCourseCommentsScreenState
           return _isReported(item);
         case _CourseCommentFilter.removed:
           return _isRemoved(item);
+        case _CourseCommentFilter.notApproved:
+          return _isNotApproved(item);
       }
     }).toList();
   }
@@ -534,6 +541,7 @@ class _TeacherRecordedCourseCommentsScreenState
   int get _pendingCount => _comments.where(_isPending).length;
   int get _reportedCount => _comments.where(_isReported).length;
   int get _approvedCount => _comments.where(_isApproved).length;
+  int get _notApprovedCount => _comments.where(_isNotApproved).length;
   int get _removedCount => _comments.where(_isRemoved).length;
 
   String _threadIdFor(String a, String b, String scope) {
@@ -735,6 +743,7 @@ class _TeacherRecordedCourseCommentsScreenState
           children: [
             Text('Comments: $_totalComments'),
             Text('Approved: $_approvedCount'),
+            Text('Not approved: $_notApprovedCount'),
             Text('Pending: $_pendingCount'),
             Text('Reported: $_reportedCount'),
             Text('Removed: $_removedCount'),
@@ -780,6 +789,8 @@ class _TeacherRecordedCourseCommentsScreenState
         return const Color(0xFFF59E0B);
       case 'visible':
         return const Color(0xFF10B981);
+      case 'not_approved':
+        return const Color(0xFF9333EA);
       case 'hidden':
         return const Color(0xFF64748B);
       case 'removed':
@@ -1050,12 +1061,21 @@ class _TeacherRecordedCourseCommentsScreenState
                   icon: const Icon(Icons.more_horiz_rounded, size: 18),
                   onSelected: (choice) => _moderate(item, choice),
                   itemBuilder: (_) => [
+                    if (item.status != CourseFeedbackService.statusVisible)
+                      const PopupMenuItem(
+                        value: 'visible',
+                        child: Text('Approve'),
+                      ),
+                    if (item.status != CourseFeedbackService.statusNotApproved)
+                      PopupMenuItem(
+                        value: CourseFeedbackService.statusNotApproved,
+                        child: const Text('Not approve'),
+                      ),
                     const PopupMenuItem(
-                      value: 'visible',
-                      child: Text('Approve'),
+                      value: 'hidden',
+                      child: Text('Hide'),
                     ),
-                    const PopupMenuItem(value: 'hidden', child: Text('Hide')),
-                    if (item.status == 'removed')
+                    if (item.status == CourseFeedbackService.statusRemoved)
                       const PopupMenuItem(
                         value: 'delete_permanently',
                         child: Text('Delete permanently'),
@@ -1359,6 +1379,11 @@ class _TeacherRecordedCourseCommentsScreenState
                       _CourseCommentFilter.removed,
                       'Removed',
                       const Color(0xFFDC2626),
+                    ),
+                    _filterChip(
+                      _CourseCommentFilter.notApproved,
+                      'Not approved',
+                      const Color(0xFF9333EA),
                     ),
                   ],
                 ),

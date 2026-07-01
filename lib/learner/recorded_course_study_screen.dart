@@ -94,6 +94,32 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     learnerIdentity: _learnerIdentity,
     resolveInstructorName: _resolveInstructorName,
     snack: _snack,
+    checkLearningReflections: () async {
+      final missing = <_SessionRef>[];
+      final courseIds = <String>[];
+      final primary = _courseId.trim();
+      if (primary.isNotEmpty) courseIds.add(primary);
+      final secondary = widget.courseKey.trim();
+      if (secondary.isNotEmpty && !courseIds.contains(secondary)) {
+        courseIds.add(secondary);
+      }
+      for (final ref in _flatSessions) {
+        var approved = false;
+        for (final cid in courseIds) {
+          approved = await CourseFeedbackService
+              .isLearnerLessonReflectionApproved(
+            courseId: cid,
+            lessonId: ref.session.id,
+            uid: _uid,
+          );
+          if (approved) break;
+        }
+        if (!approved) {
+          missing.add(ref);
+        }
+      }
+      return missing;
+    },
   );
   final RecordedOfflineVideoService _offlineVideos =
       RecordedOfflineVideoService.instance;
@@ -648,7 +674,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final requiresMaterials = _sessionRequiresMaterials(session);
 
     if (requiresVideo && requiresMaterials) {
-      return p.videoCompleted || p.materialsCompleted;
+      return p.videoCompleted;
     }
 
     if (requiresVideo) return p.videoCompleted;
@@ -824,52 +850,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
-  Future<void> _markVideoCompletedManually(_RecordedSession session) async {
-    _debug('markVideoCompletedManually sessionId=${session.id}');
-    if (_progressOf(session.id).videoCompleted) return;
-    unawaited(
-      StudyStreakService.instance.updateStreak(
-        uid: _uid,
-        courseKey: widget.courseKey,
-      ),
-    );
-    final current = _progressOf(session.id);
-    final updated = current.copyWith(
-      videoCompleted: true,
-      videoCompletedAt: DateTime.now().millisecondsSinceEpoch,
-    );
-    final completed = _resolveCompleted(session, updated);
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-
-    await _progressSync.updateProgress(
-      progressRef: _recordedProgressRef.child(session.id),
-      uid: _uid,
-      courseKey: widget.courseKey,
-      sessionId: session.id,
-      patch: {
-        'videoCompleted': updated.videoCompleted,
-        'materialsCompleted': updated.materialsCompleted,
-        'videoCompletedAt': updated.videoCompletedAt,
-        'materialsCompletedAt': updated.materialsCompletedAt,
-        'videoPositionMs': 0,
-        'videoDurationMs': 0,
-        'completed': completed,
-        'updatedAt': ServerValue.timestamp,
-        'lastOpenedAt': nowMs,
-      },
-    );
-
-    if (!mounted) return;
-    setState(() {
-      _progressBySessionId[session.id] = updated.copyWith(completed: completed);
-    });
-    _celebrateIfComplete();
-    widget.onProgressChanged?.call();
-    _debug(
-      'markVideoCompletedManually done sessionId=${session.id} completed=$completed',
-    );
-  }
-
   bool _resolveCompleted(_RecordedSession session, _RecordedProgress progress) {
     final requiresVideo = _sessionRequiresVideo(session);
     final requiresMaterials = _sessionRequiresMaterials(session);
@@ -877,7 +857,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (!requiresVideo && !requiresMaterials) return true;
 
     if (requiresVideo && requiresMaterials) {
-      return progress.videoCompleted || progress.materialsCompleted;
+      return progress.videoCompleted;
     }
 
     if (requiresVideo) return progress.videoCompleted;
@@ -3005,68 +2985,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 ),
               ),
             ),
-          if (isUnlocked && !isCompleted) ...[
-            if (requiresVideo && !progress.videoCompleted)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    height: isWide ? 36 : 26,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _markVideoCompletedManually(session),
-                      icon: const Icon(Icons.check_circle_outline, size: 14),
-                      label: const Text(
-                        'Mark video done',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        foregroundColor: const Color(0xFF4F46E5),
-                        side: const BorderSide(color: Color(0xFFC7D2FE)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            if (requiresMaterials && !progress.materialsCompleted)
-              Padding(
-                padding: EdgeInsets.only(
-                  top: requiresVideo && !progress.videoCompleted ? 4 : 6,
-                ),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    height: isWide ? 36 : 26,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _markMaterialsCompleted(session),
-                      icon: const Icon(Icons.check_circle_outline, size: 14),
-                      label: const Text(
-                        'Mark reading done',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        foregroundColor: const Color(0xFFEA580C),
-                        side: const BorderSide(color: Color(0xFFFED7AA)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
           if (showDetails && canExpandDetails)
             Padding(
               padding: const EdgeInsets.only(top: 6),

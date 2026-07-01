@@ -23,6 +23,7 @@ class _CertificateHandler {
     required Future<Map<String, String>> Function() learnerIdentity,
     required Future<String> Function() resolveInstructorName,
     required void Function(String) snack,
+    required Future<List<_SessionRef>> Function() checkLearningReflections,
   }) : _certificateService = certificateService,
        _certificatePdfService = certificatePdfService,
        _getUid = getUid,
@@ -41,7 +42,8 @@ class _CertificateHandler {
        _oneYearAfter = oneYearAfter,
        _learnerIdentity = learnerIdentity,
        _resolveInstructorName = resolveInstructorName,
-       _snack = snack;
+       _snack = snack,
+       _checkLearningReflections = checkLearningReflections;
 
   final CertificateService _certificateService;
   final CertificatePdfService _certificatePdfService;
@@ -64,6 +66,7 @@ class _CertificateHandler {
   final Future<Map<String, String>> Function() _learnerIdentity;
   final Future<String> Function() _resolveInstructorName;
   final void Function(String) _snack;
+  final Future<List<_SessionRef>> Function() _checkLearningReflections;
 
   String _courseCompletionDate() {
     int latest = 0;
@@ -326,6 +329,38 @@ class _CertificateHandler {
     );
   }
 
+  Future<List<_SessionRef>> _missingReflectionsOrNull() async {
+    final missing = await _checkLearningReflections();
+    return missing;
+  }
+
+  Future<void> _showMissingReflectionsPopup({
+    required BuildContext context,
+    required bool mounted,
+    required List<_SessionRef> missing,
+  }) async {
+    if (!mounted) return;
+    final sb = StringBuffer();
+    for (final ref in missing) {
+      final unitTitle = ref.unit.displayTitle;
+      final lessonTitle =
+          ref.session.title.trim().isEmpty ? 'Untitled' : ref.session.title.trim();
+      sb.writeln('• $unitTitle / $lessonTitle');
+    }
+    final lessonCount = missing.length;
+    final message = lessonCount == 1
+        ? 'Your learning reflection for 1 lesson is missing or not yet approved by your teacher. Please review and resubmit it.\n\n${sb.toString().trim()}'
+        : 'Your learning reflections for $lessonCount lessons are missing or not yet approved by your teacher. Please review and resubmit them.\n\n${sb.toString().trim()}';
+
+    await showLearnerNoticePopup(
+      context,
+      englishTitle: 'Learning Reflections Need Approval',
+      arabicTitle: 'التأملات التعليمية بحاجة إلى موافقة',
+      message: message,
+      tone: LearnerNoticeTone.warning,
+    );
+  }
+
   Future<void> _onCertificateTap({
     required BuildContext context,
     required bool mounted,
@@ -334,6 +369,15 @@ class _CertificateHandler {
     if (AppConnectivity.instance.isOffline) {
       _snack(
         'Certificate generation needs internet. Come back online to generate your certificate.',
+      );
+      return;
+    }
+    final missingRefs = await _missingReflectionsOrNull();
+    if (missingRefs.isNotEmpty) {
+      await _showMissingReflectionsPopup(
+        context: context,
+        mounted: mounted,
+        missing: missingRefs,
       );
       return;
     }
@@ -402,6 +446,25 @@ class _CertificateHandler {
   }) async {
     final moduleKey = _moduleCertificateActionKey(moduleLabel, moduleIndex);
     if (_generatingModuleCertificateKeys.contains(moduleKey)) return;
+
+    final allMissing = await _missingReflectionsOrNull();
+    final moduleSessionIds = <String>{};
+    for (final unit in moduleUnits) {
+      for (final session in unit.sessions) {
+        moduleSessionIds.add(session.id);
+      }
+    }
+    final moduleMissing = allMissing
+        .where((ref) => moduleSessionIds.contains(ref.session.id))
+        .toList();
+    if (moduleMissing.isNotEmpty) {
+      await _showMissingReflectionsPopup(
+        context: context,
+        mounted: mounted,
+        missing: moduleMissing,
+      );
+      return;
+    }
 
     if (AppConnectivity.instance.isOffline) {
       _snack(

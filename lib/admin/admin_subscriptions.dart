@@ -44,6 +44,8 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
 
   DatabaseReference get _subsRef =>
       FirebaseDatabase.instance.ref('subscriptions');
+  DatabaseReference get _historyRef =>
+      FirebaseDatabase.instance.ref('promo_usage_history');
 
   @override
   Widget build(BuildContext context) {
@@ -85,74 +87,88 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
 
             final v = snap.data?.snapshot.value;
             final allItems = parseSubscriptions(v);
-            final summaries = _promoSummaries(allItems);
-            final items = _filterByPromo(allItems, _promoFilter);
 
-            if (allItems.isEmpty) {
-              return const Center(child: Text('No subscriptions yet.'));
-            }
+            return StreamBuilder<DatabaseEvent>(
+              stream: _historyRef.onValue,
+              builder: (context, snap2) {
+                final history =
+                    parsePromoHistory(snap2.data?.snapshot.value);
+                final summaries = _promoSummaries(allItems, history);
+                final items = _filterByPromo(allItems, _promoFilter);
 
-            final webWide = isWebDesktop(context, minWidth: 1100);
+                if (allItems.isEmpty && history.isEmpty) {
+                  return const Center(
+                    child: Text('No subscriptions yet.'),
+                  );
+                }
 
-            if (webWide) {
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                child: CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _promoUsageCard(
-                        summaries: summaries,
-                        totalCount: allItems.length,
-                        filteredCount: items.length,
-                      ),
-                    ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 10)),
-                    if (items.isEmpty)
-                      const SliverToBoxAdapter(
-                        child: Center(
-                          child: Text('No subscriptions match this filter.'),
+                final webWide = isWebDesktop(context, minWidth: 1100);
+
+                if (webWide) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: _promoUsageCard(
+                            summaries: summaries,
+                            totalCount: allItems.length,
+                            filteredCount: items.length,
+                          ),
                         ),
-                      )
-                    else
-                      SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: 10),
+                        ),
+                        if (items.isEmpty)
+                          const SliverToBoxAdapter(
+                            child: Center(
+                              child: Text(
+                                'No subscriptions match this filter.',
+                              ),
+                            ),
+                          )
+                        else
+                          SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
                               crossAxisSpacing: 10,
                               mainAxisSpacing: 10,
                               childAspectRatio: 3.4,
                             ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, i) =>
-                              _buildSubscriptionTile(context, items[i]),
-                          childCount: items.length,
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }
+                            delegate: SliverChildBuilderDelegate(
+                              (context, i) =>
+                                  _buildSubscriptionTile(context, items[i]),
+                              childCount: items.length,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }
 
-            return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-              itemCount: items.isEmpty ? 2 : items.length + 1,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (context, i) {
-                if (i == 0) {
-                  return _promoUsageCard(
-                    summaries: summaries,
-                    totalCount: allItems.length,
-                    filteredCount: items.length,
-                  );
-                }
-                final itemIndex = i - 1;
-                if (items.isEmpty) {
-                  return const Center(
-                    child: Text('No subscriptions match this filter.'),
-                  );
-                }
-                final s = items[itemIndex];
-                return _buildSubscriptionTile(context, s);
+                return ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                  itemCount: items.isEmpty ? 2 : items.length + 1,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, i) {
+                    if (i == 0) {
+                      return _promoUsageCard(
+                        summaries: summaries,
+                        totalCount: allItems.length,
+                        filteredCount: items.length,
+                      );
+                    }
+                    final itemIndex = i - 1;
+                    if (items.isEmpty) {
+                      return const Center(
+                        child: Text('No subscriptions match this filter.'),
+                      );
+                    }
+                    final s = items[itemIndex];
+                    return _buildSubscriptionTile(context, s);
+                  },
+                );
               },
             );
           },
@@ -172,17 +188,34 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
     return items.where((s) => s.promoCode == filter).toList();
   }
 
-  List<_PromoUsageSummary> _promoSummaries(List<SubscriptionItem> items) {
+  List<_PromoUsageSummary> _promoSummaries(
+    List<SubscriptionItem> items,
+    List<_PromoHistoryEntry> history,
+  ) {
     final byCode = <String, _PromoUsageSummary>{};
-    for (final item in items) {
-      final code = item.promoCode.trim();
-      if (code.isEmpty) continue;
+
+    void addToSummary(String code, double? finalFee, double? discount) {
+      if (code.trim().isEmpty) return;
       final existing = byCode[code] ?? _PromoUsageSummary(code: code);
       existing.count += 1;
-      existing.totalFinalFee +=
-          item.discountedFee ?? item.selectedFee ?? item.originalFee ?? 0;
-      existing.totalDiscount += item.discountAmount ?? 0;
+      existing.totalFinalFee += finalFee ?? 0;
+      existing.totalDiscount += discount ?? 0;
       byCode[code] = existing;
+    }
+
+    for (final item in items) {
+      addToSummary(
+        item.promoCode,
+        item.discountedFee ?? item.selectedFee ?? item.originalFee,
+        item.discountAmount,
+      );
+    }
+    for (final entry in history) {
+      addToSummary(
+        entry.promoCode,
+        entry.selectedFee ?? entry.originalFee ?? entry.discountedFee,
+        entry.discountAmount,
+      );
     }
 
     final out = byCode.values.toList();
@@ -264,7 +297,7 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
                   fontWeight: FontWeight.w700,
                 ),
               )
-            else
+            else ...[
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
@@ -298,6 +331,45 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
                   ],
                 ),
               ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.delete_sweep_rounded, size: 16),
+                  label: const Text('Clear history'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red,
+                  ),
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Clear promo usage history?'),
+                        content: const Text(
+                          'This will permanently remove all promo code usage records.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel'),
+                          ),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.red,
+                            ),
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Clear'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok == true) {
+                      await _historyRef.remove();
+                    }
+                  },
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -1373,6 +1445,49 @@ class _PromoUsageSummary {
   int count = 0;
   double totalFinalFee = 0;
   double totalDiscount = 0;
+}
+
+class _PromoHistoryEntry {
+  _PromoHistoryEntry({
+    required this.promoCode,
+    this.discountAmount,
+    this.selectedFee,
+    this.originalFee,
+    this.discountedFee,
+  });
+
+  final String promoCode;
+  final double? discountAmount;
+  final double? selectedFee;
+  final double? originalFee;
+  final double? discountedFee;
+}
+
+List<_PromoHistoryEntry> parsePromoHistory(dynamic v) {
+  if (v is! Map) return [];
+  final out = <_PromoHistoryEntry>[];
+  v.forEach((k, val) {
+    if (k == null || val == null) return;
+    if (val is! Map) return;
+    final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+    final code = (m['promoCode'] ?? '').toString().trim();
+    if (code.isEmpty) return;
+    out.add(_PromoHistoryEntry(
+      promoCode: code,
+      discountAmount: _asDouble(m['discountAmount']),
+      selectedFee: _asDouble(m['selectedFee']),
+      originalFee: _asDouble(m['originalFee']),
+      discountedFee: _asDouble(m['discountedFee']),
+    ));
+  });
+  return out;
+}
+
+double? _asDouble(dynamic x) {
+  if (x == null) return null;
+  if (x is double) return x;
+  if (x is int) return x.toDouble();
+  return double.tryParse(x.toString().trim());
 }
 
 class SubscriptionItem {

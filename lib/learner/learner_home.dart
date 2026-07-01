@@ -738,7 +738,8 @@ class _LearnerHomeState extends State<LearnerHome> {
                       itemCount: missingFields.length,
                       itemBuilder: (ctx, index) {
                         final field = missingFields[index];
-                        final icon = iconColors[field] ??
+                        final icon =
+                            iconColors[field] ??
                             Icons.fiber_manual_record_rounded;
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8),
@@ -772,7 +773,8 @@ class _LearnerHomeState extends State<LearnerHome> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         field,
@@ -785,7 +787,9 @@ class _LearnerHomeState extends State<LearnerHome> {
                                       Text(
                                         _fieldArabicLabels[field] ?? '',
                                         style: TextStyle(
-                                          color: palette.text.withValues(alpha: 0.55),
+                                          color: palette.text.withValues(
+                                            alpha: 0.55,
+                                          ),
                                           fontWeight: FontWeight.w600,
                                           fontSize: 12,
                                         ),
@@ -813,9 +817,9 @@ class _LearnerHomeState extends State<LearnerHome> {
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () {
-                            Navigator.of(ctx).pop(
-                              _ProfilePromptAction.remindLater,
-                            );
+                            Navigator.of(
+                              ctx,
+                            ).pop(_ProfilePromptAction.remindLater);
                           },
                           style: OutlinedButton.styleFrom(
                             foregroundColor: palette.text,
@@ -835,9 +839,9 @@ class _LearnerHomeState extends State<LearnerHome> {
                       Expanded(
                         child: FilledButton(
                           onPressed: () {
-                            Navigator.of(ctx).pop(
-                              _ProfilePromptAction.complete,
-                            );
+                            Navigator.of(
+                              ctx,
+                            ).pop(_ProfilePromptAction.complete);
                           },
                           style: FilledButton.styleFrom(
                             backgroundColor: palette.primary,
@@ -2322,7 +2326,7 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
             bool isCompleted = false;
 
             if (hasVideo && hasMaterials) {
-              isCompleted = videoCompleted || materialsCompleted;
+              isCompleted = videoCompleted;
             } else if (hasVideo) {
               isCompleted = videoCompleted;
             } else if (hasMaterials) {
@@ -2709,7 +2713,8 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
               courseKey: key,
             );
             streak = (streakData['currentStreak'] as num?)?.toInt() ?? 0;
-            weeklySessions = (streakData['weeklySessions'] as num?)?.toInt() ?? 0;
+            weeklySessions =
+                (streakData['weeklySessions'] as num?)?.toInt() ?? 0;
           } catch (_) {}
         }
 
@@ -3824,9 +3829,7 @@ class _ProgressCard extends StatelessWidget {
                       streak: item.streak,
                       weeklySessions: item.weeklySessions,
                       compact: compact,
-                      textColor: hasProgress
-                          ? Colors.white
-                          : palette.text,
+                      textColor: hasProgress ? Colors.white : palette.text,
                     ),
                   ],
                 ],
@@ -3859,7 +3862,8 @@ class _MotivationBar extends StatelessWidget {
 
     return Row(
       children: [
-        Icon(Icons.local_fire_department_rounded,
+        Icon(
+          Icons.local_fire_department_rounded,
           size: compact ? 14 : 16,
           color: streak > 0
               ? const Color(0xFFFF6B35)
@@ -7237,7 +7241,9 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                                  color: const Color(
+                                    0xFF101B4D,
+                                  ).withValues(alpha: 0.62),
                                   fontWeight: FontWeight.w700,
                                   fontSize: compact ? 10 : 12,
                                 ),
@@ -7396,7 +7402,9 @@ class _RemindersHomeCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                          color: const Color(
+                            0xFF101B4D,
+                          ).withValues(alpha: 0.62),
                           fontWeight: FontWeight.w700,
                           fontSize: compact ? 10 : 12,
                         ),
@@ -7541,7 +7549,9 @@ class _LearnerMailHomeCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                          color: const Color(
+                            0xFF101B4D,
+                          ).withValues(alpha: 0.62),
                           fontWeight: FontWeight.w700,
                           fontSize: compact ? 10 : 12,
                         ),
@@ -8305,7 +8315,9 @@ class _DrawerTile extends StatelessWidget {
                           Text(
                             arabicSubtitle!,
                             style: TextStyle(
-                              color: const Color(0xFF101B4D).withValues(alpha: 0.62),
+                              color: const Color(
+                                0xFF101B4D,
+                              ).withValues(alpha: 0.62),
                               fontWeight: FontWeight.w700,
                               fontSize: 12,
                             ),

@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 import '../services/course_feedback_service.dart';
+import '../services/internal_mail_service.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/study_variant.dart';
 import 'teacher_learner_profile_screen.dart';
@@ -112,6 +113,7 @@ class _RecordedSessionMeta {
 
 class _RecordedLessonDetail {
   const _RecordedLessonDetail({
+    required this.lessonId,
     required this.title,
     required this.unitTitle,
     required this.moduleTitle,
@@ -119,8 +121,12 @@ class _RecordedLessonDetail {
     required this.hasMaterials,
     required this.videoDone,
     required this.materialsDone,
+    this.commentStatus,
+    this.commentText,
+    this.commentId,
   });
 
+  final String lessonId;
   final String title;
   final String unitTitle;
   final String moduleTitle;
@@ -128,6 +134,9 @@ class _RecordedLessonDetail {
   final bool hasMaterials;
   final bool videoDone;
   final bool materialsDone;
+  final String? commentStatus;
+  final String? commentText;
+  final String? commentId;
 
   bool get isDone {
     if (hasVideo && hasMaterials) return videoDone || materialsDone;
@@ -584,6 +593,34 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         ? Map<dynamic, dynamic>.from(progressSnap.value as Map)
         : <dynamic, dynamic>{};
 
+    // Load comments for this course, indexed by lessonId for this learner
+    final commentDataByLesson = <String, Map<String, String>>{};
+    try {
+      final commentsSnap = await _db
+          .child('lesson_comments')
+          .child(courseId)
+          .get();
+      if (commentsSnap.exists && commentsSnap.value is Map) {
+        final lessons = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
+        for (final lessonEntry in lessons.entries) {
+          final lessonId = lessonEntry.key.toString();
+          if (lessonEntry.value is! Map) continue;
+          final comments = Map<dynamic, dynamic>.from(lessonEntry.value as Map);
+          for (final commentEntry in comments.entries) {
+            if (commentEntry.value is! Map) continue;
+            final m = Map<dynamic, dynamic>.from(commentEntry.value as Map);
+            if ((m['uid'] ?? '').toString().trim() == learnerUid) {
+              commentDataByLesson[lessonId] = {
+                'status': (m['status'] ?? 'pending').toString(),
+                'text': (m['text'] ?? '').toString(),
+                'id': commentEntry.key.toString(),
+              };
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
     final sessionItems = <Map<String, dynamic>>[];
     if (syllabusSnap.exists && syllabusSnap.value is Map) {
       final root = Map<String, dynamic>.from(syllabusSnap.value as Map);
@@ -658,7 +695,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       final videoDone = _asBool(progress['videoCompleted']);
       final materialsDone = _asBool(progress['materialsCompleted']);
 
+      final cd = commentDataByLesson[sessionId];
       final detail = _RecordedLessonDetail(
+        lessonId: sessionId,
         title: title,
         unitTitle: unitTitle,
         moduleTitle: moduleTitle,
@@ -666,6 +705,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         hasMaterials: hasMaterials,
         videoDone: videoDone,
         materialsDone: materialsDone,
+        commentStatus: cd?['status'],
+        commentText: cd?['text'],
+        commentId: cd?['id'],
       );
 
       if (detail.isDone) {
@@ -1235,17 +1277,71 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       (sum, item) => sum + item.totalSessions,
     );
 
+    final overallPct = totalSessions > 0
+        ? (totalCompleted / totalSessions * 100).round()
+        : 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-          child: Text(
-            'Recorded learners: ${_learnerProgressRows.length} • Completed: $totalCompleted / $totalSessions',
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF334155),
+        Container(
+          margin: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0EA5A4), Color(0xFF059669)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0EA5A4).withValues(alpha: 0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.groups_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_learnerProgressRows.length} learners',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$totalCompleted / $totalSessions lessons completed ($overallPct%)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         Expanded(
@@ -1267,8 +1363,14 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
                   borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1365,13 +1467,34 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                     const SizedBox(height: 8),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        minHeight: 7,
-                        backgroundColor: const Color(0xFFE2E8F0),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Color(0xFF0EA5A4),
-                        ),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0, end: progress),
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, _) {
+                          return Container(
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE2E8F0),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: value.clamp(0.0, 1.0),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFF14B8A6),
+                                      Color(0xFF0EA5A4),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                     if (expanded) ...[
@@ -1471,12 +1594,14 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                                     children: [
                                       _lessonTabList(
                                         details.left,
+                                        learnerItem: item,
                                         done: false,
                                         emptyText: 'No pending lessons.',
                                         accent: const Color(0xFF9A3412),
                                       ),
                                       _lessonTabList(
                                         details.studied,
+                                        learnerItem: item,
                                         done: true,
                                         emptyText: 'No studied lessons yet.',
                                         accent: const Color(0xFF166534),
@@ -1502,6 +1627,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
   Widget _lessonTabList(
     List<_RecordedLessonDetail> items, {
+    required _LearnerRecordedProgressItem learnerItem,
     required bool done,
     required String emptyText,
     required Color accent,
@@ -1535,36 +1661,382 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: accent.withValues(alpha: 0.18)),
           ),
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                item.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    if (contextBits.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        contextBits.join(' • '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              if (contextBits.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  contextBits.join(' • '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-              ],
+              _commentStatusIcon(item, learnerItem),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _commentStatusIcon(
+    _RecordedLessonDetail item,
+    _LearnerRecordedProgressItem learnerItem,
+  ) {
+    final status = item.commentStatus;
+    IconData icon;
+    Color color;
+    Color bgColor;
+    String tooltip;
+
+    if (status == null) {
+      icon = Icons.chat_bubble_outline_rounded;
+      color = const Color(0xFFCBD5E1);
+      bgColor = const Color(0xFFF1F5F9);
+      tooltip = 'No reflection written';
+    } else if (status == CourseFeedbackService.statusVisible) {
+      icon = Icons.check_circle_rounded;
+      color = const Color(0xFF2563EB);
+      bgColor = const Color(0xFFDBEAFE);
+      tooltip = 'Reflection approved';
+    } else if (status == CourseFeedbackService.statusNotApproved) {
+      icon = Icons.error_outline_rounded;
+      color = const Color(0xFFDC2626);
+      bgColor = const Color(0xFFFEE2E2);
+      tooltip = 'Reflection not approved';
+    } else {
+      icon = Icons.hourglass_bottom_rounded;
+      color = const Color(0xFFD97706);
+      bgColor = const Color(0xFFFEF3C7);
+      tooltip = 'Reflection pending review';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: () => _showCommentModerationSheet(item, learnerItem),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(icon, size: 18, color: color),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _moderateComment({
+    required _RecordedLessonDetail lesson,
+    required _LearnerRecordedProgressItem learner,
+    required bool approve,
+  }) async {
+    final commentId = lesson.commentId;
+    if (commentId == null || commentId.isEmpty) return;
+
+    final newStatus = approve
+        ? CourseFeedbackService.statusVisible
+        : CourseFeedbackService.statusNotApproved;
+
+    await CourseFeedbackService.moderateLessonComment(
+      courseId: learner.courseId,
+      lessonId: lesson.lessonId,
+      commentId: commentId,
+      status: newStatus,
+    );
+
+    if (approve) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reflection approved.')),
+        );
+      }
+    } else {
+      // Send auto-mail to learner
+      try {
+        final teacher = FirebaseAuth.instance.currentUser;
+        final teacherName = teacher?.displayName ?? 'Teacher';
+        final teacherUid = teacher?.uid ?? _uid;
+
+        final contextBits = <String>[];
+        if (lesson.moduleTitle.isNotEmpty) contextBits.add(lesson.moduleTitle);
+        if (lesson.unitTitle.isNotEmpty) contextBits.add(lesson.unitTitle);
+        final lessonPath = contextBits.isEmpty
+            ? lesson.title
+            : '${contextBits.join(' / ')} / ${lesson.title}';
+
+        await InternalMailService.sendAutoMail(
+          senderUid: teacherUid,
+          senderName: teacherName,
+          senderRole: 'teacher',
+          receiverUid: learner.learnerUid,
+          receiverName: learner.learnerName,
+          receiverRole: 'learner',
+          subject: 'Learning Reflection Needs Improvement',
+          body: '$lessonPath\n\n'
+              'Dear ${learner.learnerName},\n\n'
+              'Thank you for writing your learning reflection.\n\n'
+              'It appears that your reflection does not fully align with the lesson topic. '
+              'Please watch the lesson carefully and submit a revised reflection.\n\n'
+              'A thoughtful reflection helps you get the most out of your learning journey.\n\n'
+              'Best regards,\n$teacherName',
+        );
+      } catch (_) {
+        // Mail sending is best-effort
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reflection marked as not approved. Learner notified.'),
+          ),
+        );
+      }
+    }
+
+    // Refresh the learner details so the icon updates
+    final rowKey = _recordedRowKey(learner);
+    if (mounted) {
+      setState(() {
+        _recordedDetailsFutureByRow[rowKey] =
+            _loadRecordedLearnerDetails(learner);
+      });
+    }
+  }
+
+  void _showCommentModerationSheet(
+    _RecordedLessonDetail lesson,
+    _LearnerRecordedProgressItem learner,
+  ) {
+    final status = lesson.commentStatus;
+    final hasComment = status != null;
+    final isApproved = status == CourseFeedbackService.statusVisible;
+    final isRejected = status == CourseFeedbackService.statusNotApproved;
+    final isPending = status == CourseFeedbackService.statusPending;
+
+    final contextBits = <String>[];
+    if (lesson.moduleTitle.isNotEmpty) contextBits.add(lesson.moduleTitle);
+    if (lesson.unitTitle.isNotEmpty) contextBits.add(lesson.unitTitle);
+
+    String statusLabel;
+    Color statusColor;
+    if (!hasComment) {
+      statusLabel = 'No reflection yet';
+      statusColor = const Color(0xFF64748B);
+    } else if (isApproved) {
+      statusLabel = 'Approved';
+      statusColor = const Color(0xFF2563EB);
+    } else if (isRejected) {
+      statusLabel = 'Not approved';
+      statusColor = const Color(0xFFDC2626);
+    } else {
+      statusLabel = 'Pending review';
+      statusColor = const Color(0xFFD97706);
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              lesson.title,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            if (contextBits.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                contextBits.join(' • '),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          statusLabel,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: statusColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (hasComment) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        lesson.commentText ?? '',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (!hasComment) ...[
+                    const SizedBox(height: 16),
+                    const Text(
+                      'This learner has not written a learning reflection for this lesson yet.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                  if (hasComment) ...[
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        if (isPending || isRejected)
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () async {
+                                await _moderateComment(
+                                  lesson: lesson,
+                                  learner: learner,
+                                  approve: true,
+                                );
+                                if (ctx.mounted) Navigator.pop(ctx);
+                              },
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.check_circle_rounded,
+                                  size: 18),
+                              label: const Text(
+                                'Approve',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (isPending)
+                          const SizedBox(width: 10),
+                        if (isPending || isApproved)
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                await _moderateComment(
+                                  lesson: lesson,
+                                  learner: learner,
+                                  approve: false,
+                                );
+                                if (ctx.mounted) Navigator.pop(ctx);
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFDC2626),
+                                side: const BorderSide(
+                                  color: Color(0xFFFECACA),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.error_outline_rounded,
+                                  size: 18),
+                              label: const Text(
+                                'Not approve',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 

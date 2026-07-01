@@ -10,6 +10,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import 'story_audio_controller.dart';
+import 'web_embedded_view.dart';
 
 enum MaterialViewerMode { game, document }
 
@@ -363,22 +364,14 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
           return;
         }
 
-        final bool launched = await launchUrl(uri, webOnlyWindowName: '_blank');
-
         if (!mounted) return;
         setState(() {
-          _openedWebUrl = launched;
+          _openedWebUrl = false;
           _currentUrl = uri.toString();
           _pageTitle = widget.title;
           _isLoading = false;
-          if (!launched) {
-            _lastError = 'Could not open this page in the browser.';
-          }
         });
-        if (launched && mounted) {
-          _trackReadInteractionOnce();
-          Navigator.pop(context);
-        }
+        _trackReadInteractionOnce();
         return;
       }
 
@@ -1324,8 +1317,11 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
     }
 
     if (_isWebRuntime) {
-      if (_openedWebUrl) {
-        return _buildWebOpenedState();
+      if (widget.isUrl && (_currentUrl ?? widget.url ?? '').trim().isNotEmpty) {
+        return WebEmbeddedContent(
+          url: (_currentUrl ?? widget.url ?? '').trim(),
+          title: widget.title,
+        );
       }
 
       return _buildErrorState();
@@ -1352,11 +1348,13 @@ class _MaterialWebViewScreenState extends State<MaterialWebViewScreen>
                   onPressed: () => Navigator.pop(context),
                 ),
                 actions: _openedWebUrl
+                    ? null
+                    : widget.isUrl
                     ? [
                         IconButton(
                           icon: const Icon(Icons.open_in_new_rounded),
-                          tooltip: 'Open again',
-                          onPressed: () => unawaited(_openUrlAgain()),
+                          tooltip: 'Open in new tab',
+                          onPressed: () => unawaited(_openInExternalBrowser()),
                         ),
                       ]
                     : null,

@@ -119,10 +119,17 @@ class RecordedProgressSyncService {
     await ensureLoaded();
     final key = keyFor(uid: uid, courseKey: courseKey, sessionId: sessionId);
     var result = Map<String, dynamic>.from(firebaseProgress);
+    final mirror = _mirror[key];
+    if (mirror != null) {
+      result = _mergePatch(result, mirror);
+    }
     final pending = _pending[key];
     if (pending != null) {
       result = _mergePatch(result, pending.patch);
-      result['lessonNotes'] = _mergeNotes(result['lessonNotes'], pending.noteOps);
+      result['lessonNotes'] = _mergeNotes(
+        result['lessonNotes'],
+        pending.noteOps,
+      );
     }
     return result;
   }
@@ -372,8 +379,17 @@ class RecordedProgressSyncService {
         out[key] = _asBool(out[key]) || _asBool(value);
       } else if (key == 'videoPositionMs' || key == 'videoDurationMs') {
         out[key] = _maxInt(out[key], value);
+      } else if (key == 'videoEligibleWatchMs') {
+        out[key] = value;
+      } else if (key == 'videoWatchMsTotal' ||
+          key == 'attentionChecksPassed' ||
+          key == 'attentionChecksFailed') {
+        out[key] = _maxInt(out[key], value);
       } else if (key == 'videoCompletedAt' ||
           key == 'materialsCompletedAt' ||
+          key == 'lastAttentionCheckAt' ||
+          key == 'attentionFailedAt' ||
+          key == 'attentionAttemptResetAt' ||
           key == 'updatedAt' ||
           key == 'updatedAtLocal' ||
           key == 'lastOpenedAt') {
@@ -386,7 +402,10 @@ class RecordedProgressSyncService {
     }
     if (_asBool(out['videoCompleted'])) {
       final duration = _asInt(out['videoDurationMs']);
-      if (duration > 0) out['videoPositionMs'] = duration;
+      if (duration > 0) {
+        out['videoPositionMs'] = duration;
+        out['videoEligibleWatchMs'] = duration;
+      }
     }
     return out;
   }

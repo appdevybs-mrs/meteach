@@ -125,6 +125,11 @@ class CourseFeedbackService {
   static const String lessonRepliesNode = 'lesson_comment_replies';
   static const String commentReportsNode = 'comment_reports';
 
+  static const String statusPending = 'pending';
+  static const String statusVisible = 'visible';
+  static const String statusNotApproved = 'not_approved';
+  static const String statusRemoved = 'removed';
+
   static final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   static int asInt(dynamic v) {
@@ -469,7 +474,7 @@ class CourseFeedbackService {
       'abbr': identity['abbr'] ?? 'L',
       'type': type,
       'text': text.trim(),
-      'status': 'visible',
+      'status': statusPending,
       'reportCount': 0,
       'createdAt': now,
       'updatedAt': now,
@@ -770,5 +775,110 @@ class CourseFeedbackService {
       '$lessonRepliesNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
       '$commentReportsNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
     });
+  }
+
+  static Future<bool> hasUserLessonReflection({
+    required String courseId,
+    required String lessonId,
+    required String uid,
+  }) async {
+    final safeCourseId = courseId.trim();
+    final safeLessonId = lessonId.trim();
+    final safeUid = uid.trim();
+    if (safeCourseId.isEmpty || safeLessonId.isEmpty || safeUid.isEmpty) {
+      return false;
+    }
+    try {
+      final snap = await _db
+          .child(lessonCommentsNode)
+          .child(safeCourseId)
+          .child(safeLessonId)
+          .limitToFirst(100)
+          .get();
+      if (!snap.exists || snap.value is! Map) return false;
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      var found = false;
+      raw.forEach((key, value) {
+        if (value is! Map) return;
+        final map = value.map((k, v) => MapEntry(k.toString(), v));
+        if ((map['uid'] ?? '').toString().trim() == safeUid) {
+          found = true;
+        }
+      });
+      return found;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Returns true if the learner has a reflection on this lesson with status 'visible'.
+  static Future<bool> isLearnerLessonReflectionApproved({
+    required String courseId,
+    required String lessonId,
+    required String uid,
+  }) async {
+    final safeCourseId = courseId.trim();
+    final safeLessonId = lessonId.trim();
+    final safeUid = uid.trim();
+    if (safeCourseId.isEmpty || safeLessonId.isEmpty || safeUid.isEmpty) {
+      return false;
+    }
+    try {
+      final snap = await _db
+          .child(lessonCommentsNode)
+          .child(safeCourseId)
+          .child(safeLessonId)
+          .limitToFirst(100)
+          .get();
+      if (!snap.exists || snap.value is! Map) return false;
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      var approved = false;
+      raw.forEach((key, value) {
+        if (value is! Map) return;
+        final map = value.map((k, v) => MapEntry(k.toString(), v));
+        if ((map['uid'] ?? '').toString().trim() == safeUid &&
+            (map['status'] ?? '').toString().trim() == statusVisible) {
+          approved = true;
+        }
+      });
+      return approved;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Returns the status of the learner's comment for a lesson, or null if none exists.
+  static Future<String?> getLearnerLessonCommentStatus({
+    required String courseId,
+    required String lessonId,
+    required String uid,
+  }) async {
+    final safeCourseId = courseId.trim();
+    final safeLessonId = lessonId.trim();
+    final safeUid = uid.trim();
+    if (safeCourseId.isEmpty || safeLessonId.isEmpty || safeUid.isEmpty) {
+      return null;
+    }
+    try {
+      final snap = await _db
+          .child(lessonCommentsNode)
+          .child(safeCourseId)
+          .child(safeLessonId)
+          .limitToFirst(100)
+          .get();
+      if (!snap.exists || snap.value is! Map) return null;
+      final raw = Map<dynamic, dynamic>.from(snap.value as Map);
+      String? status;
+      raw.forEach((key, value) {
+        if (value is! Map) return;
+        final map = value.map((k, v) => MapEntry(k.toString(), v));
+        if ((map['uid'] ?? '').toString().trim() == safeUid) {
+          status = (map['status'] ?? statusPending).toString();
+        }
+      });
+      return status;
+    } catch (_) {
+      return null;
+    }
   }
 }

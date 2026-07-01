@@ -87,9 +87,20 @@ class AppThemeController extends ChangeNotifier {
 
   AppThemeMode _mode = AppThemeMode.navy;
   AppFontMode _fontMode = AppFontMode.system;
+  double _desktopScale = 1.0;
 
   AppThemeMode get mode => _mode;
   AppFontMode get fontMode => _fontMode;
+
+  double get desktopScale => _desktopScale;
+
+  void updateScale(double scale) {
+    final clamped = scale.clamp(1.0, 1.35);
+    if ((_desktopScale - clamped).abs() > 0.01) {
+      _desktopScale = clamped;
+      notifyListeners();
+    }
+  }
 
   static const AppPalette _websitePalette = AppPalette(
     primary: Color(0xFF0E7C86),
@@ -122,10 +133,13 @@ class AppThemeController extends ChangeNotifier {
       error: const Color(0xFFB00020),
     );
 
+    final s = _desktopScale;
+
     final baseTextTheme = ThemeData.light().textTheme.apply(
       bodyColor: p.text,
       displayColor: p.text,
       fontFamily: fontFamily,
+      fontSizeFactor: s,
     );
 
     return ThemeData(
@@ -142,7 +156,7 @@ class AppThemeController extends ChangeNotifier {
         surfaceTintColor: p.cardBg,
         titleTextStyle: TextStyle(
           color: p.primary,
-          fontSize: 20,
+          fontSize: (20 * s).roundToDouble(),
           fontWeight: FontWeight.w800,
           fontFamily: fontFamily,
         ),
@@ -181,23 +195,28 @@ class AppThemeController extends ChangeNotifier {
         hintStyle: TextStyle(
           color: p.text.withValues(alpha: 0.55),
           fontFamily: fontFamily,
+          fontSize: (14 * s).roundToDouble(),
         ),
-        labelStyle: TextStyle(color: p.text, fontFamily: fontFamily),
+        labelStyle: TextStyle(
+          color: p.text,
+          fontFamily: fontFamily,
+          fontSize: (14 * s).roundToDouble(),
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular((14 * s).roundToDouble()),
           borderSide: BorderSide(color: p.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular((14 * s).roundToDouble()),
           borderSide: BorderSide(color: p.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: p.accent, width: 2),
+          borderRadius: BorderRadius.circular((14 * s).roundToDouble()),
+          borderSide: BorderSide(color: p.accent, width: (2 * s).roundToDouble().clamp(1.5, 3.0)),
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 14,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: (14 * s).roundToDouble(),
+          vertical: (14 * s).roundToDouble(),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
@@ -208,6 +227,7 @@ class AppThemeController extends ChangeNotifier {
             color: states.contains(WidgetState.selected) ? p.primary : p.text,
             fontWeight: FontWeight.w700,
             fontFamily: fontFamily,
+            fontSize: (12 * s).roundToDouble(),
           ),
         ),
         iconTheme: WidgetStateProperty.resolveWith(
@@ -223,10 +243,12 @@ class AppThemeController extends ChangeNotifier {
         labelStyle: TextStyle(
           fontWeight: FontWeight.w700,
           fontFamily: fontFamily,
+          fontSize: (14 * s).roundToDouble(),
         ),
         unselectedLabelStyle: TextStyle(
           fontWeight: FontWeight.w600,
           fontFamily: fontFamily,
+          fontSize: (13 * s).roundToDouble(),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -235,6 +257,7 @@ class AppThemeController extends ChangeNotifier {
           color: Colors.white,
           fontWeight: FontWeight.w700,
           fontFamily: fontFamily,
+          fontSize: (14 * s).roundToDouble(),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -244,9 +267,14 @@ class AppThemeController extends ChangeNotifier {
           textStyle: TextStyle(
             fontWeight: FontWeight.w700,
             fontFamily: fontFamily,
+            fontSize: (14 * s).roundToDouble(),
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular((14 * s).roundToDouble()),
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: (16 * s).roundToDouble(),
+            vertical: (12 * s).roundToDouble(),
           ),
         ),
       ),
@@ -257,9 +285,14 @@ class AppThemeController extends ChangeNotifier {
           textStyle: TextStyle(
             fontWeight: FontWeight.w700,
             fontFamily: fontFamily,
+            fontSize: (14 * s).roundToDouble(),
           ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular((14 * s).roundToDouble()),
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: (16 * s).roundToDouble(),
+            vertical: (12 * s).roundToDouble(),
           ),
         ),
       ),
@@ -267,7 +300,7 @@ class AppThemeController extends ChangeNotifier {
         color: p.cardBg,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular((18 * s).roundToDouble()),
           side: BorderSide(color: p.border),
         ),
       ),

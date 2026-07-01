@@ -117,7 +117,7 @@ class _RecordedLessonCommentsScreenState
         _loadingMore = false;
         _hasMore = false;
         _error =
-            'Comments need internet. Lesson notes are available offline in the video player.';
+            'Reflections need internet. Lesson notes are available offline in the video player.';
       });
       return;
     }
@@ -365,19 +365,19 @@ class _RecordedLessonCommentsScreenState
   Future<void> _postComment() async {
     if (AppConnectivity.instance.isOffline) {
       _notice(
-        'Comments need internet. Use lesson notes while offline.',
+        'Reflections need internet. Use notes while offline.',
         tone: LearnerNoticeTone.warning,
       );
       return;
     }
     final text = _commentC.text.trim();
     if (text.isEmpty) {
-      _notice('Write a comment first.', tone: LearnerNoticeTone.warning);
+      _notice('Write your reflection first.', tone: LearnerNoticeTone.warning);
       return;
     }
     if (text.length > 400) {
       _notice(
-        'Comment is too long (max 400 chars).',
+        'Reflection is too long (max 400 chars).',
         tone: LearnerNoticeTone.warning,
       );
       return;
@@ -395,7 +395,7 @@ class _RecordedLessonCommentsScreenState
       _commentC.clear();
       await _loadComments(reset: true);
       if (!mounted) return;
-      _notice('Comment posted.', tone: LearnerNoticeTone.success);
+      _notice('Reflection posted.', tone: LearnerNoticeTone.success);
       FocusScope.of(context).requestFocus(_commentFocus);
     } catch (e) {
       if (!mounted) return;
@@ -432,7 +432,7 @@ class _RecordedLessonCommentsScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Reply to comment',
+                    'Reply to reflection',
                     style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
                   ),
                   const SizedBox(height: 12),
@@ -489,7 +489,7 @@ class _RecordedLessonCommentsScreenState
   Future<void> _reportComment(String commentId, String courseId) async {
     if (AppConnectivity.instance.isOffline) {
       _notice(
-        'Reporting comments needs internet.',
+        'Reporting reflections needs internet.',
         tone: LearnerNoticeTone.warning,
       );
       return;
@@ -502,13 +502,13 @@ class _RecordedLessonCommentsScreenState
       reason: 'Reported by learner',
     );
     if (!mounted) return;
-    _notice('Comment reported.', tone: LearnerNoticeTone.success);
+    _notice('Reflection reported.', tone: LearnerNoticeTone.success);
   }
 
   Future<void> _editComment(LessonCommentItem item, String courseId) async {
     if (AppConnectivity.instance.isOffline) {
       _notice(
-        'Editing comments needs internet.',
+        'Editing reflections needs internet.',
         tone: LearnerNoticeTone.warning,
       );
       return;
@@ -531,7 +531,7 @@ class _RecordedLessonCommentsScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Edit comment',
+                    'Edit reflection',
                     style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
                   ),
                   const SizedBox(height: 12),
@@ -540,7 +540,7 @@ class _RecordedLessonCommentsScreenState
                     maxLength: 400,
                     maxLines: 4,
                     decoration: const InputDecoration(
-                      hintText: 'Update your comment...',
+                      hintText: 'Update your reflection...',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -576,7 +576,7 @@ class _RecordedLessonCommentsScreenState
     if (submit != true) return;
     if (!mounted) return;
     if (text.isEmpty) {
-      _notice('Write a comment first.', tone: LearnerNoticeTone.warning);
+      _notice('Write your reflection first.', tone: LearnerNoticeTone.warning);
       return;
     }
 
@@ -590,7 +590,7 @@ class _RecordedLessonCommentsScreenState
       );
       await _loadComments(reset: true);
       if (!mounted) return;
-      _notice('Comment updated.', tone: LearnerNoticeTone.success);
+      _notice('Reflection updated.', tone: LearnerNoticeTone.success);
     } catch (e) {
       if (!mounted) return;
       _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
@@ -603,7 +603,7 @@ class _RecordedLessonCommentsScreenState
   ) async {
     if (AppConnectivity.instance.isOffline) {
       _notice(
-        'Deleting comments needs internet.',
+        'Deleting reflections needs internet.',
         tone: LearnerNoticeTone.warning,
       );
       return;
@@ -612,9 +612,9 @@ class _RecordedLessonCommentsScreenState
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete comment?'),
+        title: const Text('Delete reflection?'),
         content: const Text(
-          'This will remove your comment from the discussion and delete all replies under it. Teachers/admins can still review the removed comment.',
+          'This will remove your reflection and all replies under it. Teachers/admins can still review the removed content.',
         ),
         actions: [
           OutlinedButton(
@@ -642,7 +642,7 @@ class _RecordedLessonCommentsScreenState
       );
       await _loadComments(reset: true);
       if (!mounted) return;
-      _notice('Comment deleted.', tone: LearnerNoticeTone.success);
+      _notice('Reflection deleted.', tone: LearnerNoticeTone.success);
     } catch (e) {
       if (!mounted) return;
       _notice(humanizeUiMessage(e.toString()), tone: LearnerNoticeTone.error);
@@ -685,7 +685,7 @@ class _RecordedLessonCommentsScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            _busy ? 'Loading comments...' : '${_comments.length} comments',
+            _busy ? 'Loading reflections...' : '${_comments.length} reflections',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,
@@ -718,8 +718,8 @@ class _RecordedLessonCommentsScreenState
             decoration: InputDecoration(
               counterText: '',
               hintText: offline
-                  ? 'Comments need internet. Use lesson notes offline.'
-                  : 'Write a comment...',
+                  ? 'Reflections need internet. Use notes offline.'
+                  : 'What did you learn?',
               border: OutlineInputBorder(),
             ),
           ),
@@ -744,7 +744,7 @@ class _RecordedLessonCommentsScreenState
                         ? 'Offline'
                         : _posting
                         ? 'Posting...'
-                        : 'Post comment',
+                        : 'Post reflection',
                   ),
                 ),
               ),
@@ -853,7 +853,7 @@ class _RecordedLessonCommentsScreenState
                         ),
                         if (isMine)
                           PopupMenuButton<String>(
-                            tooltip: 'Comment actions',
+                            tooltip: 'Reflection actions',
                             icon: const Icon(
                               Icons.more_horiz_rounded,
                               size: 18,
@@ -1047,7 +1047,7 @@ class _RecordedLessonCommentsScreenState
         backgroundColor: const Color(0xFF0B2545),
         foregroundColor: Colors.white,
         title: const Text(
-          'Comments',
+          'Learning Reflection',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
@@ -1087,7 +1087,7 @@ class _RecordedLessonCommentsScreenState
                       : _comments.isEmpty
                       ? const Center(
                           child: Text(
-                            'No comments yet.',
+                            'No reflections yet.',
                             style: TextStyle(
                               color: Color(0xFF475569),
                               fontWeight: FontWeight.w700,

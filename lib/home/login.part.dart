@@ -5,6 +5,25 @@ class LoginScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final form = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 480),
+      child: CardShell(
+        child: ClassroomLoginSection(onLoggedInAdmin: () {}),
+      ),
+    );
+
+    if (context.isDesktopOrWider) {
+      return Scaffold(
+        backgroundColor: Brand.appBg,
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+            child: form,
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: SafeArea(
@@ -33,9 +52,7 @@ class LoginScreen extends StatelessWidget {
                         padding: EdgeInsets.only(
                           bottom: MediaQuery.of(context).viewInsets.bottom + 16,
                         ),
-                        child: CardShell(
-                          child: ClassroomLoginSection(onLoggedInAdmin: () {}),
-                        ),
+                        child: form,
                       ),
                     ),
                   ),

@@ -569,6 +569,7 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                     child: Image.network(
                       thumbnail,
                       filterQuality: FilterQuality.low,
+                      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
                       cacheWidth:
                           (screenWidth * MediaQuery.of(ctx).devicePixelRatio)
                               .round()
@@ -1115,6 +1116,8 @@ class _LearnerStoriesScreenState extends State<LearnerStoriesScreen> {
                                 thumbnail,
                                 fit: BoxFit.cover,
                                 filterQuality: FilterQuality.low,
+                                webHtmlElementStrategy:
+                                    WebHtmlElementStrategy.prefer,
                                 cacheWidth: cardCacheWidth,
                                 cacheHeight: cardCacheHeight,
                                 loadingBuilder: (context, child, progress) {

@@ -1,24 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Your Bridge School helps learners build practical English skills through live classes, recorded courses, teacher support, certificates, games, stories, and a global learning community.">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="theme-color" content="#1A2B48">
+  <meta name="robots" content="index, follow">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Your Bridge School">
+  <meta property="og:title" content="Your Bridge School | Learn English Online and In Class">
+  <meta property="og:description" content="Learn practical English with live classes, recorded study, certificates, stories, games, and teacher-led support.">
+  <meta property="og:image" content="icons/Icon-512.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Your Bridge School | Learn English Online and In Class">
+  <meta name="twitter:description" content="Not for the certificate, for the skill. Build practical English with Your Bridge School.">
+  <meta name="twitter:image" content="icons/Icon-512.png">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -29,10 +31,62 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>Your Bridge School</title>
+  <title>Your Bridge School | Learn English Online and In Class</title>
   <link rel="manifest" href="manifest.json">
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "EducationalOrganization",
+      "name": "Your Bridge School",
+      "alternateName": "YBS",
+      "description": "Your Bridge School helps learners build practical English skills through live classes, recorded courses, teacher support, certificates, games, stories, and a global learning community.",
+      "slogan": "Not for the certificate, for the skill",
+      "logo": "icons/Icon-512.png",
+      "sameAs": []
+    }
+  </script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: #F4F7F9;
+    }
+    body { overflow-x: hidden; }
+    flutter-view {
+      display: block;
+      width: 100%;
+      min-height: 100vh;
+    }
+    .seo-fallback {
+      position: absolute;
+      left: -10000px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+    }
+  </style>
 </head>
 <body>
+  <main class="seo-fallback" aria-hidden="true">
+    <h1>Your Bridge School</h1>
+    <p>Learn English online and in class with Your Bridge School. Not for the certificate, for the skill.</p>
+    <h2>English Courses</h2>
+    <p>Explore live English classes, flexible learning, private lessons, in-class learning, and recorded courses.</p>
+    <h2>Gallery, Games, Stories, and Certificates</h2>
+    <p>View public learning moments, practice English with games, read stories, and verify certificates.</p>
+  </main>
+  <noscript>
+    <main style="font-family:Arial,sans-serif;max-width:840px;margin:40px auto;padding:24px;color:#1A2B48;line-height:1.6">
+      <h1>Your Bridge School</h1>
+      <p>Your Bridge School helps learners build practical English skills through live classes, recorded courses, teacher support, certificates, games, stories, and a global learning community.</p>
+      <p>Please enable JavaScript to use the online learning platform.</p>
+    </main>
+  </noscript>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

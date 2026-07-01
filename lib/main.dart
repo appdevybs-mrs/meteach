@@ -44,6 +44,7 @@ import 'shared/profile_avatar.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'shared/icon_theme.dart';
 import 'shared/app_flavor.dart';
+import 'shared/responsive_layout.dart';
 import 'auth/auth_gate.dart';
 import 'verify_certificate_screen.dart';
 import 'package:video_player/video_player.dart';
@@ -85,8 +86,10 @@ Future<void> _bootstrapApp() async {
 
   await AppCheckService.I.activate();
 
-  FirebaseDatabase.instance.setPersistenceEnabled(true);
-  FirebaseDatabase.instance.setPersistenceCacheSizeBytes(100 * 1024 * 1024);
+  if (!kIsWeb) {
+    FirebaseDatabase.instance.setPersistenceEnabled(true);
+    FirebaseDatabase.instance.setPersistenceCacheSizeBytes(100 * 1024 * 1024);
+  }
 
   await AppFlavor.init();
 
@@ -155,11 +158,59 @@ class Brand {
   static const uiBorder = Color(0xFFD1D9E0);
 }
 
-class YourBridgeSchoolApp extends StatelessWidget {
+class YourBridgeSchoolApp extends StatefulWidget {
   const YourBridgeSchoolApp({super.key});
 
   @override
+  State<YourBridgeSchoolApp> createState() => _YourBridgeSchoolAppState();
+}
+
+class _YourBridgeSchoolAppState extends State<YourBridgeSchoolApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    _updateScale();
+  }
+
+  void _updateScale() {
+    final width = WidgetsBinding.instance.platformDispatcher.views.isNotEmpty
+        ? WidgetsBinding
+              .instance
+              .platformDispatcher
+              .views
+              .first
+              .physicalSize
+              .width
+        : 0;
+    final dpr =
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    final logicalWidth = dpr > 0 ? width / dpr : 0;
+    if (logicalWidth >= 1440) {
+      appThemeController.updateScale(1.25);
+    } else if (logicalWidth >= 1024) {
+      appThemeController.updateScale(1.15);
+    } else if (logicalWidth >= 768) {
+      appThemeController.updateScale(1.05);
+    } else {
+      appThemeController.updateScale(1.0);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    _updateScale();
     return AnimatedBuilder(
       animation: appThemeController,
       builder: (context, _) {
@@ -636,6 +687,10 @@ class SoftBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isDesktopOrWider) {
+      return child;
+    }
+
     return Stack(
       children: [
         Container(decoration: const BoxDecoration(color: Brand.appBg)),
@@ -912,6 +967,8 @@ class SimpleTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isDesktopOrWider) return const SizedBox.shrink();
+
     final cs = Theme.of(context).colorScheme;
 
     return Padding(
@@ -1051,10 +1108,12 @@ class _FeatureCardsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const spacing = 8.0;
+        final spacing = context.responsive<double>(
+          phone: 8,
+          tablet: 10,
+          desktop: 12,
+        );
         final narrow = constraints.maxWidth < 480;
-
-        Widget card(Widget w) => SizedBox(width: narrow ? null : 100, child: w);
 
         final items = <Widget>[
           _FeatureCard(
@@ -1089,18 +1148,28 @@ class _FeatureCardsRow extends StatelessWidget {
         ];
 
         if (!narrow) {
+          final cardWidth = context.responsive<double>(
+            phone: 100,
+            tablet: 130,
+            desktop: 150,
+          );
+          final cardHeight = context.responsive<double>(
+            phone: 88,
+            tablet: 100,
+            desktop: 110,
+          );
           return SizedBox(
-            height: 88,
+            height: cardHeight,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                card(items[0]),
+                SizedBox(width: cardWidth, child: items[0]),
                 SizedBox(width: spacing),
-                card(items[1]),
+                SizedBox(width: cardWidth, child: items[1]),
                 SizedBox(width: spacing),
-                card(items[2]),
+                SizedBox(width: cardWidth, child: items[2]),
                 SizedBox(width: spacing),
-                card(items[3]),
+                SizedBox(width: cardWidth, child: items[3]),
               ],
             ),
           );
@@ -1182,7 +1251,10 @@ class _FeatureCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: context.responsive<double>(phone: 8, desktop: 12),
+            vertical: context.responsive<double>(phone: 12, desktop: 14),
+          ),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -1198,14 +1270,24 @@ class _FeatureCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: color, size: 28),
-              const SizedBox(height: 6),
+              Icon(
+                icon,
+                color: color,
+                size: context.responsive<double>(phone: 28, desktop: 34),
+              ),
+              SizedBox(
+                height: context.responsive<double>(phone: 6, desktop: 8),
+              ),
               Text(
                 label,
                 style: TextStyle(
                   color: Brand.primaryBlue,
                   fontWeight: FontWeight.w800,
-                  fontSize: 12,
+                  fontSize: context.responsiveFontSize(
+                    phone: 12,
+                    tablet: 13,
+                    desktop: 14,
+                  ),
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -1708,6 +1790,7 @@ class _JoinOnlineCircleEntryButtonState
       return Image.network(
         liveUrl,
         fit: BoxFit.cover,
+        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
         errorBuilder: (_, _, _) => fallbackImage(broken: true),
       );
     }
@@ -1728,6 +1811,7 @@ class _JoinOnlineCircleEntryButtonState
       child = Image.network(
         imageUrl,
         fit: BoxFit.cover,
+        webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
         errorBuilder: (_, _, _) => FutureBuilder<String>(
           future: _resolveTeacherPhoto(
             circle.teacherUid,
@@ -2622,6 +2706,7 @@ class _RotatingTeacherPhotoIconState extends State<_RotatingTeacherPhotoIcon> {
                   currentUrl,
                   key: ValueKey(currentUrl),
                   fit: BoxFit.cover,
+                  webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
                   errorBuilder: (_, _, _) => Center(
                     child: Icon(
                       widget.fallbackIcon,
@@ -2999,6 +3084,7 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
           : Image.network(
               cleanUrl,
               fit: BoxFit.cover,
+              webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
               errorBuilder: (_, _, _) => Center(
                 child: Text(
                   initial,
@@ -3081,13 +3167,23 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                   Expanded(
                     child: GridView.builder(
                       padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 8,
-                            childAspectRatio: 1,
-                          ),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: context.responsiveGridColumns(
+                          phone: 4,
+                          tablet: 4,
+                          desktop: 5,
+                          largeDesktop: 6,
+                        ),
+                        crossAxisSpacing: context.responsive<double>(
+                          phone: 8,
+                          desktop: 12,
+                        ),
+                        mainAxisSpacing: context.responsive<double>(
+                          phone: 8,
+                          desktop: 12,
+                        ),
+                        childAspectRatio: 1,
+                      ),
                       itemCount: selectedItems.length,
                       itemBuilder: (context, index) {
                         final item = selectedItems[index];
@@ -3156,10 +3252,21 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
 
             return GridView.builder(
               padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: context.responsiveGridColumns(
+                  phone: 2,
+                  tablet: 3,
+                  desktop: 4,
+                  largeDesktop: 5,
+                ),
+                crossAxisSpacing: context.responsive<double>(
+                  phone: 12,
+                  desktop: 16,
+                ),
+                mainAxisSpacing: context.responsive<double>(
+                  phone: 12,
+                  desktop: 16,
+                ),
                 childAspectRatio: 0.92,
               ),
               itemCount: teachers.length,
@@ -3353,10 +3460,23 @@ class _PublicGalleryShowcaseState extends State<_PublicGalleryShowcase> {
                           : GridView.builder(
                               padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
                               gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 4,
-                                    crossAxisSpacing: 8,
-                                    mainAxisSpacing: 8,
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: context
+                                        .responsiveGridColumns(
+                                          phone: 4,
+                                          tablet: 4,
+                                          desktop: 5,
+                                          largeDesktop: 6,
+                                        ),
+                                    crossAxisSpacing: context
+                                        .responsive<double>(
+                                          phone: 8,
+                                          desktop: 12,
+                                        ),
+                                    mainAxisSpacing: context.responsive<double>(
+                                      phone: 8,
+                                      desktop: 12,
+                                    ),
                                     childAspectRatio: 1,
                                   ),
                               itemCount: visibleItems.length,
@@ -3509,6 +3629,7 @@ class _PublicGalleryVideoTileState extends State<_PublicGalleryVideoTile> {
           Image.network(
             widget.thumbnailUrl!,
             fit: BoxFit.cover,
+            webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           ),
           Container(color: Colors.black.withValues(alpha: 0.18)),
@@ -3657,11 +3778,11 @@ class _PublicGalleryViewerScreenState
               if (thumbnailUrl.isNotEmpty)
                 Positioned.fill(
                   child: Center(
-                    child: CachedNetworkImage(
-                      imageUrl: thumbnailUrl,
+                    child: Image.network(
+                      thumbnailUrl,
                       fit: BoxFit.contain,
-                      memCacheWidth: 440,
-                      errorWidget: (_, _, _) => const SizedBox.shrink(),
+                      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                      errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -3669,30 +3790,25 @@ class _PublicGalleryViewerScreenState
                 child: InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 4,
-                  child: CachedNetworkImage(
-                    imageUrl: url,
+                  child: Image.network(
+                    url,
                     fit: BoxFit.contain,
-                    placeholder: (_, _) => thumbnailUrl.isNotEmpty
-                        ? const SizedBox.shrink()
-                        : const SizedBox(
-                            height: 260,
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            ),
+                    webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null || thumbnailUrl.isNotEmpty) {
+                        return child;
+                      }
+                      return const SizedBox(
+                        height: 260,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
                           ),
-                    progressIndicatorBuilder: (context, _, progress) {
-                      return Center(
-                        child: CircularProgressIndicator(
-                          value: progress.progress,
-                          color: Colors.white54,
-                          strokeWidth: 2.5,
                         ),
                       );
                     },
-                    errorWidget: (_, _, _) => const Icon(
+                    errorBuilder: (_, _, _) => const Icon(
                       Icons.broken_image_outlined,
                       color: Colors.white,
                       size: 44,
@@ -3825,6 +3941,7 @@ class _FastNetworkThumb extends StatelessWidget {
       fit: fit,
       filterQuality: FilterQuality.low,
       cacheWidth: 720,
+      webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;
         return Container(
@@ -4398,6 +4515,8 @@ class _CoursesByCategory extends StatelessWidget {
                                           ? Image.network(
                                               c.thumb,
                                               fit: BoxFit.cover,
+                                              webHtmlElementStrategy:
+                                                  WebHtmlElementStrategy.prefer,
                                               errorBuilder: (_, _, _) =>
                                                   Container(
                                                     color: Brand.appBg,
@@ -5637,6 +5756,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
         child: Image.network(
           course.thumb,
           fit: BoxFit.cover,
+          webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
           errorBuilder: (_, _, _) => Container(
             color: Brand.appBg,
             child: const Center(child: Icon(Icons.image_not_supported)),

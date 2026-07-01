@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'responsive_layout.dart';
@@ -9,8 +8,9 @@ Widget webPageFrame({
   double maxWidth = 1380,
   EdgeInsetsGeometry? padding,
   bool fullWidth = false,
+  bool card = true,
 }) {
-  if (!kIsWeb) return child;
+  final isDesktop = context.isDesktopOrWider;
 
   if (fullWidth) {
     final resolvedPadding =
@@ -30,10 +30,17 @@ Widget webPageFrame({
           bottomDesktop: 24,
           bottomLargeDesktop: 28,
         );
-    return Padding(
-      padding: resolvedPadding,
-      child: child,
-    );
+    return Padding(padding: resolvedPadding, child: child);
+  }
+
+  if (!isDesktop) {
+    final resolvedPadding =
+        padding ??
+        EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        );
+    return Padding(padding: resolvedPadding, child: child);
   }
 
   final resolvedPadding =
@@ -60,24 +67,26 @@ Widget webPageFrame({
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.82),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFD8CFC1)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 28,
-                offset: const Offset(0, 14),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(21),
-            child: child,
-          ),
-        ),
+        child: card
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.82),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFD8CFC1)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 28,
+                      offset: const Offset(0, 14),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(21),
+                  child: child,
+                ),
+              )
+            : child,
       ),
     ),
   );
