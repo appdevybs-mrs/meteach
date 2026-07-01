@@ -97,7 +97,7 @@ class LessonCommentItem {
       abbr: (map['abbr'] ?? '').toString(),
       type: (map['type'] ?? 'comment').toString(),
       text: (map['text'] ?? '').toString(),
-      status: (map['status'] ?? 'visible').toString(),
+      status: (map['status'] ?? CourseFeedbackService.statusPending).toString(),
       reportCount: CourseFeedbackService.asInt(map['reportCount']),
       createdAt: CourseFeedbackService.asInt(map['createdAt']),
       updatedAt: CourseFeedbackService.asInt(map['updatedAt']),
@@ -139,6 +139,18 @@ class CourseFeedbackService {
   }
 
   static String _safe(dynamic v) => (v ?? '').toString().trim();
+
+  static String normalizeLessonCommentStatus(dynamic raw) {
+    final status = _safe(raw).toLowerCase();
+    if (status == statusVisible ||
+        status == statusPending ||
+        status == statusNotApproved ||
+        status == statusRemoved ||
+        status == 'hidden') {
+      return status;
+    }
+    return statusPending;
+  }
 
   static String _sanitizeEventPart(String raw) {
     return raw
@@ -572,14 +584,29 @@ class CourseFeedbackService {
     if (_safe(current['uid']) != safeUid) {
       throw Exception('You can edit only your own comment.');
     }
-    if (_safe(current['status']) != 'visible') {
-      throw Exception('This comment can no longer be edited.');
+    final currentStatus = normalizeLessonCommentStatus(current['status']);
+    if (currentStatus == statusRemoved || currentStatus == 'hidden') {
+      throw Exception('This reflection can no longer be edited.');
     }
 
     await ref.update({
       'text': safeText,
+      'status': statusPending,
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
     });
+
+    try {
+      await _notifyRecordedCommentImmediately(
+        courseId: safeCourseId,
+        lessonId: safeLessonId,
+        commentId: safeCommentId,
+        actorUid: safeUid,
+        actorName: _safe(current['displayName']).isEmpty
+            ? 'Learner'
+            : _safe(current['displayName']),
+        text: safeText,
+      );
+    } catch (_) {}
   }
 
   static Future<void> removeOwnLessonCommentWithReplies({
@@ -609,8 +636,9 @@ class CourseFeedbackService {
     if (_safe(current['uid']) != safeUid) {
       throw Exception('You can delete only your own comment.');
     }
-    if (_safe(current['status']) != 'visible') {
-      throw Exception('This comment has already been removed.');
+    final currentStatus = normalizeLessonCommentStatus(current['status']);
+    if (currentStatus == statusRemoved) {
+      throw Exception('This reflection has already been removed.');
     }
 
     await _db.child(commentPath).update({
@@ -629,6 +657,8 @@ class CourseFeedbackService {
     String courseId,
     String lessonId, {
     bool visibleOnly = true,
+    String viewerUid = '',
+    bool includeOwnNonVisible = false,
     int limit = 20,
     int? beforeCreatedAt,
   }) async {
@@ -653,14 +683,46 @@ class CourseFeedbackService {
     }
 
     final raw = Map<dynamic, dynamic>.from(snap.value as Map);
-    final out = <LessonCommentItem>[];
+    final byId = <String, LessonCommentItem>{};
     raw.forEach((key, value) {
       if (value is! Map) return;
       final map = value.map((k, v) => MapEntry(k.toString(), v));
       final item = LessonCommentItem.fromMap(key.toString(), map);
-      if (visibleOnly && item.status != 'visible') return;
-      out.add(item);
+      final status = normalizeLessonCommentStatus(item.status);
+      final isOwn =
+          viewerUid.trim().isNotEmpty && item.uid.trim() == viewerUid.trim();
+      final canShowOwn =
+          includeOwnNonVisible &&
+          isOwn &&
+          status != statusRemoved &&
+          status != 'hidden';
+      if (visibleOnly && status != statusVisible && !canShowOwn) return;
+      byId[item.id] = item;
     });
+
+    final safeViewerUid = viewerUid.trim();
+    if (includeOwnNonVisible && safeViewerUid.isNotEmpty) {
+      final ownSnap = await _db
+          .child(lessonCommentsNode)
+          .child(courseId)
+          .child(lessonId)
+          .orderByChild('uid')
+          .equalTo(safeViewerUid)
+          .get();
+      if (ownSnap.exists && ownSnap.value is Map) {
+        final ownRaw = Map<dynamic, dynamic>.from(ownSnap.value as Map);
+        ownRaw.forEach((key, value) {
+          if (value is! Map) return;
+          final map = value.map((k, v) => MapEntry(k.toString(), v));
+          final item = LessonCommentItem.fromMap(key.toString(), map);
+          final status = normalizeLessonCommentStatus(item.status);
+          if (status == statusRemoved || status == 'hidden') return;
+          byId[item.id] = item;
+        });
+      }
+    }
+
+    final out = byId.values.toList();
 
     out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final oldest = out.isEmpty ? 0 : out.last.createdAt;
@@ -677,11 +739,15 @@ class CourseFeedbackService {
     String courseId,
     String lessonId, {
     bool visibleOnly = true,
+    String viewerUid = '',
+    bool includeOwnNonVisible = false,
   }) async {
     final page = await listLessonCommentsPage(
       courseId,
       lessonId,
       visibleOnly: visibleOnly,
+      viewerUid: viewerUid,
+      includeOwnNonVisible: includeOwnNonVisible,
       limit: 5000,
     );
     return page.items;
@@ -793,17 +859,15 @@ class CourseFeedbackService {
           .child(lessonCommentsNode)
           .child(safeCourseId)
           .child(safeLessonId)
-          .limitToFirst(100)
+          .orderByChild('uid')
+          .equalTo(safeUid)
           .get();
       if (!snap.exists || snap.value is! Map) return false;
       final raw = Map<dynamic, dynamic>.from(snap.value as Map);
       var found = false;
       raw.forEach((key, value) {
         if (value is! Map) return;
-        final map = value.map((k, v) => MapEntry(k.toString(), v));
-        if ((map['uid'] ?? '').toString().trim() == safeUid) {
-          found = true;
-        }
+        found = true;
       });
       return found;
     } catch (_) {
@@ -828,7 +892,8 @@ class CourseFeedbackService {
           .child(lessonCommentsNode)
           .child(safeCourseId)
           .child(safeLessonId)
-          .limitToFirst(100)
+          .orderByChild('uid')
+          .equalTo(safeUid)
           .get();
       if (!snap.exists || snap.value is! Map) return false;
       final raw = Map<dynamic, dynamic>.from(snap.value as Map);
@@ -836,8 +901,7 @@ class CourseFeedbackService {
       raw.forEach((key, value) {
         if (value is! Map) return;
         final map = value.map((k, v) => MapEntry(k.toString(), v));
-        if ((map['uid'] ?? '').toString().trim() == safeUid &&
-            (map['status'] ?? '').toString().trim() == statusVisible) {
+        if (normalizeLessonCommentStatus(map['status']) == statusVisible) {
           approved = true;
         }
       });
@@ -864,7 +928,8 @@ class CourseFeedbackService {
           .child(lessonCommentsNode)
           .child(safeCourseId)
           .child(safeLessonId)
-          .limitToFirst(100)
+          .orderByChild('uid')
+          .equalTo(safeUid)
           .get();
       if (!snap.exists || snap.value is! Map) return null;
       final raw = Map<dynamic, dynamic>.from(snap.value as Map);
@@ -872,9 +937,7 @@ class CourseFeedbackService {
       raw.forEach((key, value) {
         if (value is! Map) return;
         final map = value.map((k, v) => MapEntry(k.toString(), v));
-        if ((map['uid'] ?? '').toString().trim() == safeUid) {
-          status = (map['status'] ?? statusPending).toString();
-        }
+        status = normalizeLessonCommentStatus(map['status']);
       });
       return status;
     } catch (_) {

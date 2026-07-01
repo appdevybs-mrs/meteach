@@ -86,6 +86,35 @@ class _RecordedLessonCommentsScreenState
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
+  String _normalizedStatus(String raw) =>
+      CourseFeedbackService.normalizeLessonCommentStatus(raw);
+
+  String _statusLabel(String raw) {
+    switch (_normalizedStatus(raw)) {
+      case CourseFeedbackService.statusPending:
+        return 'Pending teacher review';
+      case CourseFeedbackService.statusNotApproved:
+        return 'Needs revision';
+      case CourseFeedbackService.statusVisible:
+        return 'Approved';
+      default:
+        return 'Not visible';
+    }
+  }
+
+  Color _statusColor(String raw) {
+    switch (_normalizedStatus(raw)) {
+      case CourseFeedbackService.statusPending:
+        return const Color(0xFFD97706);
+      case CourseFeedbackService.statusNotApproved:
+        return const Color(0xFFDC2626);
+      case CourseFeedbackService.statusVisible:
+        return const Color(0xFF059669);
+      default:
+        return const Color(0xFF64748B);
+    }
+  }
+
   List<String> get _feedbackCourseIds {
     final ordered = <String>[];
     final seen = <String>{};
@@ -142,6 +171,8 @@ class _RecordedLessonCommentsScreenState
               courseId,
               widget.lessonId,
               visibleOnly: true,
+              viewerUid: widget.uid,
+              includeOwnNonVisible: true,
               limit: _pageSize,
               beforeCreatedAt: reset ? null : _nextBeforeByCourse[courseId],
             );
@@ -229,6 +260,8 @@ class _RecordedLessonCommentsScreenState
               courseId,
               widget.lessonId,
               visibleOnly: true,
+              viewerUid: widget.uid,
+              includeOwnNonVisible: true,
               limit: _pageSize,
               beforeCreatedAt: cursor,
             );
@@ -685,7 +718,9 @@ class _RecordedLessonCommentsScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            _busy ? 'Loading reflections...' : '${_comments.length} reflections',
+            _busy
+                ? 'Loading reflections...'
+                : '${_comments.length} reflections',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,
@@ -776,6 +811,7 @@ class _RecordedLessonCommentsScreenState
         ? widget.primaryCourseId
         : item.courseId;
     final isMine = item.uid.trim() == widget.uid.trim();
+    final statusColor = _statusColor(item.status);
     final replies = _repliesByComment[item.id] ?? const [];
     final loadingReplies = _loadingReplies.contains(item.id);
     final expanded = _expandedReplies.contains(item.id);
@@ -849,6 +885,27 @@ class _RecordedLessonCommentsScreenState
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
+                            if (isMine) ...[
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  _statusLabel(item.status),
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         if (isMine)
@@ -914,7 +971,10 @@ class _RecordedLessonCommentsScreenState
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFFFEE2E2),
                     foregroundColor: const Color(0xFFB91C1C),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(999),
@@ -942,7 +1002,10 @@ class _RecordedLessonCommentsScreenState
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
                     foregroundColor: const Color(0xFF334155),
                     minimumSize: const Size.fromHeight(48),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(999),
                     ),

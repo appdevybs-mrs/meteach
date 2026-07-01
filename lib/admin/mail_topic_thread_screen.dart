@@ -300,7 +300,11 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   bool get _hasPendingUploads => _fileUploading;
 
   bool get _composerBusy =>
-      _sending || _recStarting || _recRecording || _recUploading || _fileUploading;
+      _sending ||
+      _recStarting ||
+      _recRecording ||
+      _recUploading ||
+      _fileUploading;
 
   bool get _disableTextInput => _recStarting || _recRecording || _recUploading;
   bool get _disableAttachActions => _composerBusy || _hasPendingUploads;
@@ -993,7 +997,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         final bytes = f.bytes;
         if (bytes == null) throw Exception('Could not read file bytes.');
         if (bytes.length > MailUploadClient.maxUploadBytes) {
-          throw Exception('This file is too large. Maximum allowed size is 250 MB.');
+          throw Exception(
+            'This file is too large. Maximum allowed size is 250 MB.',
+          );
         }
         url = await client.uploadBytes(bytes: bytes, filename: f.name);
       } else {
@@ -1004,12 +1010,17 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         final file = File(path);
         final size = await file.length();
         if (size > MailUploadClient.maxUploadBytes) {
-          throw Exception('This file is too large. Maximum allowed size is 250 MB.');
+          throw Exception(
+            'This file is too large. Maximum allowed size is 250 MB.',
+          );
         }
-        url = await client.uploadFile(file: file, onProgress: (p) {
-          if (!mounted) return;
-          setState(() => _fileUploadProgress = p.clamp(0.0, 1.0));
-        });
+        url = await client.uploadFile(
+          file: file,
+          onProgress: (p) {
+            if (!mounted) return;
+            setState(() => _fileUploadProgress = p.clamp(0.0, 1.0));
+          },
+        );
       }
 
       setState(() {
@@ -1631,7 +1642,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                             fontSize: 11,
                             color: mine
                                 ? Colors.white.withValues(alpha: 0.82)
-                                : const Color(0xFF243B5A).withValues(alpha: 0.70),
+                                : const Color(
+                                    0xFF243B5A,
+                                  ).withValues(alpha: 0.70),
                           ),
                         ),
                         const Spacer(),
@@ -1642,7 +1655,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                             fontSize: 11,
                             color: mine
                                 ? Colors.white.withValues(alpha: 0.82)
-                                : const Color(0xFF243B5A).withValues(alpha: 0.70),
+                                : const Color(
+                                    0xFF243B5A,
+                                  ).withValues(alpha: 0.70),
                           ),
                         ),
                       ],
@@ -1728,65 +1743,70 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     if (isImg && url.isNotEmpty) {
       return withDownloadAction(
         Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: InkWell(
-          onTap: () => _showImageViewer(url, title: name),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220, maxHeight: 150),
-              child: Image.network(url, fit: BoxFit.cover),
+          padding: const EdgeInsets.only(bottom: 6),
+          child: InkWell(
+            onTap: () => _showImageViewer(url, title: name),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 220,
+                  maxHeight: 150,
+                ),
+                child: Image.network(url, fit: BoxFit.cover),
+              ),
             ),
           ),
         ),
-      ));
+      );
     }
 
     if (isVid && url.isNotEmpty) {
       return withDownloadAction(
         Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: InkWell(
-          onTap: () => _showVideoViewer(url, title: name),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: 220,
-            height: 130,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: mine
-                  ? Colors.blue.withValues(alpha: 0.22)
-                  : Colors.black.withValues(alpha: 0.15),
-            ),
-            child: Stack(
-              children: [
-                const Center(
-                  child: Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: Colors.white,
-                    size: 48,
-                  ),
-                ),
-                Positioned(
-                  left: 10,
-                  right: 10,
-                  bottom: 8,
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: InkWell(
+            onTap: () => _showVideoViewer(url, title: name),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 220,
+              height: 130,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: mine
+                    ? Colors.blue.withValues(alpha: 0.22)
+                    : Colors.black.withValues(alpha: 0.15),
+              ),
+              child: Stack(
+                children: [
+                  const Center(
+                    child: Icon(
+                      Icons.play_circle_fill_rounded,
                       color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                      size: 48,
                     ),
                   ),
-                ),
-              ],
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 8,
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ));
+      );
     }
 
     if (isAud && url.isNotEmpty) {
@@ -1795,19 +1815,21 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       );
     }
 
-    return withDownloadAction(Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: InkWell(
-        onTap: () => _openUrlExternal(url),
-        child: Text(
-          '📎 $name',
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            decoration: TextDecoration.underline,
+    return withDownloadAction(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: InkWell(
+          onTap: () => _openUrlExternal(url),
+          child: Text(
+            '📎 $name',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              decoration: TextDecoration.underline,
+            ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   Widget _buildFileUploadingBar() {
@@ -2261,13 +2283,36 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   @override
   Widget build(BuildContext context) {
     final baseTitle = _subject.trim().isEmpty ? 'Topic' : _subject.trim();
+    final peerTitle = widget.peerName.trim().isEmpty
+        ? 'User'
+        : widget.peerName.trim();
     final title = _selectionMode
         ? '${_selectedMessageIds.length} selected'
-        : baseTitle;
+        : peerTitle;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(title),
+        title: _selectionMode
+            ? Text(title)
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    baseTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.70),
+                    ),
+                  ),
+                ],
+              ),
         actions: [
           if (_selectionMode)
             IconButton(
@@ -2352,9 +2397,15 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            _subject,
-                            maxLines: 1,
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(text: peerTitle),
+                                const TextSpan(text: ' • '),
+                                TextSpan(text: _subject),
+                              ],
+                            ),
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
@@ -2485,21 +2536,30 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                                       MarkdownBody(
                                                         data: m.body,
                                                         selectable: true,
-                                                        styleSheet: MarkdownStyleSheet(
-                                                          p: TextStyle(
-                                                            color: mine
-                                                                ? Colors.white
-                                                                : Colors.black87,
-                                                            fontWeight: FontWeight.w600,
-                                                            height: 1.28,
-                                                          ),
-                                                          strong: TextStyle(
-                                                            color: mine
-                                                                ? Colors.white
-                                                                : Colors.black87,
-                                                            fontWeight: FontWeight.w900,
-                                                          ),
-                                                        ),
+                                                        styleSheet:
+                                                            MarkdownStyleSheet(
+                                                              p: TextStyle(
+                                                                color: mine
+                                                                    ? Colors
+                                                                          .white
+                                                                    : Colors
+                                                                          .black87,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                height: 1.28,
+                                                              ),
+                                                              strong: TextStyle(
+                                                                color: mine
+                                                                    ? Colors
+                                                                          .white
+                                                                    : Colors
+                                                                          .black87,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w900,
+                                                              ),
+                                                            ),
                                                       ),
                                                     if (m
                                                         .attachments
@@ -2659,6 +2719,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                             Expanded(
                               child: TextField(
                                 controller: _bodyC,
+                                onChanged: (_) => setState(() {}),
                                 minLines: 1,
                                 maxLines: 4,
                                 enabled: !_disableTextInput,
@@ -2672,13 +2733,13 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                             if (_bodyC.text.trim().isNotEmpty ||
                                 _attachments.isNotEmpty)
                               FilledButton(
-                                onPressed: _disableSendAction
-                                    ? null
-                                    : _send,
+                                onPressed: _disableSendAction ? null : _send,
                                 child: Text(
                                   _sending
                                       ? 'Sending…'
-                                      : (_fileUploading ? 'Uploading…' : 'Send'),
+                                      : (_fileUploading
+                                            ? 'Uploading…'
+                                            : 'Send'),
                                 ),
                               )
                             else

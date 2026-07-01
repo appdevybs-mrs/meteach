@@ -17,18 +17,27 @@ class TeacherRecordedCourseCommentsScreen extends StatefulWidget {
     required this.courseId,
     required this.courseTitle,
     required this.courseCode,
+    this.initialFilterPending = false,
   });
 
   final String courseId;
   final String courseTitle;
   final String courseCode;
+  final bool initialFilterPending;
 
   @override
   State<TeacherRecordedCourseCommentsScreen> createState() =>
       _TeacherRecordedCourseCommentsScreenState();
 }
 
-enum _CourseCommentFilter { approved, all, pending, reported, removed, notApproved }
+enum _CourseCommentFilter {
+  approved,
+  all,
+  pending,
+  reported,
+  removed,
+  notApproved,
+}
 
 class _RecordedLessonMeta {
   const _RecordedLessonMeta({
@@ -74,7 +83,7 @@ class _TeacherRecordedCourseCommentsScreenState
   bool _posting = false;
   bool _deletingPermanently = false;
   String? _error;
-  _CourseCommentFilter _filter = _CourseCommentFilter.approved;
+  late _CourseCommentFilter _filter;
   final Set<String> _selectedRemovedCommentIds = <String>{};
 
   List<LessonCommentItem> _comments = const [];
@@ -85,7 +94,14 @@ class _TeacherRecordedCourseCommentsScreenState
   @override
   void initState() {
     super.initState();
+    _filter = widget.initialFilterPending
+        ? _CourseCommentFilter.pending
+        : _CourseCommentFilter.approved;
     _loadComments();
+  }
+
+  String _normalizedStatus(String raw) {
+    return CourseFeedbackService.normalizeLessonCommentStatus(raw);
   }
 
   String _fmtDateTime(int ms) {
@@ -103,15 +119,15 @@ class _TeacherRecordedCourseCommentsScreenState
   }
 
   bool _isApproved(LessonCommentItem item) =>
-      item.status == CourseFeedbackService.statusVisible;
+      _normalizedStatus(item.status) == CourseFeedbackService.statusVisible;
   bool _isPending(LessonCommentItem item) =>
-      item.status == CourseFeedbackService.statusPending;
+      _normalizedStatus(item.status) == CourseFeedbackService.statusPending;
   bool _isNotApproved(LessonCommentItem item) =>
-      item.status == CourseFeedbackService.statusNotApproved;
+      _normalizedStatus(item.status) == CourseFeedbackService.statusNotApproved;
   bool _isRemoved(LessonCommentItem item) =>
-      item.status == CourseFeedbackService.statusRemoved;
+      _normalizedStatus(item.status) == CourseFeedbackService.statusRemoved;
   bool _isReported(LessonCommentItem item) =>
-      item.reportCount > 0 && item.status != CourseFeedbackService.statusRemoved;
+      item.reportCount > 0 && !_isRemoved(item);
 
   List<LessonCommentItem> get _filteredComments {
     return _comments.where((item) {
@@ -784,7 +800,7 @@ class _TeacherRecordedCourseCommentsScreenState
   }
 
   Color _statusColor(String status) {
-    switch (status) {
+    switch (_normalizedStatus(status)) {
       case 'pending':
         return const Color(0xFFF59E0B);
       case 'visible':
@@ -801,7 +817,8 @@ class _TeacherRecordedCourseCommentsScreenState
   }
 
   Widget _statusChip(String status) {
-    final color = _statusColor(status);
+    final normalized = _normalizedStatus(status);
+    final color = _statusColor(normalized);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -809,7 +826,7 @@ class _TeacherRecordedCourseCommentsScreenState
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        status.toUpperCase(),
+        normalized.toUpperCase(),
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.w900,
@@ -1034,6 +1051,53 @@ class _TeacherRecordedCourseCommentsScreenState
             ],
           ),
           const SizedBox(height: 10),
+          if (_isPending(item)) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: _posting
+                      ? null
+                      : () => _moderate(
+                          item,
+                          CourseFeedbackService.statusVisible,
+                        ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  icon: const Icon(Icons.check_circle_rounded, size: 16),
+                  label: const Text('Approve'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _posting
+                      ? null
+                      : () => _moderate(
+                          item,
+                          CourseFeedbackService.statusNotApproved,
+                        ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFDC2626),
+                    side: const BorderSide(color: Color(0xFFFECACA)),
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  icon: const Icon(Icons.error_outline_rounded, size: 16),
+                  label: const Text('Not approve'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             children: [
               FilledButton.tonalIcon(
@@ -1061,21 +1125,18 @@ class _TeacherRecordedCourseCommentsScreenState
                   icon: const Icon(Icons.more_horiz_rounded, size: 18),
                   onSelected: (choice) => _moderate(item, choice),
                   itemBuilder: (_) => [
-                    if (item.status != CourseFeedbackService.statusVisible)
+                    if (!_isApproved(item))
                       const PopupMenuItem(
                         value: 'visible',
                         child: Text('Approve'),
                       ),
-                    if (item.status != CourseFeedbackService.statusNotApproved)
+                    if (!_isNotApproved(item))
                       PopupMenuItem(
                         value: CourseFeedbackService.statusNotApproved,
                         child: const Text('Not approve'),
                       ),
-                    const PopupMenuItem(
-                      value: 'hidden',
-                      child: Text('Hide'),
-                    ),
-                    if (item.status == CourseFeedbackService.statusRemoved)
+                    const PopupMenuItem(value: 'hidden', child: Text('Hide')),
+                    if (_isRemoved(item))
                       const PopupMenuItem(
                         value: 'delete_permanently',
                         child: Text('Delete permanently'),

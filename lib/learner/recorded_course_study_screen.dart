@@ -1696,7 +1696,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               )
               .toList();
 
-          await Navigator.push(
+          final completed = await Navigator.push<bool>(
             context,
             MaterialPageRoute(
               builder: (_) => RecordedVideoPlayerScreen(
@@ -1711,6 +1711,18 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               ),
             ),
           );
+          if (completed == true && mounted) {
+            final current = _progressOf(session.id);
+            final updated = current.copyWith(
+              videoCompleted: true,
+              videoCompletedAt: DateTime.now().millisecondsSinceEpoch,
+            );
+            setState(() {
+              _progressBySessionId[session.id] = updated.copyWith(
+                completed: _resolveCompleted(session, updated),
+              );
+            });
+          }
         },
         requireOnline: localPath == null,
       );

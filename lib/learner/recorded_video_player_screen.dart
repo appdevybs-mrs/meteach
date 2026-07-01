@@ -50,6 +50,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     with WidgetsBindingObserver {
   static const String _usersNode = 'users';
   static const String _recordedProgressNode = 'recorded_progress';
+  static const int _completionEndAreaMs = 1200;
+  static const int _naturalEndEligibleToleranceMs = 3000;
   static final math.Random _attentionRandom = math.Random();
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
@@ -75,6 +77,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _attentionPromptOpen = false;
   bool _appActive = true;
   bool _markingVideoCompleted = false;
+  bool _completionClosing = false;
+  bool _completionOverlayVisible = false;
 
   final TextEditingController _commentC = TextEditingController();
   final FocusNode _commentFocus = FocusNode();
@@ -236,9 +240,18 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   void _setAppActive(bool active) {
     if (_appActive == active) return;
+    if (!active) {
+      _trackEligibleWatchTime(finishingPlayInterval: true);
+    }
     _appActive = active;
     _lastWatchTick = null;
     if (!active) {
+      final controller = _controller;
+      if (controller != null &&
+          controller.value.isInitialized &&
+          controller.value.isPlaying) {
+        unawaited(controller.pause());
+      }
       _persistProgressNow();
     }
   }
@@ -450,6 +463,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final durationMs = value.duration.inMilliseconds;
 
     final playing = value.isPlaying;
+    final wasPlaying = _isPlaying;
     if (_isPlaying != playing && mounted) {
       if (playing) {
         _lastWatchTick ??= DateTime.now();
@@ -468,7 +482,12 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
     _scheduleProgressSave();
 
-    _maybeMarkVideoCompletedByWatchTime();
+    final naturalEnd =
+        wasPlaying &&
+        !playing &&
+        durationMs > 0 &&
+        positionMs >= math.max(0, durationMs - _completionEndAreaMs);
+    _maybeMarkVideoCompletedByWatchTime(naturalEnd: naturalEnd);
   }
 
   void _startWatchTimer() {
@@ -519,14 +538,18 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     if (mounted) setState(() {});
   }
 
-  void _maybeMarkVideoCompletedByWatchTime() {
+  void _maybeMarkVideoCompletedByWatchTime({bool naturalEnd = false}) {
     if (_isCompleted || _markingVideoCompleted) return;
     final controller = _controller;
     final durationMs = controller?.value.duration.inMilliseconds ?? 0;
     if (durationMs <= 0) return;
     final positionMs = controller?.value.position.inMilliseconds ?? 0;
-    final reachedEndArea = positionMs >= math.max(0, durationMs - 1200);
-    if (_eligibleWatchMs >= durationMs && reachedEndArea) {
+    final reachedEndArea =
+        positionMs >= math.max(0, durationMs - _completionEndAreaMs);
+    final requiredEligibleMs = naturalEnd
+        ? math.max(0, durationMs - _naturalEndEligibleToleranceMs)
+        : durationMs;
+    if (_eligibleWatchMs >= requiredEligibleMs && reachedEndArea) {
       _markVideoCompleted();
     }
   }
@@ -864,156 +887,19 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       });
       _attentionTimer?.cancel();
 
-      _showCompletionDialog();
+      unawaited(_showCompletionAndAutoClose());
     } finally {
       _markingVideoCompleted = false;
     }
   }
 
-  Future<void> _showCompletionDialog() async {
+  Future<void> _showCompletionAndAutoClose() async {
+    if (!mounted || _completionClosing) return;
+    _completionClosing = true;
+    setState(() => _completionOverlayVisible = true);
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return Dialog(
-          elevation: 16,
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 18,
-            vertical: 24,
-          ),
-          backgroundColor: Colors.transparent,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(26),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFFFFFFFF), Color(0xFFF0FDF4)],
-                ),
-                border: Border.all(
-                  color: const Color(0xFFBBF7D0).withValues(alpha: 0.6),
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x2E000000),
-                    blurRadius: 24,
-                    offset: Offset(0, 14),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(26),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      right: -28,
-                      top: -30,
-                      child: Container(
-                        width: 116,
-                        height: 116,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(
-                            0xFF16A34A,
-                          ).withValues(alpha: 0.09),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(26, 26, 26, 20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 68,
-                            height: 68,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(
-                                0xFF16A34A,
-                              ).withValues(alpha: 0.13),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFF16A34A,
-                                ).withValues(alpha: 0.28),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.check_circle_rounded,
-                              color: Color(0xFF16A34A),
-                              size: 38,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Lesson Completed!',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Color(0xFF0F172A),
-                              fontSize: 21,
-                              fontWeight: FontWeight.w900,
-                              height: 1.2,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            widget.sessionTitle.trim().isEmpty
-                                ? 'This session'
-                                : widget.sessionTitle.trim(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF16A34A),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 22),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF0F172A),
-                                side: const BorderSide(
-                                  color: Color(0xFFCBD5E1),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                              ),
-                              icon: const Icon(
-                                Icons.arrow_back_rounded,
-                                size: 20,
-                              ),
-                              label: const Text(
-                                'Back to Course',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              onPressed: () {
-                                Navigator.of(ctx).pop();
-                                Navigator.pop(context);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
+    Navigator.of(context).pop(true);
   }
 
   Future<void> _togglePlayPause() async {
@@ -2457,6 +2343,28 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
   Widget _buildPreviewCommentCard(LessonCommentItem item) {
     final comment = item.text.trim();
+    final status = CourseFeedbackService.normalizeLessonCommentStatus(
+      item.status,
+    );
+    Color statusColor;
+    String statusLabel;
+    switch (status) {
+      case CourseFeedbackService.statusPending:
+        statusColor = const Color(0xFFD97706);
+        statusLabel = 'Pending teacher review';
+        break;
+      case CourseFeedbackService.statusNotApproved:
+        statusColor = const Color(0xFFDC2626);
+        statusLabel = 'Needs revision';
+        break;
+      case CourseFeedbackService.statusVisible:
+        statusColor = const Color(0xFF059669);
+        statusLabel = 'Approved';
+        break;
+      default:
+        statusColor = const Color(0xFF64748B);
+        statusLabel = 'Not visible';
+    }
 
     return Container(
       width: double.infinity,
@@ -2502,6 +2410,28 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -2766,6 +2696,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             courseId,
             widget.sessionId,
             visibleOnly: true,
+            viewerUid: widget.uid,
+            includeOwnNonVisible: true,
             limit: 2,
           );
           okCount += 1;
@@ -2807,6 +2739,85 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
+  Widget _buildCompletionOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: _completionOverlayVisible ? 1 : 0,
+          duration: const Duration(milliseconds: 220),
+          child: ColoredBox(
+            color: Colors.black.withValues(alpha: 0.45),
+            child: Center(
+              child: Container(
+                width: 300,
+                margin: const EdgeInsets.symmetric(horizontal: 22),
+                padding: const EdgeInsets.fromLTRB(24, 26, 24, 22),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFFFFFF), Color(0xFFF0FDF4)],
+                  ),
+                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 28,
+                      offset: Offset(0, 16),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF16A34A).withValues(alpha: 0.14),
+                        border: Border.all(
+                          color: const Color(0xFF16A34A).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF16A34A),
+                        size: 42,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Lesson Completed!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 21,
+                        fontWeight: FontWeight.w900,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    const Text(
+                      'Returning to course...',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF16A34A),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = widget.sessionTitle.trim().isEmpty
@@ -2817,9 +2828,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final isLandscape = orientation == Orientation.landscape;
 
     return PopScope(
-      canPop: !_isFullscreen,
+      canPop: !_isFullscreen && !_completionClosing,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_completionClosing) return;
         if (_isFullscreen) {
           await _exitFullscreen();
         }
@@ -2837,24 +2849,31 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           appBar: (_isFullscreen || isLandscape)
               ? null
               : _buildAppBar(title, isLandscape),
-          body: learnerWebBodyFrame(
-            context: context,
-            maxWidth: 5000,
-            padding: EdgeInsets.zero,
-            fullWidth: true,
-            child: _busy
-                ? const Center(
-                    child: BrandedInlineLoader(message: 'Loading video...'),
-                  )
-                : _error != null
-                ? _buildErrorState()
-                : _initialized
-                ? (isLandscape || _isFullscreen
-                      ? _buildFullscreenLayout()
-                      : _buildPortraitLayout())
-                : const Center(
-                    child: BrandedInlineLoader(message: 'Preparing player...'),
-                  ),
+          body: Stack(
+            children: [
+              learnerWebBodyFrame(
+                context: context,
+                maxWidth: 5000,
+                padding: EdgeInsets.zero,
+                fullWidth: true,
+                child: _busy
+                    ? const Center(
+                        child: BrandedInlineLoader(message: 'Loading video...'),
+                      )
+                    : _error != null
+                    ? _buildErrorState()
+                    : _initialized
+                    ? (isLandscape || _isFullscreen
+                          ? _buildFullscreenLayout()
+                          : _buildPortraitLayout())
+                    : const Center(
+                        child: BrandedInlineLoader(
+                          message: 'Preparing player...',
+                        ),
+                      ),
+              ),
+              if (_completionOverlayVisible) _buildCompletionOverlay(),
+            ],
           ),
         ),
       ),

@@ -47,11 +47,13 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   final ScrollController _bookingRowsMain = ScrollController();
   final ScrollController _bookingRowsFrozen = ScrollController();
   bool _syncingBookingRows = false;
+  StreamSubscription<DatabaseEvent>? _bookingReservationsSub;
 
   @override
   void initState() {
     super.initState();
     _loadCourses();
+    _listenToBookingReservations();
     _bookingRowsMain.addListener(() {
       if (_syncingBookingRows || !_bookingRowsFrozen.hasClients) return;
       _syncingBookingRows = true;
@@ -82,6 +84,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   @override
   void dispose() {
     searchC.dispose();
+    _bookingReservationsSub?.cancel();
     _bookingRowsMain.dispose();
     _bookingRowsFrozen.dispose();
     super.dispose();
@@ -219,6 +222,30 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     String hhmm,
     String teacherId,
   ) => _db.child('booking_reservations/$cid/$dayKey/$hhmm/$teacherId');
+
+  void _listenToBookingReservations() {
+    _bookingReservationsSub = _db
+        .child('booking_reservations')
+        .onValue
+        .listen(
+          (event) {
+            if (!mounted) return;
+            _applyBookingsSnapshot(
+              event.snapshot.value,
+              resetTeacherFilter: false,
+            );
+          },
+          onError: (_) {
+            if (mounted) _toast('Booking live update failed. Use refresh.');
+          },
+        );
+  }
+
+  void _closeDetailsSheet(BuildContext detailsSheetContext) {
+    if (!detailsSheetContext.mounted) return;
+    final nav = Navigator.of(detailsSheetContext);
+    if (nav.canPop()) nav.pop();
+  }
 
   _CourseItem? _selectedCourse() {
     final cid = selectedCourseId;
@@ -432,6 +459,107 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
   // ========================= Load Bookings =========================
 
+  void _applyBookingsSnapshot(dynamic v, {required bool resetTeacherFilter}) {
+    final List<_AdminBookedSlot> out = [];
+    final Map<String, bool> hasBookings = {
+      for (final course in allCourses) course.id: false,
+    };
+
+    if (v is Map) {
+      final byCourse = v.map((k, vv) => MapEntry(k.toString(), vv));
+
+      for (final courseEntry in byCourse.entries) {
+        final cid = courseEntry.key;
+        final courseNode = courseEntry.value;
+        if (courseNode is! Map) continue;
+
+        final days = courseNode.map((k, vv) => MapEntry(k.toString(), vv));
+
+        for (final dayEntry in days.entries) {
+          final dayKey = dayEntry.key;
+          final dayNode = dayEntry.value;
+          if (dayNode is! Map) continue;
+
+          final times = dayNode.map((k, vv) => MapEntry(k.toString(), vv));
+
+          for (final timeEntry in times.entries) {
+            final hhmm = timeEntry.key;
+            final slotVal = timeEntry.value;
+            if (slotVal is! Map) continue;
+
+            final m = slotVal.map((k, vv) => MapEntry(k.toString(), vv));
+            final start = _parseSlotStart(dayKey, hhmm);
+            if (start == null) continue;
+
+            void collect(Map<dynamic, dynamic> slotNode, String teacherKey) {
+              final learnersRaw = slotNode['learners'];
+              if (learnersRaw is! Map) return;
+              final learnersMap = learnersRaw.map(
+                (k, vv) => MapEntry(k.toString(), vv),
+              );
+              final learnerUids = learnersMap.keys
+                  .map((e) => e.toString())
+                  .toList();
+              if (learnerUids.isEmpty) return;
+
+              hasBookings[cid] = true;
+              out.add(
+                _AdminBookedSlot(
+                  courseId: cid,
+                  dayKey: dayKey,
+                  time: hhmm,
+                  start: start,
+                  teacherId: (slotNode['teacherId'] ?? teacherKey)
+                      .toString()
+                      .trim(),
+                  teacherName: (slotNode['teacherName'] ?? 'Teacher')
+                      .toString()
+                      .trim(),
+                  durationMinutes: _toInt(
+                    slotNode['durationMinutes'] ?? slotNode['duration'],
+                    fallback: 60,
+                  ),
+                  sessionNo: _toInt(slotNode['sessionNo'], fallback: 0),
+                  learnerUids: learnerUids,
+                  createdAt: _toInt(slotNode['createdAt'], fallback: 0),
+                ),
+              );
+            }
+
+            if (m['learners'] is Map) {
+              collect(m, '');
+              continue;
+            }
+
+            for (final teacherEntry in m.entries) {
+              final teacherNode = teacherEntry.value;
+              if (teacherNode is! Map) continue;
+              collect(
+                teacherNode.map((k, vv) => MapEntry(k.toString(), vv)),
+                teacherEntry.key.toString(),
+              );
+            }
+          }
+        }
+      }
+    }
+
+    final now = DateTime.now();
+    out.sort((a, b) {
+      final aPast = a.start.isBefore(now) ? 1 : 0;
+      final bPast = b.start.isBefore(now) ? 1 : 0;
+      if (aPast != bPast) return aPast.compareTo(bPast);
+      return a.start.compareTo(b.start);
+    });
+
+    if (!mounted) return;
+    setState(() {
+      bookedSlots = out;
+      courseHasBookings = hasBookings;
+      if (resetTeacherFilter) teacherFilter = 'all';
+    });
+  }
+
   Future<void> _loadAllBookedSlots() async {
     setState(() {
       loadingBookings = true;
@@ -441,98 +569,7 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
 
     try {
       final snap = await _db.child('booking_reservations').get();
-      final v = snap.value;
-
-      final List<_AdminBookedSlot> out = [];
-
-      if (v is Map) {
-        final byCourse = v.map((k, vv) => MapEntry(k.toString(), vv));
-
-        for (final courseEntry in byCourse.entries) {
-          final cid = courseEntry.key;
-          final courseNode = courseEntry.value;
-          if (courseNode is! Map) continue;
-
-          final days = courseNode.map((k, vv) => MapEntry(k.toString(), vv));
-
-          for (final dayEntry in days.entries) {
-            final dayKey = dayEntry.key;
-            final dayNode = dayEntry.value;
-            if (dayNode is! Map) continue;
-
-            final times = dayNode.map((k, vv) => MapEntry(k.toString(), vv));
-
-            for (final timeEntry in times.entries) {
-              final hhmm = timeEntry.key;
-              final slotVal = timeEntry.value;
-              if (slotVal is! Map) continue;
-
-              final m = slotVal.map((k, vv) => MapEntry(k.toString(), vv));
-              final start = _parseSlotStart(dayKey, hhmm);
-              if (start == null) continue;
-
-              void collect(Map<dynamic, dynamic> slotNode, String teacherKey) {
-                final learnersRaw = slotNode['learners'];
-                if (learnersRaw is! Map) return;
-                final learnersMap = learnersRaw.map(
-                  (k, vv) => MapEntry(k.toString(), vv),
-                );
-                final learnerUids = learnersMap.keys
-                    .map((e) => e.toString())
-                    .toList();
-                if (learnerUids.isEmpty) return;
-
-                out.add(
-                  _AdminBookedSlot(
-                    courseId: cid,
-                    dayKey: dayKey,
-                    time: hhmm,
-                    start: start,
-                    teacherId: (slotNode['teacherId'] ?? teacherKey)
-                        .toString()
-                        .trim(),
-                    teacherName: (slotNode['teacherName'] ?? 'Teacher')
-                        .toString()
-                        .trim(),
-                    durationMinutes: _toInt(
-                      slotNode['durationMinutes'] ?? slotNode['duration'],
-                      fallback: 60,
-                    ),
-                    sessionNo: _toInt(slotNode['sessionNo'], fallback: 0),
-                    learnerUids: learnerUids,
-                    createdAt: _toInt(slotNode['createdAt'], fallback: 0),
-                  ),
-                );
-              }
-
-              if (m['learners'] is Map) {
-                collect(m, '');
-                continue;
-              }
-
-              for (final teacherEntry in m.entries) {
-                final teacherNode = teacherEntry.value;
-                if (teacherNode is! Map) continue;
-                collect(
-                  teacherNode.map((k, vv) => MapEntry(k.toString(), vv)),
-                  teacherEntry.key.toString(),
-                );
-              }
-            }
-          }
-        }
-      }
-
-      final now = DateTime.now();
-      out.sort((a, b) {
-        final aPast = a.start.isBefore(now) ? 1 : 0;
-        final bPast = b.start.isBefore(now) ? 1 : 0;
-        if (aPast != bPast) return aPast.compareTo(bPast);
-        return a.start.compareTo(b.start);
-      });
-
-      if (!mounted) return;
-      setState(() => bookedSlots = out);
+      _applyBookingsSnapshot(snap.value, resetTeacherFilter: true);
     } catch (e) {
       _toast('Failed loading bookings: $e');
     } finally {
@@ -897,6 +934,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         return;
       }
 
+      if (!mounted) return;
+      if (!detailsSheetContext.mounted) return;
+      _closeDetailsSheet(detailsSheetContext);
+
       if (finalStatus == _AdminCancelStatus.notFound) {
         _toast('This booking was already canceled. ✅');
       } else {
@@ -921,12 +962,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         } catch (e) {
           _toast('Booking canceled, but notifications failed.');
         }
-      }
-
-      if (!mounted) return;
-      if (detailsSheetContext.mounted &&
-          Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {
@@ -1852,10 +1887,16 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       });
 
       if (!removeTx.committed) {
+        if (!mounted) return;
+        if (!detailsSheetContext.mounted) return;
+        _closeDetailsSheet(detailsSheetContext);
         _toast(
           'Moved to new slot, but old slot cleanup failed. Please refresh and check.',
         );
       } else {
+        if (!mounted) return;
+        if (!detailsSheetContext.mounted) return;
+        _closeDetailsSheet(detailsSheetContext);
         _toast('Booking moved ✅');
         try {
           await _dispatchBookingChange(
@@ -1884,12 +1925,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         } catch (e) {
           _toast('Booking moved, but notifications failed.');
         }
-      }
-
-      if (!mounted) return;
-      if (detailsSheetContext.mounted &&
-          Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {
@@ -2006,6 +2041,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         sessionNo: chosen,
       );
 
+      if (!mounted) return;
+      if (!detailsSheetContext.mounted) return;
+      _closeDetailsSheet(detailsSheetContext);
+
       _toast('Session number updated ✅');
       try {
         await _dispatchBookingChange(
@@ -2033,12 +2072,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         );
       } catch (e) {
         _toast('Session updated, but notifications failed.');
-      }
-
-      if (!mounted) return;
-      if (detailsSheetContext.mounted &&
-          Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {
@@ -2183,6 +2216,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         sessionNo: chosen,
       );
 
+      if (!mounted) return;
+      if (!detailsSheetContext.mounted) return;
+      _closeDetailsSheet(detailsSheetContext);
+
       _toast('Group session number updated ✅');
       try {
         await _dispatchBookingChange(
@@ -2210,12 +2247,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         );
       } catch (e) {
         _toast('Group session updated, but notifications failed.');
-      }
-
-      if (!mounted) return;
-      if (detailsSheetContext.mounted &&
-          Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {
@@ -2494,6 +2525,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         _toast('Group cancel failed. Please try again.');
         return;
       }
+
+      if (!mounted) return;
+      if (!detailsSheetContext.mounted) return;
+      _closeDetailsSheet(detailsSheetContext);
+
       if (finalStatus == _AdminCancelStatus.notFound) {
         _toast('This group booking was already canceled. ✅');
       } else {
@@ -2518,12 +2554,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         } catch (e) {
           _toast('Group canceled, but notifications failed.');
         }
-      }
-
-      if (!mounted) return;
-      if (detailsSheetContext.mounted &&
-          Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {
@@ -2660,10 +2690,16 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
       });
 
       if (!removeTx.committed) {
+        if (!mounted) return;
+        if (!detailsSheetContext.mounted) return;
+        _closeDetailsSheet(detailsSheetContext);
         _toast(
           'Moved group to new slot, but old slot cleanup failed. Please refresh and check.',
         );
       } else {
+        if (!mounted) return;
+        if (!detailsSheetContext.mounted) return;
+        _closeDetailsSheet(detailsSheetContext);
         _toast('Group moved ✅');
         try {
           await _dispatchBookingChange(
@@ -2692,12 +2728,6 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         } catch (e) {
           _toast('Group moved, but notifications failed.');
         }
-      }
-
-      if (!mounted) return;
-      if (detailsSheetContext.mounted &&
-          Navigator.of(detailsSheetContext).canPop()) {
-        Navigator.of(detailsSheetContext).pop();
       }
 
       if (mounted) {

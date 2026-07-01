@@ -58,9 +58,13 @@ bool shouldMarkVideoCompletedByWatchTime({
   required int eligibleWatchMs,
   required int durationMs,
   required int positionMs,
+  bool naturalEnd = false,
 }) {
+  final requiredEligibleMs = naturalEnd
+      ? (durationMs - 3000).clamp(0, durationMs)
+      : durationMs;
   return durationMs > 0 &&
-      eligibleWatchMs >= durationMs &&
+      eligibleWatchMs >= requiredEligibleMs &&
       positionMs >= durationMs - 1200;
 }
 
@@ -261,7 +265,7 @@ void main() {
 
   group('Recorded video anti-skip policy', () {
     test(
-      'video completes only when watch time reaches duration near the end',
+      'video completes only when full watch time reaches near the end',
       () {
         expect(
           shouldMarkVideoCompletedByWatchTime(
@@ -289,6 +293,36 @@ void main() {
         );
       },
     );
+
+    test('natural end allows only small watch-time drift', () {
+      expect(
+        shouldMarkVideoCompletedByWatchTime(
+          eligibleWatchMs: 357000,
+          durationMs: 360000,
+          positionMs: 360000,
+          naturalEnd: true,
+        ),
+        true,
+      );
+      expect(
+        shouldMarkVideoCompletedByWatchTime(
+          eligibleWatchMs: 356999,
+          durationMs: 360000,
+          positionMs: 360000,
+          naturalEnd: true,
+        ),
+        false,
+      );
+      expect(
+        shouldMarkVideoCompletedByWatchTime(
+          eligibleWatchMs: 357000,
+          durationMs: 360000,
+          positionMs: 100000,
+          naturalEnd: true,
+        ),
+        false,
+      );
+    });
 
     test('forward seek is blocked until video is completed', () {
       expect(canSeekForward(videoCompleted: false), false);

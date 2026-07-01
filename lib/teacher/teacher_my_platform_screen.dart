@@ -139,7 +139,7 @@ class _RecordedLessonDetail {
   final String? commentId;
 
   bool get isDone {
-    if (hasVideo && hasMaterials) return videoDone || materialsDone;
+    if (hasVideo && hasMaterials) return videoDone && materialsDone;
     if (hasVideo) return videoDone;
     if (hasMaterials) return materialsDone;
     return false;
@@ -223,6 +223,60 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   Future<Map<String, String>> _loadAssignedCourses() async {
     final out = <String, String>{};
 
+    void addCourse({
+      required String id,
+      String title = '',
+      String code = '',
+      String fallback = '',
+    }) {
+      final cleanId = id.trim();
+      if (cleanId.isEmpty) return;
+      final cleanTitle = title.trim();
+      final cleanCode = code.trim();
+      final cleanFallback = fallback.trim();
+      final label = cleanTitle.isEmpty
+          ? (cleanCode.isEmpty
+                ? (cleanFallback.isEmpty ? cleanId : cleanFallback)
+                : cleanCode)
+          : (cleanCode.isEmpty ? cleanTitle : '$cleanTitle ($cleanCode)');
+      out[cleanId] = label;
+    }
+
+    bool teacherMatches(dynamic raw) {
+      if (raw == null) return false;
+      if (raw is String || raw is num || raw is bool) {
+        return raw.toString().trim() == _uid;
+      }
+      if (raw is List) {
+        return raw.any(teacherMatches);
+      }
+      if (raw is Map) {
+        final m = raw.map((k, v) => MapEntry(k.toString(), v));
+        final uid =
+            (m['uid'] ??
+                    m['teacherUid'] ??
+                    m['teacher_uid'] ??
+                    m['teacherId'] ??
+                    m['teacher_id'] ??
+                    m['instructorUid'] ??
+                    m['instructor_uid'])
+                .toString()
+                .trim();
+        if (uid == _uid) return true;
+        return m.values.any(teacherMatches);
+      }
+      return false;
+    }
+
+    String labelFromCourseMap(Map<String, dynamic> m, String fallback) {
+      final title = (m['title'] ?? m['course_title'] ?? '').toString().trim();
+      final code = (m['course_code'] ?? m['courseCode'] ?? '')
+          .toString()
+          .trim();
+      if (title.isEmpty) return code.isEmpty ? fallback : code;
+      return code.isEmpty ? title : '$title ($code)';
+    }
+
     final userCoursesSnap = await _db
         .child('users')
         .child(_uid)
@@ -235,40 +289,164 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         final nodeKey = entry.key.toString().trim();
         final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
 
-        final id = (m['id'] ?? '').toString().trim();
-        final title = (m['title'] ?? '').toString().trim();
-        final code = (m['course_code'] ?? '').toString().trim();
-        final label = title.isEmpty
-            ? (code.isEmpty ? (id.isEmpty ? nodeKey : id) : code)
-            : (code.isEmpty ? title : '$title ($code)');
-
-        if (id.isNotEmpty) out[id] = label;
-        if (nodeKey.isNotEmpty) out[nodeKey] = label;
+        final id = _extractCourseId(m);
+        addCourse(
+          id: id,
+          title: (m['title'] ?? '').toString(),
+          code: (m['course_code'] ?? m['courseCode'] ?? '').toString(),
+          fallback: id.isEmpty ? nodeKey : id,
+        );
+        addCourse(
+          id: nodeKey,
+          title: (m['title'] ?? '').toString(),
+          code: (m['course_code'] ?? m['courseCode'] ?? '').toString(),
+          fallback: id.isEmpty ? nodeKey : id,
+        );
       }
     }
 
-    if (out.isEmpty) {
-      final classesSnap = await _db.child('classes').get();
-      if (classesSnap.exists && classesSnap.value is Map) {
-        final classes = Map<dynamic, dynamic>.from(classesSnap.value as Map);
-        for (final entry in classes.entries) {
-          if (entry.value is! Map) continue;
-          final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
-          final cur = m['instructor_current'];
-          final currentUid = cur is Map
-              ? (cur['uid'] ?? '').toString().trim()
-              : '';
-          if (currentUid != _uid) continue;
+    final coursesSnap = await _db.child('courses').get();
+    if (coursesSnap.exists && coursesSnap.value is Map) {
+      final courses = Map<dynamic, dynamic>.from(coursesSnap.value as Map);
+      for (final entry in courses.entries) {
+        if (entry.value is! Map) continue;
+        final courseId = entry.key.toString().trim();
+        final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
+        if (!teacherMatches(m['instructors_map']) &&
+            !teacherMatches(m['instructors'])) {
+          continue;
+        }
+        addCourse(
+          id: courseId,
+          title: (m['title'] ?? '').toString(),
+          code: (m['course_code'] ?? m['courseCode'] ?? '').toString(),
+        );
+      }
+    }
 
-          final cid = (m['course_id'] ?? '').toString().trim();
-          if (cid.isNotEmpty) {
-            out[cid] = (m['course_title'] ?? cid).toString();
+    final classesSnap = await _db.child('classes').get();
+    if (classesSnap.exists && classesSnap.value is Map) {
+      final classes = Map<dynamic, dynamic>.from(classesSnap.value as Map);
+      for (final entry in classes.entries) {
+        if (entry.value is! Map) continue;
+        final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
+        if (!teacherMatches(m['instructor_current']) &&
+            !teacherMatches(m['teacherUid']) &&
+            !teacherMatches(m['teacher_uid']) &&
+            !teacherMatches(m['teacherId']) &&
+            !teacherMatches(m['teacher_id']) &&
+            !teacherMatches(m['instructorUid']) &&
+            !teacherMatches(m['instructor_uid'])) {
+          continue;
+        }
+
+        addCourse(
+          id: (m['course_id'] ?? m['courseId'] ?? '').toString(),
+          title: (m['course_title'] ?? m['courseTitle'] ?? '').toString(),
+        );
+      }
+    }
+
+    final paymentsSnap = await _db.child('payments').get();
+    if (paymentsSnap.exists && paymentsSnap.value is Map) {
+      final payments = Map<dynamic, dynamic>.from(paymentsSnap.value as Map);
+      for (final entry in payments.entries) {
+        if (entry.value is! Map) continue;
+        final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
+        if (!teacherMatches(m['teacherId']) &&
+            !teacherMatches(m['teacher_id']) &&
+            !teacherMatches(m['teacherUid']) &&
+            !teacherMatches(m['teacher_uid'])) {
+          continue;
+        }
+        final variant = _extractVariantKey(m);
+        if (variant != 'recorded') continue;
+        addCourse(
+          id: _extractCourseId(m),
+          title: (m['courseTitle'] ?? m['course_title'] ?? '').toString(),
+        );
+        addCourse(
+          id: (m['courseKey'] ?? m['course_key'] ?? '').toString(),
+          title: (m['courseTitle'] ?? m['course_title'] ?? '').toString(),
+        );
+      }
+    }
+
+    if (out.isNotEmpty) {
+      try {
+        final coursesSnap = await _db.child('courses').get();
+        if (coursesSnap.exists && coursesSnap.value is Map) {
+          final courses = Map<dynamic, dynamic>.from(coursesSnap.value as Map);
+          for (final courseId in out.keys.toList()) {
+            final raw = courses[courseId];
+            if (raw is! Map) continue;
+            final m = Map<String, dynamic>.from(raw);
+            out[courseId] = labelFromCourseMap(m, out[courseId] ?? courseId);
           }
         }
-      }
+      } catch (_) {}
     }
 
     return out;
+  }
+
+  String _extractVariantKey(Map<String, dynamic> node) {
+    final nestedClass = node['class'];
+    final classMap = nestedClass is Map
+        ? nestedClass.map((k, v) => MapEntry(k.toString(), v))
+        : const <String, dynamic>{};
+    return normalizeVariantKey(
+      (node['variantKey'] ??
+              node['variant_key'] ??
+              node['deliveryKey'] ??
+              node['delivery_key'] ??
+              node['variant'] ??
+              classMap['variantKey'] ??
+              classMap['variant_key'] ??
+              classMap['deliveryKey'] ??
+              classMap['delivery_key'] ??
+              classMap['variant'] ??
+              '')
+          .toString(),
+    );
+  }
+
+  bool _isRecordedLearnerCourse(Map<String, dynamic> course) {
+    final variant = _extractVariantKey(course);
+    if (variant == 'recorded') return true;
+    if (course['recorded_access'] is Map ||
+        course['recorded_progress'] is Map) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isClearlyNonLearnerRole(String role) {
+    final clean = role.trim().toLowerCase();
+    if (clean.isEmpty) return false;
+    return clean == 'teacher' ||
+        clean == 'teachers' ||
+        clean == 'teacher(s)' ||
+        clean == 'admin' ||
+        clean == 'admins' ||
+        clean == 'staff' ||
+        clean == 'superadmin' ||
+        clean == 'super_admin';
+  }
+
+  String _extractCourseId(Map<String, dynamic> course) {
+    final nestedClass = course['class'];
+    final classMap = nestedClass is Map
+        ? nestedClass.map((k, v) => MapEntry(k.toString(), v))
+        : const <String, dynamic>{};
+    return (course['id'] ??
+            course['courseId'] ??
+            course['course_id'] ??
+            classMap['course_id'] ??
+            classMap['courseId'] ??
+            '')
+        .toString()
+        .trim();
   }
 
   Future<List<_MyPlatformItem>> _loadFeedbackItems(
@@ -406,7 +584,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final materialsDone = asBool(progress['materialsCompleted']);
 
     if (meta.hasVideo && meta.hasMaterials) {
-      return videoDone || materialsDone;
+      return videoDone && materialsDone;
     }
     if (meta.hasVideo) return videoDone;
     if (meta.hasMaterials) return materialsDone;
@@ -428,16 +606,14 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       if (learnerUid.isEmpty || userEntry.value is! Map) continue;
 
       final user = Map<String, dynamic>.from(userEntry.value as Map);
-      final role = (user['role'] ?? '').toString().trim().toLowerCase();
-      if (role != 'learner' && role != 'learners' && role != 'learner(s)') {
-        continue;
-      }
+      if (_isClearlyNonLearnerRole((user['role'] ?? '').toString())) continue;
 
       final first = (user['first_name'] ?? '').toString().trim();
       final last = (user['last_name'] ?? '').toString().trim();
       final email = (user['email'] ?? '').toString().trim();
-      final learnerName = ('$first $last').trim().isNotEmpty
-          ? ('$first $last').trim()
+      final fullName = '$first $last'.trim();
+      final learnerName = fullName.isNotEmpty
+          ? fullName
           : (email.isNotEmpty ? email : 'Learner');
       final photoUrl = ProfileAvatar.resolvePhotoFromMap(user);
 
@@ -450,15 +626,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         if (courseKey.isEmpty || cEntry.value is! Map) continue;
 
         final course = Map<String, dynamic>.from(cEntry.value as Map);
-        final variant = normalizeVariantKey(
-          (course['variantKey'] ?? course['variant'] ?? '').toString(),
-        );
-        if (variant != 'recorded') continue;
+        if (!_isRecordedLearnerCourse(course)) continue;
 
-        final courseId =
-            (course['id'] ?? course['courseId'] ?? course['course_id'] ?? '')
-                .toString()
-                .trim();
+        final courseId = _extractCourseId(course);
         if (courseId.isEmpty) continue;
 
         if (assignedCourseKeys.isNotEmpty &&
@@ -469,7 +639,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
         final courseTitle = (course['title'] ?? '').toString().trim().isNotEmpty
             ? (course['title'] ?? '').toString().trim()
-            : (courseId.isNotEmpty ? courseId : 'Recorded course');
+            : _courseLabelById[courseId] ??
+                  _courseLabelById[courseKey] ??
+                  (courseId.isNotEmpty ? courseId : 'Recorded course');
 
         final progressRaw = course['recorded_progress'];
         final progressMap = progressRaw is Map
@@ -498,8 +670,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           for (final raw in progressMap.values) {
             if (raw is! Map) continue;
             final progress = raw.map((k, v) => MapEntry('$k', v));
-            if ((progress['videoCompleted'] == true) ||
-                (progress['materialsCompleted'] == true)) {
+            final videoDone = _asBool(progress['videoCompleted']);
+            final materialsDone = _asBool(progress['materialsCompleted']);
+            if (videoDone ||
+                (!progress.containsKey('videoCompleted') && materialsDone)) {
               completedSessions += 1;
             }
           }
@@ -962,25 +1136,38 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     }
 
     for (final item in _all) {
+      final status = CourseFeedbackService.normalizeLessonCommentStatus(
+        item.status,
+      );
       commentCounts[item.courseId] = (commentCounts[item.courseId] ?? 0) + 1;
-      if (item.status == 'pending') {
+      if (status == CourseFeedbackService.statusPending) {
         pendingCounts[item.courseId] = (pendingCounts[item.courseId] ?? 0) + 1;
       }
-      if (item.reportCount > 0 && item.status != 'removed') {
+      if (item.reportCount > 0 &&
+          status != CourseFeedbackService.statusRemoved) {
         reportedCounts[item.courseId] =
             (reportedCounts[item.courseId] ?? 0) + 1;
       }
-      if (item.status == 'hidden' || item.status == 'removed') {
+      if (status == 'hidden' || status == CourseFeedbackService.statusRemoved) {
         hiddenCounts[item.courseId] = (hiddenCounts[item.courseId] ?? 0) + 1;
       }
       final prev = lastCommentAt[item.courseId] ?? 0;
       if (item.createdAt > prev) lastCommentAt[item.courseId] = item.createdAt;
     }
 
-    final courseIds = learnerSets.keys.where((courseId) {
-      if (_assignedCourseIds.isEmpty) return true;
-      return _assignedCourseIds.contains(courseId);
-    }).toList()..sort();
+    final courseIds =
+        <String>{
+            ..._assignedCourseIds,
+            ...learnerSets.keys,
+            ...commentCounts.keys,
+          }.where((courseId) {
+            if (courseId.trim().isEmpty) return false;
+            if (_assignedCourseIds.isEmpty) return true;
+            return _assignedCourseIds.contains(courseId) ||
+                learnerSets.containsKey(courseId) ||
+                commentCounts.containsKey(courseId);
+          }).toList()
+          ..sort();
     return courseIds.map((courseId) {
       return _RecordedCourseSummary(
         courseId: courseId,
@@ -997,13 +1184,17 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     }).toList();
   }
 
-  void _openRecordedCourseComments(_RecordedCourseSummary course) {
+  void _openRecordedCourseComments(
+    _RecordedCourseSummary course, {
+    bool pendingFirst = false,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TeacherRecordedCourseCommentsScreen(
           courseId: course.courseId,
           courseTitle: course.courseTitle,
           courseCode: course.courseCode,
+          initialFilterPending: pendingFirst,
         ),
       ),
     );
@@ -1012,10 +1203,16 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   Widget _buildRecordedCoursesBody() {
     final summaries =
         _recordedCourseSummaries
-            .where((course) => course.learnerCount > 0)
+            .where(
+              (course) => course.learnerCount > 0 || course.commentCount > 0,
+            )
             .toList()
           ..sort((a, b) {
-            final cmp = b.latestCommentAt.compareTo(a.latestCommentAt);
+            var cmp = b.pendingCommentCount.compareTo(a.pendingCommentCount);
+            if (cmp != 0) return cmp;
+            cmp = b.reportedCommentCount.compareTo(a.reportedCommentCount);
+            if (cmp != 0) return cmp;
+            cmp = b.latestCommentAt.compareTo(a.latestCommentAt);
             if (cmp != 0) return cmp;
             return a.courseTitle.toLowerCase().compareTo(
               b.courseTitle.toLowerCase(),
@@ -1023,9 +1220,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           });
 
     if (summaries.isEmpty) {
-      return const Center(
-        child: Text('No recorded courses with learners yet.'),
-      );
+      return const Center(child: Text('No reflections need review right now.'));
     }
 
     return ListView.separated(
@@ -1040,7 +1235,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
-            onTap: () => _openRecordedCourseComments(course),
+            onTap: () => _openRecordedCourseComments(
+              course,
+              pendingFirst: course.pendingCommentCount > 0,
+            ),
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -1106,17 +1304,26 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFDE68A),
-                          borderRadius: BorderRadius.circular(12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
                         ),
-                        child: const Text(
-                          '!',
+                        decoration: BoxDecoration(
+                          color: course.pendingCommentCount > 0
+                              ? const Color(0xFFFEF3C7)
+                              : const Color(0xFFD1FAE5),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          course.pendingCommentCount > 0
+                              ? '${course.pendingCommentCount} pending'
+                              : 'All caught up',
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
-                            fontSize: 18,
-                            color: Color(0xFF92400E),
+                            fontSize: 11,
+                            color: course.pendingCommentCount > 0
+                                ? const Color(0xFF92400E)
+                                : const Color(0xFF047857),
                           ),
                         ),
                       ),
@@ -1134,7 +1341,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         const Color(0xFF0369A1),
                       ),
                       _courseStatChip(
-                        'Comments',
+                        'Total',
                         course.commentCount,
                         const Color(0xFFEDE9FE),
                         const Color(0xFF6D28D9),
@@ -1152,7 +1359,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         const Color(0xFFB91C1C),
                       ),
                       _courseStatChip(
-                        'Completed',
+                        'Completed learners',
                         course.completedLearnerCount,
                         const Color(0xFFD1FAE5),
                         const Color(0xFF047857),
@@ -1160,22 +1367,56 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.icon(
-                      onPressed: () => _openRecordedCourseComments(course),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: accent,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(48),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: course.pendingCommentCount > 0
+                              ? () => _openRecordedCourseComments(
+                                  course,
+                                  pendingFirst: true,
+                                )
+                              : null,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: accent,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: const Color(0xFFE2E8F0),
+                            disabledForegroundColor: const Color(0xFF64748B),
+                            minimumSize: const Size.fromHeight(48),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.pending_actions_rounded,
+                            size: 18,
+                          ),
+                          label: const Text('Review pending'),
                         ),
                       ),
-                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                      label: const Text('Open comments'),
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openRecordedCourseComments(course),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: accent,
+                            side: BorderSide(
+                              color: accent.withValues(alpha: 0.4),
+                            ),
+                            minimumSize: const Size.fromHeight(48),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                          label: const Text('Open all'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1706,7 +1947,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     _RecordedLessonDetail item,
     _LearnerRecordedProgressItem learnerItem,
   ) {
-    final status = item.commentStatus;
+    final status = _normalizedReflectionStatus(item.commentStatus);
     IconData icon;
     Color color;
     Color bgColor;
@@ -1754,6 +1995,12 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     );
   }
 
+  String? _normalizedReflectionStatus(String? raw) {
+    final rawStatus = (raw ?? '').trim();
+    if (rawStatus.isEmpty) return null;
+    return CourseFeedbackService.normalizeLessonCommentStatus(rawStatus);
+  }
+
   Future<void> _moderateComment({
     required _RecordedLessonDetail lesson,
     required _LearnerRecordedProgressItem learner,
@@ -1775,9 +2022,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
     if (approve) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Reflection approved.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Reflection approved.')));
       }
     } else {
       // Send auto-mail to learner
@@ -1801,7 +2048,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           receiverName: learner.learnerName,
           receiverRole: 'learner',
           subject: 'Learning Reflection Needs Improvement',
-          body: '$lessonPath\n\n'
+          body:
+              '$lessonPath\n\n'
               'Dear ${learner.learnerName},\n\n'
               'Thank you for writing your learning reflection.\n\n'
               'It appears that your reflection does not fully align with the lesson topic. '
@@ -1815,7 +2063,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Reflection marked as not approved. Learner notified.'),
+            content: Text(
+              'Reflection marked as not approved. Learner notified.',
+            ),
           ),
         );
       }
@@ -1825,8 +2075,30 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final rowKey = _recordedRowKey(learner);
     if (mounted) {
       setState(() {
-        _recordedDetailsFutureByRow[rowKey] =
-            _loadRecordedLearnerDetails(learner);
+        _all = _all.map((item) {
+          if (item.courseId != learner.courseId ||
+              item.lessonId != lesson.lessonId ||
+              item.entryId != commentId) {
+            return item;
+          }
+          return _MyPlatformItem(
+            courseId: item.courseId,
+            lessonId: item.lessonId,
+            entryId: item.entryId,
+            uid: item.uid,
+            firstName: item.firstName,
+            displayName: item.displayName,
+            photoUrl: item.photoUrl,
+            abbr: item.abbr,
+            text: item.text,
+            status: newStatus,
+            reportCount: item.reportCount,
+            createdAt: item.createdAt,
+          );
+        }).toList();
+        _recordedDetailsFutureByRow[rowKey] = _loadRecordedLearnerDetails(
+          learner,
+        );
       });
     }
   }
@@ -1835,11 +2107,12 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     _RecordedLessonDetail lesson,
     _LearnerRecordedProgressItem learner,
   ) {
-    final status = lesson.commentStatus;
+    final status = _normalizedReflectionStatus(lesson.commentStatus);
     final hasComment = status != null;
     final isApproved = status == CourseFeedbackService.statusVisible;
     final isRejected = status == CourseFeedbackService.statusNotApproved;
-    final isPending = status == CourseFeedbackService.statusPending;
+    final isRemoved = status == CourseFeedbackService.statusRemoved;
+    final canModerate = hasComment && !isRemoved;
 
     final contextBits = <String>[];
     if (lesson.moduleTitle.isNotEmpty) contextBits.add(lesson.moduleTitle);
@@ -1856,6 +2129,12 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     } else if (isRejected) {
       statusLabel = 'Not approved';
       statusColor = const Color(0xFFDC2626);
+    } else if (isRemoved) {
+      statusLabel = 'Removed';
+      statusColor = const Color(0xFF64748B);
+    } else if (status == 'hidden') {
+      statusLabel = 'Hidden';
+      statusColor = const Color(0xFF64748B);
     } else {
       statusLabel = 'Pending review';
       statusColor = const Color(0xFFD97706);
@@ -1868,8 +2147,13 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                24 + MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1956,11 +2240,11 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                       ),
                     ),
                   ],
-                  if (hasComment) ...[
+                  if (canModerate) ...[
                     const SizedBox(height: 20),
                     Row(
                       children: [
-                        if (isPending || isRejected)
+                        if (!isApproved)
                           Expanded(
                             child: FilledButton.icon(
                               onPressed: () async {
@@ -1981,8 +2265,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon: const Icon(Icons.check_circle_rounded,
-                                  size: 18),
+                              icon: const Icon(
+                                Icons.check_circle_rounded,
+                                size: 18,
+                              ),
                               label: const Text(
                                 'Approve',
                                 style: TextStyle(
@@ -1992,9 +2278,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                               ),
                             ),
                           ),
-                        if (isPending)
+                        if (!isApproved && !isRejected)
                           const SizedBox(width: 10),
-                        if (isPending || isApproved)
+                        if (!isRejected)
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () async {
@@ -2017,8 +2303,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon: const Icon(Icons.error_outline_rounded,
-                                  size: 18),
+                              icon: const Icon(
+                                Icons.error_outline_rounded,
+                                size: 18,
+                              ),
                               label: const Text(
                                 'Not approve',
                                 style: TextStyle(
@@ -2073,8 +2361,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _mainTabChip(
-                    label: 'Courses',
-                    icon: Icons.video_library_rounded,
+                    label: 'Reflections',
+                    icon: Icons.rate_review_rounded,
                     selected: _mainTab == _MyPlatformMainTab.courses,
                     accent: const Color(0xFF7C3AED),
                     onTap: () {
