@@ -75,10 +75,10 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     _search = widget.initialSearch.trim();
     _tab = TabController(length: 3, vsync: this);
 
-    // broadcast streams once
-    _usersStream = _usersRef.onValue.asBroadcastStream();
-    _deletedStream = _deletedRef.onValue.asBroadcastStream();
-    _blockedStream = _blockedRef.onValue.asBroadcastStream();
+    // broadcast streams once (limited for performance)
+    _usersStream = _usersRef.orderByKey().limitToLast(300).onValue.asBroadcastStream();
+    _deletedStream = _deletedRef.orderByKey().limitToLast(100).onValue.asBroadcastStream();
+    _blockedStream = _blockedRef.orderByKey().limitToLast(100).onValue.asBroadcastStream();
   }
 
   @override
@@ -670,6 +670,8 @@ class _LearnersListState extends State<_LearnersList>
   late final Stream<Map<String, int>> _unreadByLearnerStream;
   final Map<String, _PayFlag> _payFlagCache = <String, _PayFlag>{};
   final Set<String> _payFlagLoading = <String>{};
+  List<_LearnerRow>? _fullSearchResults;
+  bool _loadingFullSearch = false;
 
   @override
   void initState() {
@@ -679,6 +681,34 @@ class _LearnersListState extends State<_LearnersList>
 
   @override
   bool get wantKeepAlive => true;
+
+  Future<void> _searchAllLearners(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() => _loadingFullSearch = true);
+    try {
+      final snap = await _db.ref('users').get();
+      final rows = _parseLearnersMap(snap.value);
+      final s = query.trim().toLowerCase();
+      final matching = rows.where((r) {
+        final l = r.learner;
+        return l.fullName.toLowerCase().contains(s) ||
+            l.email.toLowerCase().contains(s) ||
+            l.serial.toLowerCase().contains(s) ||
+            (l.gender?.value.toLowerCase() ?? '').contains(s) ||
+            l.nationalIdNumber.toLowerCase().contains(s) ||
+            l.phone1.toLowerCase().contains(s) ||
+            l.phone2.toLowerCase().contains(s);
+      }).toList();
+      if (!mounted) return;
+      setState(() {
+        _fullSearchResults = matching;
+        _loadingFullSearch = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingFullSearch = false);
+    }
+  }
 
   void _toast(String msg) {
     if (!mounted) return;
@@ -1836,13 +1866,42 @@ class _LearnersListState extends State<_LearnersList>
 
               _prefetchPayFlags(filtered);
 
-              if (filtered.isEmpty) {
-                return const _StateCard(
-                  title: 'No learners',
-                  message: 'No results match your filters.',
-                  icon: Icons.people_outline,
+              if (filtered.isEmpty && _fullSearchResults == null) {
+                return Column(
+                  children: [
+                    const Expanded(
+                      child: _StateCard(
+                        title: 'No learners',
+                        message: 'No results match your filters.',
+                        icon: Icons.people_outline,
+                      ),
+                    ),
+                    if (widget.search.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _loadingFullSearch
+                            ? const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : OutlinedButton.icon(
+                                icon: const Icon(Icons.search_rounded),
+                                label: const Text('Search all learners'),
+                                onPressed: () =>
+                                    _searchAllLearners(widget.search),
+                              ),
+                      ),
+                  ],
                 );
               }
+
+              final displayRows = _fullSearchResults ?? filtered;
 
               return StreamBuilder<Map<String, int>>(
                 stream: _unreadByLearnerStream,
@@ -1852,9 +1911,9 @@ class _LearnersListState extends State<_LearnersList>
 
                   return ListView.builder(
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                    itemCount: filtered.length,
+                    itemCount: displayRows.length,
                     itemBuilder: (context, i) {
-                      final row = filtered[i];
+                      final row = displayRows[i];
                       final l = row.learner;
                       final isExpanded = _expandedUid == row.uid;
                       final unread = unreadByLearner[row.uid] ?? 0;

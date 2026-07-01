@@ -33,7 +33,7 @@ class AdminPaymentsScreen extends StatefulWidget {
 
 class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   final _db = FirebaseDatabase.instance;
-  static const int _paymentsWindowSize = 3000;
+  static const int _paymentsWindowSize = 500;
 
   DatabaseReference get _paymentsRef => _db.ref('payments');
   DatabaseReference get _paymentPeriodsRef => _db.ref('payment_periods');
@@ -52,6 +52,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   bool _showNameSearch = false;
   final TextEditingController _nameSearchCtrl = TextEditingController();
   String _nameSearchQuery = '';
+
+  List<Map<String, dynamic>> _extraPayments = [];
+  int? _oldestPaidAtMs;
+  bool _loadingExtraPayments = false;
+  bool _hasMorePayments = true;
 
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
   static const String _teacherFilterAll = '__all__';
@@ -718,6 +723,44 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       }
     }
     return false;
+  }
+
+  Future<void> _loadExtraPayments() async {
+    if (_loadingExtraPayments || !_hasMorePayments || _oldestPaidAtMs == null) {
+      return;
+    }
+    setState(() => _loadingExtraPayments = true);
+    try {
+      final snap = await _paymentsRef
+          .orderByChild('paidAt')
+          .endBefore(_oldestPaidAtMs!)
+          .limitToLast(_paymentsWindowSize)
+          .get();
+      final v = snap.value;
+      if (v is! Map || v.isEmpty) {
+        _hasMorePayments = false;
+        return;
+      }
+      final loaded = <Map<String, dynamic>>[];
+      v.forEach((k, val) {
+        if (val is Map) {
+          final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+          m['paymentId'] = k.toString();
+          loaded.add(m.cast<String, dynamic>());
+        }
+      });
+      if (loaded.length < _paymentsWindowSize) {
+        _hasMorePayments = false;
+      }
+      if (!mounted) return;
+      setState(() {
+        _extraPayments.addAll(loaded);
+        _loadingExtraPayments = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingExtraPayments = false);
+    }
   }
 
   Future<Map<String, String>> _loadStudyFieldsForLearnerCourse({
@@ -1518,7 +1561,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           stream: _paymentsRef
               .orderByChild('paidAt')
               .limitToLast(_paymentsWindowSize)
-              .onValue,
+              .once()
+              .asStream(),
           builder: (context, snap) {
             if (snap.hasError) {
               return const Scaffold(
@@ -1546,6 +1590,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
               });
             }
 
+            all.addAll(_extraPayments);
             all.sort((a, b) {
               final byMonth = _monthKeyForSorting(
                 a,
@@ -1566,6 +1611,9 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                 (b['paymentId'] ?? '').toString(),
               );
             });
+            if (all.isNotEmpty) {
+              _oldestPaidAtMs = _effectivePaidAtMs(all.first);
+            }
 
             final monthsSet = <String>{};
             final legacyMonthsSet = <String>{};
@@ -2452,97 +2500,126 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
       );
     }
 
-    return Row(
+    return Column(
       children: [
-        SizedBox(
-          width: frozenWidth,
-          child: Column(
+        Expanded(
+          child: Row(
             children: [
-              Container(
-                height: 44,
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Row(
+              SizedBox(
+                width: frozenWidth,
+                child: Column(
                   children: [
-                    const SizedBox(width: 34),
-                    headCell('#', 52, strong: true),
-                    headCell('Paid', 126),
-                    headCell('Learner', 196, strong: true),
+                    Container(
+                      height: 44,
+                      color: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 34),
+                          headCell('#', 52, strong: true),
+                          headCell('Paid', 126),
+                          headCell('Learner', 196, strong: true),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, color: Colors.black.withValues(alpha: 0.07)),
+                    Expanded(
+                      child: ListView.separated(
+                        controller: _rowsScrollFrozen,
+                        padding: EdgeInsets.fromLTRB(
+                          0,
+                          0,
+                          0,
+                          MediaQuery.of(context).padding.bottom + 28,
+                        ),
+                        itemCount: visible.length,
+                        separatorBuilder: (_, _) => Divider(
+                          height: 1,
+                          color: Colors.black.withValues(alpha: 0.07),
+                        ),
+                        itemBuilder: (_, i) => frozenRow(visible[i], i),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              Divider(height: 1, color: Colors.black.withValues(alpha: 0.07)),
+              const VerticalDivider(width: 1),
               Expanded(
-                child: ListView.separated(
-                  controller: _rowsScrollFrozen,
-                  padding: EdgeInsets.fromLTRB(
-                    0,
-                    0,
-                    0,
-                    MediaQuery.of(context).padding.bottom + 28,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: rightMinWidth,
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 44,
+                          color: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Row(
+                            children: [
+                              headCell('Variant', 126),
+                              headCell('Amount', 118),
+                              headCell('Plan', 150),
+                              headCell('Teacher', 160),
+                              headCell('Class', 200),
+                              headCell('Start/Expire', 132),
+                              headCell('Notes', 260),
+                              const SizedBox(width: 40),
+                            ],
+                          ),
+                        ),
+                        Divider(
+                          height: 1,
+                          color: Colors.black.withValues(alpha: 0.07),
+                        ),
+                        Expanded(
+                          child: ListView.separated(
+                            controller: _rowsScrollMain,
+                            padding: EdgeInsets.fromLTRB(
+                              0,
+                              0,
+                              0,
+                              MediaQuery.of(context).padding.bottom + 28,
+                            ),
+                            itemCount: visible.length,
+                            separatorBuilder: (_, _) => Divider(
+                              height: 1,
+                              color: Colors.black.withValues(alpha: 0.07),
+                            ),
+                            itemBuilder: (_, i) => rightRow(visible[i], i),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  itemCount: visible.length,
-                  separatorBuilder: (_, _) => Divider(
-                    height: 1,
-                    color: Colors.black.withValues(alpha: 0.07),
-                  ),
-                  itemBuilder: (_, i) => frozenRow(visible[i], i),
                 ),
               ),
             ],
           ),
         ),
-        const VerticalDivider(width: 1),
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(
-              width: rightMinWidth,
-              child: Column(
-                children: [
-                  Container(
-                    height: 44,
-                    color: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Row(
-                      children: [
-                        headCell('Variant', 126),
-                        headCell('Amount', 118),
-                        headCell('Plan', 150),
-                        headCell('Teacher', 160),
-                        headCell('Class', 200),
-                        headCell('Start/Expire', 132),
-                        headCell('Notes', 260),
-                        const SizedBox(width: 40),
-                      ],
-                    ),
-                  ),
-                  Divider(
-                    height: 1,
-                    color: Colors.black.withValues(alpha: 0.07),
-                  ),
-                  Expanded(
-                    child: ListView.separated(
-                      controller: _rowsScrollMain,
-                      padding: EdgeInsets.fromLTRB(
-                        0,
-                        0,
-                        0,
-                        MediaQuery.of(context).padding.bottom + 28,
+        if (_hasMorePayments || _loadingExtraPayments)
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: _loadingExtraPayments
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : TextButton.icon(
+                      icon: const Icon(Icons.expand_more_rounded),
+                      label: Text(
+                        'Load older payments (${_extraPayments.length + _paymentsWindowSize}+ shown)',
                       ),
-                      itemCount: visible.length,
-                      separatorBuilder: (_, _) => Divider(
-                        height: 1,
-                        color: Colors.black.withValues(alpha: 0.07),
-                      ),
-                      itemBuilder: (_, i) => rightRow(visible[i], i),
+                      onPressed: _loadExtraPayments,
                     ),
-                  ),
-                ],
-              ),
             ),
           ),
-        ),
       ],
     );
   }

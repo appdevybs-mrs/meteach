@@ -80,12 +80,18 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   bool _loadingCourses = true;
   List<Map<String, dynamic>> _courses = [];
   late final Future<void> _bootFuture;
-  Future<DataSnapshot>? _classesFuture;
 
   // ===== Learners cache (ALL learners) =====
   bool _loadingLearners = true;
   List<Map<String, dynamic>> _allLearners =
       []; // {uid, serial, name, coursesMap}
+
+  // ===== Pagination =====
+  static const int _classesPageSize = 100;
+  List<Map<String, dynamic>> _loadedClasses = [];
+  bool _loadingClasses = true;
+  bool _hasMoreClasses = true;
+  String? _lastClassKey;
 
   // ===== Teachers cache (ALL teachers) =====
   bool _loadingTeachers = true;
@@ -158,7 +164,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
     // IMPORTANT: load teachers first, then courses
     _bootFuture = _loadTeachers().then((_) => _loadCourses());
-    _classesFuture = _classesRef.get();
+    _loadInitialClasses();
     _loadAllLearners();
     _unreadByLearnerStream = _unreadByLearnerMapStream();
 
@@ -1624,9 +1630,105 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   void _refreshClassesSnapshot() {
     if (!mounted) return;
     setState(() {
-      _classesFuture = _classesRef.get();
+      _loadedClasses.clear();
+      _loadingClasses = true;
+      _hasMoreClasses = true;
+      _lastClassKey = null;
       _classTabMetricsFutureByKey.clear();
     });
+    _loadInitialClasses();
+  }
+
+  Future<void> _loadInitialClasses() async {
+    if (!mounted) return;
+    try {
+      final snap = await _classesRef
+          .orderByKey()
+          .limitToLast(_classesPageSize)
+          .once();
+      if (!mounted) return;
+      final v = snap.snapshot.value;
+      if (v is! Map || v.isEmpty) {
+        setState(() {
+          _loadingClasses = false;
+          _hasMoreClasses = false;
+        });
+        return;
+      }
+      final list = <Map<String, dynamic>>[];
+      v.forEach((k, val) {
+        if (val is Map) {
+          final cls = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+          cls['class_id'] = k.toString();
+          list.add(cls.cast<String, dynamic>());
+        }
+      });
+      list.sort((a, b) {
+        final aa = (a['created_at'] ?? 0) is int
+            ? (a['created_at'] as int)
+            : 0;
+        final bb = (b['created_at'] ?? 0) is int
+            ? (b['created_at'] as int)
+            : 0;
+        return bb.compareTo(aa);
+      });
+      if (list.length < _classesPageSize) _hasMoreClasses = false;
+      _lastClassKey = list.isNotEmpty ? list.last['class_id'] as String? : null;
+      setState(() {
+        _loadedClasses = list;
+        _loadingClasses = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingClasses = false);
+      _notify('Failed to load classes: $e', error: true);
+    }
+  }
+
+  Future<void> _loadMoreClasses() async {
+    if (_loadingClasses || !_hasMoreClasses || _lastClassKey == null) return;
+    setState(() => _loadingClasses = true);
+    try {
+      final snap = await _classesRef
+          .orderByKey()
+          .endBefore(_lastClassKey!)
+          .limitToLast(_classesPageSize)
+          .once();
+      if (!mounted) return;
+      final v = snap.snapshot.value;
+      if (v is! Map || v.isEmpty) {
+        _hasMoreClasses = false;
+        setState(() => _loadingClasses = false);
+        return;
+      }
+      final list = <Map<String, dynamic>>[];
+      v.forEach((k, val) {
+        if (val is Map) {
+          final cls = val.map((kk, vv) => MapEntry(kk.toString(), vv));
+          cls['class_id'] = k.toString();
+          list.add(cls.cast<String, dynamic>());
+        }
+      });
+      list.sort((a, b) {
+        final aa = (a['created_at'] ?? 0) is int
+            ? (a['created_at'] as int)
+            : 0;
+        final bb = (b['created_at'] ?? 0) is int
+            ? (b['created_at'] as int)
+            : 0;
+        return bb.compareTo(aa);
+      });
+      if (list.length <= _classesPageSize) _hasMoreClasses = false;
+      if (list.isNotEmpty) _lastClassKey = list.last['class_id'] as String?;
+      setState(() {
+        _loadedClasses.addAll(list);
+        _loadingClasses = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loadingClasses = false);
+      _notify('Failed to load more classes: $e', error: true);
+    }
   }
 
   Future<_PauseWindowSelection?> _showPauseWindowDialog({
@@ -4876,99 +4978,87 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: FutureBuilder<DataSnapshot>(
-            future: _classesFuture,
-            builder: (context, snap) {
-              if (snap.hasError) {
-                return Center(
-                  child: Text(
-                    'Could not load classes right now.',
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                );
-              }
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          child: _loadingClasses
+              ? const Center(child: CircularProgressIndicator())
+              : _loadedClasses.isEmpty
+                  ? const Center(child: Text("No classes yet."))
+                  : _buildClassesListView(),
+        ),
+        if (_hasMoreClasses && !_loadingClasses && _loadedClasses.isNotEmpty)
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Colors.grey.shade200)),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: TextButton.icon(
+                icon: const Icon(Icons.expand_more_rounded),
+                label: Text(
+                  'Load more classes (${_loadedClasses.length}+ shown)',
+                ),
+                onPressed: _loadMoreClasses,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 
-              final data = snap.data?.value;
-              if (data == null || data is! Map) {
-                return const Center(child: Text("No classes yet."));
-              }
+  Widget _buildClassesListView() {
+    final filtered = _loadedClasses
+        .where(_matchesSearch)
+        .where(_matchesDayFilter)
+        .where(_matchesOpenFilter)
+        .where(_matchesWaitingStatusFilter)
+        .where(_matchesTeacherFilter)
+        .where(_matchesCourseFilter)
+        .where(_matchesEmptyClassesFilter)
+        .toList();
 
-              final map = Map<dynamic, dynamic>.from(data);
+    // Summary line
+    final summary =
+        "Showing ${filtered.length} of ${_loadedClasses.length} classes";
 
-              final allClasses = map.values
-                  .whereType<dynamic>()
-                  .map((e) => Map<String, dynamic>.from(e as Map))
-                  .toList();
+    if (filtered.isEmpty) {
+      return Center(
+        child: Text(
+          "No matching classes.\n$summary",
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      );
+    }
 
-              final filtered = allClasses
-                  .where(_matchesSearch)
-                  .where(_matchesDayFilter)
-                  .where(_matchesOpenFilter)
-                  .where(_matchesWaitingStatusFilter)
-                  .where(_matchesTeacherFilter)
-                  .where(_matchesCourseFilter)
-                  .where(_matchesEmptyClassesFilter)
-                  .toList();
-
-              filtered.sort((a, b) {
-                final aa = (a["created_at"] ?? 0) is int
-                    ? (a["created_at"] as int)
-                    : 0;
-                final bb = (b["created_at"] ?? 0) is int
-                    ? (b["created_at"] as int)
-                    : 0;
-                return bb.compareTo(aa);
-              });
-
-              // Summary line
-              final summary =
-                  "Showing ${filtered.length} of ${allClasses.length} classes";
-
-              if (filtered.isEmpty) {
-                return Center(
-                  child: Text(
-                    "No matching classes.\n$summary",
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                );
-              }
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          summary,
-                          style: TextStyle(
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Refresh classes',
-                        onPressed: _refreshClassesSnapshot,
-                        icon: const Icon(Icons.refresh_rounded),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 90),
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 10),
-                      itemBuilder: (context, i) {
-                        final cls = filtered[i];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                summary,
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh classes',
+              onPressed: _refreshClassesSnapshot,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.only(bottom: 90),
+            itemCount: filtered.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, i) {
+              final cls = filtered[i];
 
                         final id = (cls["class_id"] ?? "").toString();
                         final classKey = id.isEmpty ? 'class_$i' : id;
@@ -5536,11 +5626,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                   ),
                 ],
               );
-            },
-          ),
-        ),
-      ],
-    );
   }
 
   bool _isNearExpiryMs(int expiresAt, {int days = 7}) {
