@@ -81,34 +81,336 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: #F4F7F9;
+      background: linear-gradient(145deg, #F4F7F9 0%, #E8EDF2 100%);
       z-index: 9999;
-      font-family: system-ui, sans-serif;
+      font-family: system-ui, -apple-system, sans-serif;
+      transition: opacity 0.5s;
     }
-    #loading img {
-      width: 72px;
-      height: 72px;
-      border-radius: 18px;
-      animation: pulse 1.4s ease-in-out infinite;
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
     }
-    #loading p {
-      margin-top: 18px;
-      color: #1A2B48;
-      font-weight: 700;
-      font-size: 15px;
-      letter-spacing: 0.3px;
+
+    #loading .logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+      animation: pulse 1.6s ease-in-out infinite;
+      box-shadow: 0 4px 20px rgba(26,43,72,0.12);
     }
     @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 0.7; }
-      50% { transform: scale(1.08); opacity: 1; }
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.06); opacity: 1; }
     }
+
+    #loading h1 {
+      margin: 16px 0 4px;
+      color: #1A2B48;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+    #loading .sub {
+      color: #1A2B48;
+      font-size: 13px;
+      font-weight: 600;
+      opacity: 0.55;
+      margin: 0;
+    }
+
+    /* Progress bar */
+    .progress-wrap {
+      width: 280px;
+      max-width: 70vw;
+      height: 6px;
+      background: #D0D7DE;
+      border-radius: 99px;
+      margin: 22px 0 8px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #28466F, #1A2B48);
+      border-radius: 99px;
+      transition: width 0.8s ease-out;
+    }
+    .progress-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1A2B48;
+      opacity: 0.5;
+      letter-spacing: 0.5px;
+    }
+
+    /* Rotating messages */
+    .message-area {
+      height: 48px;
+      margin-top: 18px;
+      position: relative;
+      width: 320px;
+      max-width: 80vw;
+    }
+    .message-area .msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #28466F;
+      opacity: 0;
+      transition: opacity 0.5s;
+      pointer-events: none;
+    }
+    .message-area .msg.show {
+      opacity: 1;
+    }
+
+    /* Native app card */
+    .app-card {
+      margin-top: 16px;
+      padding: 14px 20px;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(26,43,72,0.08);
+      display: none;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1A2B48;
+      max-width: 320px;
+    }
+    .app-card.show { display: flex; }
+    .app-card .icon-wrap {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: #E8EDF2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .app-card a {
+      color: #28466F;
+      text-decoration: underline;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    /* Lang toggle */
+    .lang-toggle {
+      margin-top: 20px;
+      display: flex;
+      gap: 6px;
+    }
+    .lang-toggle button {
+      background: transparent;
+      border: 2px solid #D0D7DE;
+      border-radius: 8px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #1A2B48;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .lang-toggle button.active {
+      border-color: #1A2B48;
+      background: #1A2B48;
+      color: white;
+    }
+
+    /* Stuck fallback */
+    .stuck {
+      margin-top: 18px;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .stuck.show { display: flex; }
+    .stuck p {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1A2B48;
+      opacity: 0.6;
+      margin: 0;
+    }
+    .stuck button {
+      background: #28466F;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .stuck button:hover { background: #1A2B48; }
   </style>
 </head>
 <body>
   <div id="loading">
-    <img src="icons/Icon-512.png" alt="Loading">
-    <p>Your Bridge School</p>
+    <img class="logo" src="icons/Icon-512.png" alt="Your Bridge School">
+    <h1 id="load-title">Your Bridge School</h1>
+    <p class="sub" id="load-sub">Not for the certificate, for the skill.</p>
+
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <span class="progress-label" id="progress-label">0%</span>
+
+    <div class="message-area" id="msg-area">
+      <div class="msg show" id="msg-0"></div>
+    </div>
+
+    <div class="app-card" id="app-card">
+      <div class="icon-wrap">📱</div>
+      <span id="app-text">Try the native app for a smoother experience!</span>
+      <a id="app-link" href="#" target="_blank">Get it</a>
+    </div>
+
+    <div class="stuck" id="stuck">
+      <p id="stuck-text">Taking longer than expected?</p>
+      <button id="refresh-btn" onclick="location.reload()">Refresh</button>
+    </div>
+
+    <div class="lang-toggle">
+      <button id="lang-en" class="active" onclick="setLang('en')">EN</button>
+      <button id="lang-ar" onclick="setLang('ar')">AR</button>
+    </div>
   </div>
+
+  <script>
+    // ── Message pool ──
+    const messages = [
+      { en: 'Warming up the servers... 🔥', ar: 'يتم تسخين الخوادم... 🔥' },
+      { en: 'Feeding the class hamsters... 🐹', ar: 'إطعام هامستر الفصل... 🐹' },
+      { en: 'Polishing the virtual whiteboards... ✨', ar: 'تلميع السبورات الافتراضية... ✨' },
+      { en: 'Tuning the audio waves... 🎵', ar: 'ضبط الموجات الصوتية... 🎵' },
+      { en: 'Brewing virtual coffee... ☕', ar: 'تحضير القهوة الافتراضية... ☕' },
+      { en: 'Untangling headphone wires... 🎧', ar: 'فك أسلاك السماعات... 🎧' },
+      { en: 'Charging your certificates... 📜', ar: 'شحن الشهادات... 📜' },
+      { en: 'Chatting with the teachers... 👨‍🏫', ar: 'محادثة مع المعلمين... 👨‍🏫' },
+      { en: 'Organizing the library shelves... 📚', ar: 'ترتيب رفوف المكتبة... 📚' },
+      { en: 'Counting practice questions... 🔢', ar: 'عد أسئلة التدريب... 🔢' },
+      { en: '📱 Get the native app for a smoother experience!', ar: '📱 حمّل التطبيق الأصلي لتجربة أفضل!' },
+      { en: 'Setting up your virtual desk... 🪑', ar: 'تجهيز مكتبك الافتراضي... 🪑' },
+      { en: 'Reviewing today\'s grammar... 📝', ar: 'مراجعة قواعد اليوم... 📝' },
+      { en: 'Preparing interactive games... 🎮', ar: 'تحضير الألعاب التفاعلية... 🎮' },
+      { en: 'Loading motivational quotes... 💪', ar: 'تحميل اقتباسات تحفيزية... 💪' },
+      { en: 'Not for the certificate, for the skill.', ar: 'ليس من أجل الشهادة، بل من أجل المهارة.' },
+      { en: 'Arranging the gallery photos... 🖼️', ar: 'ترتيب صور المعرض... 🖼️' },
+      { en: 'Polishing the graduation caps... 🎓', ar: 'تلميع قبعات التخرج... 🎓' },
+      { en: 'Warming up the English muscles... 💪', ar: 'إحماء عضلات الإنجليزية... 💪' },
+      { en: 'Almost there, just a few more seconds... ⏳', ar: 'اقتربنا، بضع ثوانٍ فقط... ⏳' },
+    ];
+    const nativeAppUrl = 'https://play.google.com/store/apps/details?id=com.yourbridgeschool.app';
+
+    let currentLang = 'en';
+    let msgInterval = null;
+    let shownIndices = [];
+
+    function randomMsg(lang) {
+      let idx;
+      do { idx = Math.floor(Math.random() * messages.length); }
+      while (shownIndices.length < messages.length && shownIndices.includes(idx));
+      shownIndices.push(idx);
+      if (shownIndices.length >= messages.length) shownIndices = [];
+      return messages[idx][lang];
+    }
+
+    function updateMessage() {
+      const el = document.getElementById('msg-0');
+      const current = el.textContent;
+      let next;
+      do { next = randomMsg(currentLang); } while (next === current);
+      el.classList.remove('show');
+      setTimeout(() => {
+        el.textContent = next;
+        el.classList.add('show');
+      }, 400);
+    }
+
+    function setLang(lang) {
+      currentLang = lang;
+      document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+      document.getElementById('lang-ar').classList.toggle('active', lang === 'ar');
+      document.getElementById('load-sub').textContent =
+        lang === 'en' ? 'Not for the certificate, for the skill.' : 'ليس من أجل الشهادة، بل من أجل المهارة.';
+      document.getElementById('app-text').textContent =
+        lang === 'en' ? 'Try the native app for a smoother experience!' : 'جرّب التطبيق الأصلي لتجربة أفضل!';
+      document.getElementById('stuck-text').textContent =
+        lang === 'en' ? 'Taking longer than expected?' : 'يستغرق وقتاً أطول من المتوقع؟';
+      document.getElementById('app-link').textContent = lang === 'en' ? 'Get it' : 'تحميل';
+      const el = document.getElementById('msg-0');
+      el.textContent = randomMsg(lang);
+      el.classList.add('show');
+    }
+
+    // ── Progress bar ──
+    let progress = 0;
+    function advanceProgress() {
+      if (progress >= 92) return;
+      const step = 0.5 + Math.random() * 1.5;
+      const delay = 120 + Math.random() * 200;
+      progress = Math.min(92, progress + step);
+      document.getElementById('progress-bar').style.width = progress + '%';
+      document.getElementById('progress-label').textContent = Math.round(progress) + '%';
+      if (progress < 92) setTimeout(advanceProgress, delay);
+    }
+
+    // ── Stage timings ──
+    function initLoader() {
+      advanceProgress();
+      setLang('en');
+
+      // First message after 1s
+      setTimeout(() => {
+        document.getElementById('msg-0').textContent = randomMsg('en');
+        document.getElementById('msg-0').classList.add('show');
+      }, 1000);
+
+      // Rotate messages every 3.5s
+      msgInterval = setInterval(updateMessage, 3500);
+
+      // Show native app card at 6s
+      setTimeout(() => {
+        document.getElementById('app-card').classList.add('show');
+      }, 6000);
+
+      // Show stuck fallback at 22s
+      setTimeout(() => {
+        document.getElementById('stuck').classList.add('show');
+      }, 22000);
+    }
+
+    // ── Auto dismiss when Flutter boots ──
+    function watchBoot() {
+      const check = () => {
+        const bodyText = document.body.innerText || '';
+        const flView = document.querySelector('flutter-view');
+        if (flView && flView.children.length > 0) {
+          document.getElementById('loading').classList.add('hidden');
+          return;
+        }
+        // Also check if the loading element's siblings replaced it
+        if (!document.getElementById('loading')) return;
+        requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    }
+
+    initLoader();
+    watchBoot();
+  </script>
   <main class="seo-fallback" aria-hidden="true">
     <h1>Your Bridge School</h1>
     <p>Learn English online and in class with Your Bridge School. Not for the certificate, for the skill.</p>
