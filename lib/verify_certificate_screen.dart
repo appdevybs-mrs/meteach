@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -9,6 +10,7 @@ import '../services/certificate_pdf_service.dart';
 import '../services/certificate_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/responsive_layout.dart';
+import '../shared/web_download.dart';
 
 class _CvnInputFormatter extends TextInputFormatter {
   @override
@@ -184,10 +186,7 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
               children: [
                 CircularProgressIndicator(strokeWidth: 2),
                 SizedBox(height: 16),
-                Text(
-                  'Generating PDF...',
-                  textAlign: TextAlign.center,
-                ),
+                Text('Generating PDF...', textAlign: TextAlign.center),
               ],
             ),
           ),
@@ -199,12 +198,16 @@ class _VerifyCertificateScreenState extends State<VerifyCertificateScreen> {
       final bytes = await _pdfService.generateCertificatePdfBytes(cert);
       final fileName = CertificatePdfService.buildPdfFileName(cert);
       if (navigator.context.mounted) navigator.pop();
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(bytes, flush: true);
-      await Share.shareXFiles([
-        XFile(file.path, mimeType: 'application/pdf', name: fileName),
-      ]);
+      if (kIsWeb) {
+        downloadBytes(bytes, fileName);
+      } else {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/$fileName');
+        await file.writeAsBytes(bytes, flush: true);
+        await Share.shareXFiles([
+          XFile(file.path, mimeType: 'application/pdf', name: fileName),
+        ]);
+      }
     } catch (_) {
       if (navigator.context.mounted) navigator.pop();
       if (!mounted) return;

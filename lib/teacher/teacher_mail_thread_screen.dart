@@ -31,6 +31,7 @@ import '../shared/teacher_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/chat_sender_identity.dart';
 import '../shared/media_download.dart';
+import '../shared/link_preview_widget.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
   const TeacherMailThreadScreen({
@@ -1288,6 +1289,124 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     try {
       await launchUrl(u, mode: LaunchMode.externalApplication);
     } catch (_) {}
+  }
+
+  Future<void> _showLinkConfirmationDialog(String rawUrl) async {
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
+
+    final domain = Uri.tryParse(url)?.host.replaceFirst('www.', '') ?? url;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: _navy,
+        surfaceTintColor: Colors.transparent,
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _orange.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.open_in_new_rounded, color: _orange, size: 40),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Open external link?',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    if (domain.isNotEmpty)
+                      Text(
+                        domain,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _orange,
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      url,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You will be taken to your browser.',
+                style: TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.2),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: _orange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text(
+                'Open Link',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _openUrlExternal(url);
   }
 
   Future<void> _send() async {
@@ -2844,7 +2963,12 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                 } catch (_) {}
                 return MarkdownBody(
                   data: m.body,
-                  selectable: true,
+                  selectable: false,
+                  onTapLink: (_, href, __) {
+                    if (href != null && href.isNotEmpty) {
+                      _showLinkConfirmationDialog(href);
+                    }
+                  },
                   styleSheet: MarkdownStyleSheet(
                     p: TextStyle(
                       color: textColor,
@@ -2858,10 +2982,16 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                       height: 1.30,
                       fontWeight: FontWeight.w900,
                     ),
+                    a: TextStyle(
+                      color: _orange,
+                      fontWeight: FontWeight.w700,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 );
               },
             ),
+          ..._buildLinkPreviews(m.body, mine: mine),
           if (m.attachments.isNotEmpty) ...[
             if (m.body.trim().isNotEmpty) const SizedBox(height: 8),
             ...m.attachments.map(
@@ -2871,6 +3001,22 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildLinkPreviews(String body, {required bool mine}) {
+    final urls = extractUrls(body).take(3).toList();
+    if (urls.isEmpty) return [];
+    return [
+      if (body.trim().isNotEmpty) const SizedBox(height: 6),
+      ...urls.map(
+        (u) => LinkPreviewWidget(
+          key: ValueKey(u),
+          url: safePreviewUrl(u),
+          heroColor: _orange,
+          onTap: () => _showLinkConfirmationDialog(u),
+        ),
+      ),
+    ];
   }
 
   Widget _buildMessageMeta(

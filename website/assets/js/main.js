@@ -225,6 +225,159 @@ function initMenu() {
   });
 }
 
+function initCourses() {
+  const grid = document.querySelector('[data-courses-grid]');
+  if (!grid) return;
+
+  const DB_URL = 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com';
+
+  const formatFee = (value) => {
+    if (value == null) return '';
+    const num = typeof value === 'number' ? value : Number.parseFloat(value);
+    if (Number.isNaN(num)) return '';
+    return num.toLocaleString('en-DZ') + ' DA';
+  };
+
+  const categoryEmoji = (category) => {
+    const c = (category || '').toLowerCase();
+    if (c.includes('business')) return '\uD83D\uDCBC';
+    if (c.includes('ielts') || c.includes('exam')) return '\uD83C\uDFAF';
+    if (c.includes('conversation') || c.includes('speaking')) return '\uD83D\uDDE3\uFE0F';
+    if (c.includes('kids') || c.includes('children')) return '\uD83C\uDF31';
+    return '\uD83D\uDCD8';
+  };
+
+  const gradientForIndex = (i) => {
+    const grads = [
+      'linear-gradient(135deg,#1A2B48,#2E4A78)',
+      'linear-gradient(135deg,#F98D28,#E07A1A)',
+      'linear-gradient(135deg,#00D4FF,#00A8CC)',
+      'linear-gradient(135deg,#1A2B48,#F98D28)',
+      'linear-gradient(135deg,#6C63FF,#4834DF)',
+      'linear-gradient(135deg,#FF6B6B,#EE5A24)',
+    ];
+    return grads[i % grads.length];
+  };
+
+  const renderCard = (course, index) => {
+    const card = document.createElement('div');
+    card.className = 'course-card';
+
+    const thumb = document.createElement('div');
+    thumb.className = 'course-thumb';
+    thumb.style.background = gradientForIndex(index);
+    thumb.textContent = categoryEmoji(course.category || course.title);
+
+    const h3 = document.createElement('h3');
+    h3.textContent = course.title || 'Course';
+
+    const desc = document.createElement('p');
+    desc.textContent = course.shortDescription || '';
+
+    const tags = document.createElement('div');
+    tags.className = 'course-tags';
+    if (course.level) {
+      const s = document.createElement('span');
+      s.textContent = course.level;
+      tags.appendChild(s);
+    }
+    if (course.language) {
+      const s = document.createElement('span');
+      s.textContent = course.language;
+      tags.appendChild(s);
+    }
+    (course.tags || []).slice(0, 3).forEach((t) => {
+      const s = document.createElement('span');
+      s.textContent = t;
+      tags.appendChild(s);
+    });
+
+    const footer = document.createElement('div');
+    footer.className = 'course-footer';
+    const fees = course.fees || {};
+    const firstFee = Object.values(fees).find((v) => v != null);
+    if (firstFee != null) {
+      const label = document.createElement('span');
+      label.className = 'course-price-label';
+      label.textContent = 'Starting from';
+      const price = document.createElement('span');
+      price.className = 'course-price';
+      price.textContent = formatFee(firstFee);
+      footer.appendChild(label);
+      footer.appendChild(price);
+    }
+
+    card.appendChild(thumb);
+    card.appendChild(h3);
+    card.appendChild(desc);
+    card.appendChild(tags);
+    card.appendChild(footer);
+
+    return card;
+  };
+
+  const load = async () => {
+    try {
+      const response = await fetch(`${DB_URL}/public_courses.json`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`RTDB request failed (${response.status})`);
+
+      const value = await response.json();
+      const items = value && typeof value === 'object'
+        ? Object.entries(value)
+            .map(([id, item]) => ({ id, ...(item && typeof item === 'object' ? item : {}) }))
+            .sort((a, b) => {
+              const ai = a.order_index ?? 9999;
+              const bi = b.order_index ?? 9999;
+              return ai - bi;
+            })
+        : [];
+
+      if (!items.length) return;
+
+      grid.innerHTML = '';
+      items.forEach((course, i) => grid.appendChild(renderCard(course, i)));
+    } catch (e) {
+      console.warn('Failed to load public courses', e);
+    }
+  };
+
+  load();
+}
+
+function initTeachers() {
+  const container = document.querySelector('[data-hero-teachers]');
+  if (!container) return;
+
+  const DB_URL = 'https://dreamenglishacademy-3efcd-default-rtdb.firebaseio.com';
+
+  const load = async () => {
+    try {
+      const response = await fetch(`${DB_URL}/public_teachers.json`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`RTDB request failed (${response.status})`);
+
+      const value = await response.json();
+      const items = value && typeof value === 'object'
+        ? Object.entries(value)
+            .map(([id, item]) => ({ id, ...(item && typeof item === 'object' ? item : {}) }))
+        : [];
+
+      if (!items.length) return;
+
+      container.innerHTML = '';
+      items.forEach((teacher, i) => {
+        const chip = document.createElement('div');
+        chip.className = 'teacher-chip' + (i === 0 ? ' active' : '');
+        chip.textContent = teacher.fullName || 'Teacher';
+        container.appendChild(chip);
+      });
+    } catch (e) {
+      console.warn('Failed to load public teachers', e);
+    }
+  };
+
+  load();
+}
+
 function initGallery() {
   const targets = Array.from(document.querySelectorAll('[data-public-gallery]'));
   if (!targets.length) return;
@@ -653,6 +806,8 @@ function initLanguage() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initMenu();
+  initCourses();
+  initTeachers();
   initGallery();
   initLanguage();
 });

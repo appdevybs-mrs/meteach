@@ -242,7 +242,7 @@ class _TeacherSharedFilesScreenState extends State<TeacherSharedFilesScreen> {
       setState(() => _uploading = true);
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
-        withData: false,
+        withData: kIsWeb,
         type: FileType.custom,
         allowedExtensions: _allowedDocExt.toList()..sort(),
       );

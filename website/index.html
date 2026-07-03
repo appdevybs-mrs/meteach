@@ -20,7 +20,9 @@
       <a href="#courses">Courses</a>
       <a href="#gallery">Gallery</a>
       <a href="#world">World</a>
+      <a href="https://www.yourbridgeschool.com/online/#/verify" target="_blank">Verify</a>
     </nav>
+    <label class="lang-picker"><select id="language-switcher" class="lang-select"><option value="en">EN</option><option value="ar">AR</option><option value="fr">FR</option></select></label>
     <button class="btn-login" onclick="openLogin()">Login</button>
   </div>
 </header>
@@ -29,25 +31,22 @@
 <section class="hero">
   <div class="container hero-grid">
     <div class="hero-content">
-      <span class="hero-badge">Your path to English excellence</span>
-      <h1>Build your future<br>with <span class="text-orange">Your Bridge School</span></h1>
-      <p class="hero-text">Access training programs, certifications, career pathways, and international opportunities. Learn practical skills with expert mentors and flexible study options.</p>
-      <p class="hero-slogan">Not for the certificate, for the skill</p>
+      <span class="hero-badge" data-i18n="hero.pill">Your path to English excellence</span>
+      <h1><span data-i18n="hero.titleA">Build your future</span><br><span data-i18n="hero.titleBPrefix">with</span> <span class="text-orange" data-i18n="hero.titleBBrand">Your Bridge School</span></h1>
+      <p class="hero-text" data-i18n="hero.lead">Access training programs, certifications, career pathways, and international opportunities. Learn practical skills with expert mentors and flexible study options.</p>
+      <p class="hero-slogan" data-i18n="hero.slogan">Not for the certificate, for the skill</p>
       <div class="hero-btns">
-        <a href="#courses" class="btn btn-primary">Explore Courses</a>
-        <a href="#gallery" class="btn btn-outline">View Gallery</a>
+        <a href="#courses" class="btn btn-primary" data-i18n="hero.primaryCta">Start Learning Today</a>
+        <a href="#gallery" class="btn btn-outline" data-i18n="hero.secondaryCta">Explore Courses</a>
       </div>
     </div>
     <div class="hero-card">
       <div class="hero-card-header">
         <span class="hero-card-icon">🎓</span>
-        <span>Meet the Teachers</span>
+        <span data-i18n="teacher.title">Meet the Teachers</span>
       </div>
-      <div class="hero-teachers">
-        <div class="teacher-chip active">Farah Chahrazed Bekai</div>
-        <div class="teacher-chip">Nadir Tamri</div>
-        <div class="teacher-chip">Amel Djihane Hamidi</div>
-        <div class="teacher-chip">Teacher</div>
+      <div class="hero-teachers" data-hero-teachers>
+        <div class="teacher-chip active">Loading teachers...</div>
       </div>
       <div class="hero-video">
         <div class="hero-video-play">▶</div>
@@ -63,66 +62,19 @@
 <section class="section" id="courses">
   <div class="container">
     <div class="section-head">
-      <h2>Our Courses</h2>
-      <p>Browse our programs and register directly from the website.</p>
+      <h2 data-i18n="courses.title">Our Courses</h2>
+      <p data-i18n="courses.lead">Browse our programs and register directly from the website.</p>
     </div>
-    <div class="courses-grid">
-      <div class="course-card" onclick="openCourse('general')">
-        <div class="course-thumb" style="background:linear-gradient(135deg,#1A2B48,#2E4A78)">📘</div>
-        <h3>General English</h3>
-        <p>Build a strong foundation in English with structured lessons, speaking practice, and real-world topics.</p>
-        <div class="course-tags">
-          <span>Beginner</span>
-          <span>English</span>
-          <span>General</span>
+    <div class="courses-grid" data-courses-grid>
+      <noscript>
+        <div class="course-card">
+          <div class="course-thumb" style="background:linear-gradient(135deg,#1A2B48,#2E4A78)"></div>
+          <h3>General English</h3>
+          <p>Build a strong foundation in English with structured lessons, speaking practice, and real-world topics.</p>
+          <div class="course-tags"><span>Beginner</span><span>English</span></div>
+          <div class="course-footer"><span class="course-price-label">Starting from</span><span class="course-price">15,000 DA</span></div>
         </div>
-        <div class="course-footer">
-          <span class="course-price-label">Starting from</span>
-          <span class="course-price">15,000 DA</span>
-        </div>
-      </div>
-      <div class="course-card" onclick="openCourse('business')">
-        <div class="course-thumb" style="background:linear-gradient(135deg,#F98D28,#E07A1A)">💼</div>
-        <h3>Business English</h3>
-        <p>Professional English for the workplace. Improve email writing, presentations, meetings, and negotiation skills.</p>
-        <div class="course-tags">
-          <span>Intermediate</span>
-          <span>Business</span>
-          <span>English</span>
-        </div>
-        <div class="course-footer">
-          <span class="course-price-label">Starting from</span>
-          <span class="course-price">25,000 DA</span>
-        </div>
-      </div>
-      <div class="course-card" onclick="openCourse('ielts')">
-        <div class="course-thumb" style="background:linear-gradient(135deg,#00D4FF,#00A8CC)">🎯</div>
-        <h3>IELTS Preparation</h3>
-        <p>Intensive course covering all IELTS modules. Mock tests, strategies, and personal feedback from certified trainers.</p>
-        <div class="course-tags">
-          <span>Advanced</span>
-          <span>IELTS</span>
-          <span>Exam</span>
-        </div>
-        <div class="course-footer">
-          <span class="course-price-label">Starting from</span>
-          <span class="course-price">35,000 DA</span>
-        </div>
-      </div>
-      <div class="course-card" onclick="openCourse('conversation')">
-        <div class="course-thumb" style="background:linear-gradient(135deg,#1A2B48,#F98D28)">🗣️</div>
-        <h3>Conversation Course</h3>
-        <p>Boost your speaking fluency with guided conversations, debates, pronunciation drills, and daily life scenarios.</p>
-        <div class="course-tags">
-          <span>All Levels</span>
-          <span>Speaking</span>
-          <span>Practice</span>
-        </div>
-        <div class="course-footer">
-          <span class="course-price-label">Starting from</span>
-          <span class="course-price">8,000 DA</span>
-        </div>
-      </div>
+      </noscript>
     </div>
   </div>
 </section>
@@ -188,12 +140,12 @@
     <div>
       <div class="footer-brand">
         <span class="logo-mark">YB</span>
-        <strong>Your Bridge School</strong>
+        <strong data-i18n="brand.name">Your Bridge School</strong>
       </div>
-      <p>Your path to English excellence. Join a community that learns with confidence and purpose.</p>
+      <p data-i18n="footer.mission">Your path to English excellence. Join a community that learns with confidence and purpose.</p>
     </div>
     <div>
-      <h4>Contact Us</h4>
+      <h4 data-i18n="footer.contact">Contact Us</h4>
       <ul>
         <li>+213 655 54 82 93</li>
         <li>contact@yourbridgeschool.com</li>
@@ -201,16 +153,17 @@
       </ul>
     </div>
     <div>
-      <h4>Quick Links</h4>
+      <h4 data-i18n="footer.explore">Quick Links</h4>
       <ul>
-        <li><a href="#courses">Courses</a></li>
-        <li><a href="#gallery">Gallery</a></li>
+        <li><a href="#courses" data-i18n="nav.courses">Courses</a></li>
+        <li><a href="#gallery" data-i18n="nav.gallery">Gallery</a></li>
         <li><a href="#world">World Map</a></li>
+        <li><a href="https://www.yourbridgeschool.com/online/#/verify" target="_blank">Verify Certificate</a></li>
       </ul>
     </div>
   </div>
   <div class="container footer-bottom">
-    &copy; 2026 Your Bridge School. All rights reserved.
+    <span data-i18n="footer.rights">&copy; 2026 Your Bridge School. All rights reserved.</span>
   </div>
 </footer>
 

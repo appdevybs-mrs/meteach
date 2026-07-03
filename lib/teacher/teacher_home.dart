@@ -1314,6 +1314,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 onOpenSyllabi: _openSyllabiScreen,
                 onOpenShared: _openSharedScreen,
                 onOpenMyPlatform: _openMyPlatformScreen,
+                onOpenHomeworkInbox: _openHomeworkInboxScreen,
                 onLogout: () => _logout(context),
               ),
         appBar: AppBar(
@@ -2130,6 +2131,7 @@ class _TeacherDrawer extends StatefulWidget {
     required this.onOpenGames,
     required this.onOpenStories,
     required this.onOpenInstructions,
+    required this.onOpenHomeworkInbox,
     required this.onLogout,
   });
 
@@ -2151,6 +2153,7 @@ class _TeacherDrawer extends StatefulWidget {
   final VoidCallback onOpenGames;
   final VoidCallback onOpenStories;
   final VoidCallback onOpenInstructions;
+  final VoidCallback onOpenHomeworkInbox;
   final VoidCallback onLogout;
 
   @override
@@ -2170,6 +2173,7 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
     'online_circle',
     'mail',
     'reminders',
+    'homework_inbox',
     'wages',
     'regulations',
     'syllabi',
@@ -2350,6 +2354,13 @@ class _TeacherDrawerState extends State<_TeacherDrawer> {
         icon: TeacherIcons.reminders,
         title: 'Reminders',
         onTap: widget.onOpenReminders,
+      ),
+      _TeacherMenuEntry(
+        id: 'homework_inbox',
+        icon: TeacherIcons.homeworkStat,
+        title: 'Homework Inbox',
+        subtitle: 'Review student homework',
+        onTap: widget.onOpenHomeworkInbox,
       ),
       _TeacherMenuEntry(
         id: 'wages',

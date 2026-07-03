@@ -74,6 +74,7 @@ class AppWindowKeys {
   static const adminInstructions = 'instructions';
   static const adminSplashScreen = 'splash_screen';
   static const adminGallery = 'gallery';
+  static const adminPublicDataExport = 'public_data_export';
 
   static const teacherInstructions = 'instructions';
 

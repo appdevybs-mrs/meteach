@@ -1096,6 +1096,13 @@ class _LearnerHomeState extends State<LearnerHome> {
                 onOpenSettings: _openSettingsSheet,
                 onOpenInstructions: _openInstructionsScreen,
                 onLogout: () => _logout(context),
+                onOpenBooking: _openBookingScreen,
+                onOpenMail: _openMailScreen,
+                onOpenReminders: _openRemindersScreen,
+                onOpenHomework: () => _openHomeworkCoursePicker(context),
+                onOpenGallery: _openGalleryScreen,
+                onOpenStories: _openStoriesScreen,
+                onOpenGames: _openGamesScreen,
               ),
 
         appBar: AppBar(
@@ -1209,6 +1216,7 @@ class _LearnerHomeState extends State<LearnerHome> {
                   onOpenStories: _openStoriesScreen,
                   onOpenGames: _openGamesScreen,
                   onOpenInstructions: _openInstructionsScreen,
+                  onOpenRegulations: _openRegulationsScreen,
                   onOpenCoach: _openStudyCoachScreen,
                   onOpenProfile: _openProfileScreen,
                   onLogout: () => _logout(context),
@@ -7681,6 +7689,7 @@ class _LearnerHomeWebRail extends StatelessWidget {
     required this.onOpenStories,
     required this.onOpenGames,
     required this.onOpenInstructions,
+    required this.onOpenRegulations,
     required this.onOpenCoach,
     required this.onOpenProfile,
     required this.onLogout,
@@ -7695,6 +7704,7 @@ class _LearnerHomeWebRail extends StatelessWidget {
   final VoidCallback onOpenStories;
   final VoidCallback onOpenGames;
   final VoidCallback onOpenInstructions;
+  final VoidCallback onOpenRegulations;
   final VoidCallback onOpenCoach;
   final VoidCallback onOpenProfile;
   final VoidCallback onLogout;
@@ -7781,6 +7791,14 @@ class _LearnerHomeWebRail extends StatelessWidget {
                     title: 'Instructions',
                     arabicSubtitle: 'التعليمات',
                     onTap: onOpenInstructions,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.regulations,
+                    accent: const Color(0xFFF59E0B),
+                    title: 'Regulations',
+                    arabicSubtitle: 'اللوائح',
+                    onTap: onOpenRegulations,
                   ),
                   _DrawerTile(
                     palette: palette,
@@ -7909,6 +7927,13 @@ class _LearnerDrawer extends StatelessWidget {
     required this.onOpenSettings,
     required this.onOpenInstructions,
     required this.onLogout,
+    required this.onOpenBooking,
+    required this.onOpenMail,
+    required this.onOpenReminders,
+    required this.onOpenHomework,
+    required this.onOpenGallery,
+    required this.onOpenStories,
+    required this.onOpenGames,
   });
 
   final _HomePalette palette;
@@ -7925,6 +7950,13 @@ class _LearnerDrawer extends StatelessWidget {
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenInstructions;
   final VoidCallback onLogout;
+  final VoidCallback onOpenBooking;
+  final VoidCallback onOpenMail;
+  final VoidCallback onOpenReminders;
+  final VoidCallback onOpenHomework;
+  final VoidCallback onOpenGallery;
+  final VoidCallback onOpenStories;
+  final VoidCallback onOpenGames;
 
   @override
   Widget build(BuildContext context) {
@@ -8041,6 +8073,94 @@ class _LearnerDrawer extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
                 children: [
                   _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.booking,
+                    accent: const Color(0xFF2563EB),
+                    title: 'Booking',
+                    arabicSubtitle: 'الحجز',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenBooking();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.mail,
+                    accent: const Color(0xFF06B6D4),
+                    title: 'Mail',
+                    arabicSubtitle: 'البريد',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenMail();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.reminders,
+                    accent: const Color(0xFF7C3AED),
+                    title: 'Reminders',
+                    arabicSubtitle: 'التذكيرات',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenReminders();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.homework,
+                    accent: const Color(0xFFF59E0B),
+                    title: 'Homework',
+                    arabicSubtitle: 'الواجبات',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenHomework();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.gallery,
+                    accent: const Color(0xFF8B5CF6),
+                    title: 'Gallery',
+                    arabicSubtitle: 'معرض الصور',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenGallery();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.stories,
+                    accent: const Color(0xFFD97706),
+                    title: 'Stories',
+                    arabicSubtitle: 'القصص',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenStories();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.games,
+                    accent: const Color(0xFFEC4899),
+                    title: 'Games',
+                    arabicSubtitle: 'الألعاب',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenGames();
+                    },
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: LearnerIcons.instructions,
+                    accent: const Color(0xFF6366F1),
+                    title: 'Instructions',
+                    arabicSubtitle: 'التعليمات',
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onOpenInstructions();
+                    },
+                  ),
+                  _DrawerTile(
                     targetKey: coachTileKey,
                     palette: palette,
                     icon: LearnerIcons.studyCoach,
@@ -8074,17 +8194,6 @@ class _LearnerDrawer extends StatelessWidget {
                     onTap: () {
                       Navigator.of(context).pop();
                       onOpenRegulations();
-                    },
-                  ),
-                  _DrawerTile(
-                    palette: palette,
-                    icon: LearnerIcons.instructions,
-                    accent: const Color(0xFF6366F1),
-                    title: 'Instructions',
-                    arabicSubtitle: 'التعليمات',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onOpenInstructions();
                     },
                   ),
                   _DrawerTile(

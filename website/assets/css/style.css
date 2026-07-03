@@ -648,6 +648,23 @@ input, button, select { font: inherit; }
 }
 .gender-option input { display: none; }
 
+/* ===== Language Picker ===== */
+.lang-picker { position: relative; margin-left: 8px; }
+.lang-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none;
+}
+.lang-select option { color: #1a1a2e; background: #fff; }
+
 /* ===== Responsive ===== */
 @media (max-width: 1024px) {
   .hero-grid {
@@ -663,6 +680,7 @@ input, button, select { font: inherit; }
 }
 @media (max-width: 720px) {
   .nav { display: none; }
+  .lang-picker { margin-left: auto; }
   .courses-grid {
     grid-template-columns: 1fr;
   }

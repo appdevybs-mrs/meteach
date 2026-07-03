@@ -25,6 +25,7 @@ import '../shared/app_feedback.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/chat_sender_identity.dart';
 import '../shared/media_download.dart';
+import '../shared/link_preview_widget.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1102,6 +1103,126 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     } catch (_) {}
   }
 
+  Future<void> _showLinkConfirmationDialog(String rawUrl) async {
+    const _dialogNavy = Color(0xFF243B5A);
+    const _dialogOrange = Color(0xFFEC740A);
+    final url = _safeNetworkUrl(rawUrl);
+    if (url.isEmpty) return;
+
+    final domain = Uri.tryParse(url)?.host.replaceFirst('www.', '') ?? url;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: _dialogNavy,
+        surfaceTintColor: Colors.transparent,
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _dialogOrange.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.open_in_new_rounded, color: _dialogOrange, size: 40),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Open external link?',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    if (domain.isNotEmpty)
+                      Text(
+                        domain,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _dialogOrange,
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      url,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'You will be taken to your browser.',
+                style: TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.2),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: _dialogOrange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text(
+                'Open Link',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _openUrlExternal(url);
+  }
+
   static String _safeNetworkUrl(String raw) {
     var s = raw.trim();
     if (s.isEmpty) return '';
@@ -1696,6 +1817,23 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         ),
       ),
     );
+  }
+
+  List<Widget> _buildLinkPreviews(String body, {required bool mine}) {
+    const _orange = Color(0xFFEC740A);
+    final urls = extractUrls(body).take(3).toList();
+    if (urls.isEmpty) return [];
+    return [
+      if (body.trim().isNotEmpty) const SizedBox(height: 6),
+      ...urls.map(
+        (u) => LinkPreviewWidget(
+          key: ValueKey(u),
+          url: safePreviewUrl(u),
+          heroColor: _orange,
+          onTap: () => _showLinkConfirmationDialog(u),
+        ),
+      ),
+    ];
   }
 
   Widget _buildAttachmentWidget({
@@ -2535,15 +2673,23 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                                         .isNotEmpty)
                                                       MarkdownBody(
                                                         data: m.body,
-                                                        selectable: true,
+                                                        selectable: false,
+                                                        onTapLink: (_, href, __) {
+                                                          if (href != null &&
+                                                              href.isNotEmpty) {
+                                                            _showLinkConfirmationDialog(
+                                                              href,
+                                                            );
+                                                          }
+                                                        },
                                                         styleSheet:
                                                             MarkdownStyleSheet(
                                                               p: TextStyle(
                                                                 color: mine
                                                                     ? Colors
-                                                                          .white
+                                                                        .white
                                                                     : Colors
-                                                                          .black87,
+                                                                        .black87,
                                                                 fontWeight:
                                                                     FontWeight
                                                                         .w600,
@@ -2552,15 +2698,29 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                                               strong: TextStyle(
                                                                 color: mine
                                                                     ? Colors
-                                                                          .white
+                                                                        .white
                                                                     : Colors
-                                                                          .black87,
+                                                                        .black87,
                                                                 fontWeight:
                                                                     FontWeight
                                                                         .w900,
                                                               ),
+                                                              a: TextStyle(
+                                                                color: const Color(
+                                                                    0xFFEC740A),
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                decoration:
+                                                                    TextDecoration
+                                                                        .underline,
+                                                              ),
                                                             ),
                                                       ),
+                                                    ..._buildLinkPreviews(
+                                                      m.body,
+                                                      mine: mine,
+                                                    ),
                                                     if (m
                                                         .attachments
                                                         .isNotEmpty) ...[

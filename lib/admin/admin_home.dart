@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../shared/human_error.dart';
 import '../services/backend_api.dart';
+import '../services/public_data_export_service.dart';
 import 'admin_contract_screen.dart';
 import 'admin_wages_screen.dart';
 import 'admin_payments.dart';
@@ -306,6 +307,55 @@ class _AdminHomeState extends State<AdminHome> {
         onAllowed: onAllowed,
       ),
     );
+  }
+
+  Future<void> _exportPublicData(BuildContext context) async {
+    if (!OfflineActionGuard.ensureOnline(context)) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('Export Public Data'),
+        content: const Text(
+          'This will sync courses and teacher profiles to the public website nodes.\n\nContinue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dCtx).pop(true),
+            child: const Text('Export'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true || !mounted) return;
+
+    try {
+      final counts = await PublicDataExportService.exportAll();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Exported ${counts['courses']} courses, '
+            '${counts['teachers']} teachers '
+            '(${counts['writes']} writes)',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Export failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _logout(BuildContext context) async {
@@ -786,6 +836,17 @@ class _AdminHomeState extends State<AdminHome> {
         ),
       ),
       card(
+        'Export Public Data',
+        windowKey: AppWindowKeys.adminPublicDataExport,
+        child: _DashCard(
+          title: 'Export Public Data',
+          icon: Icons.sync_rounded,
+          color: AdminHome.accentAmber,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _exportPublicData(context),
+        ),
+      ),
+      card(
         'Gallery',
         windowKey: AppWindowKeys.adminGallery,
         child: _DashGalleryCard(
@@ -1213,6 +1274,51 @@ class _AdminHomeState extends State<AdminHome> {
             await WidgetsBinding.instance.endOfFrame;
             if (!context.mounted) return;
             await _logout(context);
+          },
+          onOpenLearners: () {
+            Navigator.of(context).pop();
+            _openAdminWindow(
+              AppWindowKeys.adminLearners,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
+              ),
+            );
+          },
+          onOpenPayments: () {
+            Navigator.of(context).pop();
+            _openAdminWindow(
+              AppWindowKeys.adminPayments,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
+              ),
+            );
+          },
+          onOpenClasses: () {
+            Navigator.of(context).pop();
+            _openAdminWindow(
+              AppWindowKeys.adminClasses,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
+              ),
+            );
+          },
+          onOpenStaff: () {
+            Navigator.of(context).pop();
+            _openAdminWindow(
+              AppWindowKeys.adminStaff,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
+              ),
+            );
+          },
+          onOpenMail: () {
+            Navigator.of(context).pop();
+            _openAdminWindow(
+              AppWindowKeys.adminMail,
+              () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
+              ),
+            );
           },
         ),
         appBar: AppBar(
@@ -1687,6 +1793,11 @@ class _AdminHomeDrawer extends StatelessWidget {
   final VoidCallback onSelectAdmin;
   final VoidCallback onSelectReceptionist;
   final VoidCallback onLogout;
+  final VoidCallback onOpenLearners;
+  final VoidCallback onOpenPayments;
+  final VoidCallback onOpenClasses;
+  final VoidCallback onOpenStaff;
+  final VoidCallback onOpenMail;
 
   const _AdminHomeDrawer({
     required this.userEmail,
@@ -1696,6 +1807,11 @@ class _AdminHomeDrawer extends StatelessWidget {
     required this.onSelectAdmin,
     required this.onSelectReceptionist,
     required this.onLogout,
+    required this.onOpenLearners,
+    required this.onOpenPayments,
+    required this.onOpenClasses,
+    required this.onOpenStaff,
+    required this.onOpenMail,
   });
 
   @override
@@ -1795,6 +1911,55 @@ class _AdminHomeDrawer extends StatelessWidget {
                         : AdminHome.actionOrange,
                     onTap: onOpenMain,
                   ),
+                  const Divider(height: 1),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Text(
+                      'QUICK ACCESS',
+                      style: TextStyle(
+                        color: AdminHome.softText,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                  _DrawerTile(
+                    icon: Icons.school_rounded,
+                    title: 'Learners',
+                    subtitle: 'Open learner management',
+                    color: AdminHome.primaryBlue,
+                    onTap: onOpenLearners,
+                  ),
+                  _DrawerTile(
+                    icon: AdminIcons.navPayments,
+                    title: 'Payments',
+                    subtitle: 'Financial records',
+                    color: AdminHome.actionOrange,
+                    onTap: onOpenPayments,
+                  ),
+                  _DrawerTile(
+                    icon: Icons.class_rounded,
+                    title: 'Classes',
+                    subtitle: 'Classes and attendance',
+                    color: AdminHome.accentIndigo,
+                    onTap: onOpenClasses,
+                  ),
+                  _DrawerTile(
+                    icon: Icons.group_rounded,
+                    title: 'Staff',
+                    subtitle: 'Teacher management',
+                    color: AdminHome.accentTeal,
+                    onTap: onOpenStaff,
+                  ),
+                  _DrawerTile(
+                    icon: Icons.mail_rounded,
+                    title: 'Admin Mail',
+                    subtitle: 'Internal messages',
+                    color: AdminHome.accentCyan,
+                    onTap: onOpenMail,
+                  ),
+                  const Divider(height: 1),
                   _DrawerTile(
                     icon: Icons.logout_rounded,
                     title: 'Logout',

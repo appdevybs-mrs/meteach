@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -1133,7 +1134,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
 
     final picked = await FilePicker.platform.pickFiles(
       allowMultiple: true,
-      withData: false,
+      withData: kIsWeb,
       type: FileType.custom,
       allowedExtensions: const [
         'html',
@@ -2361,7 +2362,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         allowMultiple: false,
         type: FileType.custom,
         allowedExtensions: const ['pdf'],
-        withData: false,
+        withData: kIsWeb,
       );
       if (pickedRes == null || pickedRes.files.isEmpty) return;
 
@@ -4537,7 +4538,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
-        withData: false,
+        withData: kIsWeb,
         type: FileType.video,
       );
 
@@ -4615,7 +4616,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
-        withData: false,
+        withData: kIsWeb,
         type: FileType.custom,
         allowedExtensions: const ['html', 'htm'],
       );
@@ -4686,7 +4687,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
 
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: false,
-        withData: false,
+        withData: kIsWeb,
         type: FileType.custom,
         allowedExtensions: const ['html', 'htm'],
       );
@@ -4739,7 +4740,7 @@ class _SessionEditorSheetState extends State<_SessionEditorSheet> {
       setState(() => _materialsUploadProgress = 0);
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
-        withData: false,
+        withData: kIsWeb,
         type: FileType.any,
       );
       if (result == null || result.files.isEmpty) return;
@@ -5697,7 +5698,7 @@ class _RecordedBulkSimpleUploadSheetState
 
     final picked = await FilePicker.platform.pickFiles(
       allowMultiple: true,
-      withData: false,
+      withData: kIsWeb,
       type: FileType.custom,
       allowedExtensions: const [
         'html',
@@ -6765,7 +6766,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     if (_uploading) return;
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
-      withData: false,
+      withData: kIsWeb,
       type: FileType.video,
     );
     if (result == null || result.files.isEmpty) return;
@@ -6795,7 +6796,7 @@ class _RecordedBulkUploadSheetState extends State<_RecordedBulkUploadSheet> {
     if (_uploading) return;
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
-      withData: false,
+      withData: kIsWeb,
       type: FileType.custom,
       allowedExtensions: const ['html', 'htm'],
     );
