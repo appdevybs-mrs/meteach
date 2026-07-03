@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +9,7 @@ import '../shared/human_error.dart';
 import '../shared/learner_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../services/course_feedback_service.dart';
+import '../services/internal_mail_service.dart';
 import 'teacher_learner_profile_screen.dart';
 import 'teacher_mail_thread_screen.dart';
 import 'teacher_reminder.dart';
@@ -78,6 +81,7 @@ class _TeacherRecordedCourseCommentsScreenState
   final Set<String> _loadingReplies = <String>{};
   final Map<String, int> _replyCountByComment = {};
   int _replyAvailabilityRequestId = 0;
+  StreamSubscription<DatabaseEvent>? _commentsSub;
 
   bool _busy = true;
   bool _posting = false;
@@ -96,8 +100,19 @@ class _TeacherRecordedCourseCommentsScreenState
     super.initState();
     _filter = widget.initialFilterPending
         ? _CourseCommentFilter.pending
-        : _CourseCommentFilter.approved;
+        : _CourseCommentFilter.all;
     _loadComments();
+    _commentsSub = _db
+        .child('lesson_comments')
+        .child(_courseId)
+        .onValue
+        .listen((_) => _loadComments());
+  }
+
+  @override
+  void dispose() {
+    _commentsSub?.cancel();
+    super.dispose();
   }
 
   String _normalizedStatus(String raw) {
@@ -388,6 +403,56 @@ class _TeacherRecordedCourseCommentsScreenState
       } finally {
         if (mounted) setState(() => _deletingPermanently = false);
       }
+      return;
+    }
+    if (status == CourseFeedbackService.statusNotApproved) {
+      final teacher = FirebaseAuth.instance.currentUser;
+      final teacherUid = teacher?.uid ?? '';
+      final teacherName = teacher?.displayName ?? 'Teacher';
+      final lessonTitle =
+          _lessonMetaById[item.lessonId]?.title.trim().isEmpty == false
+          ? _lessonMetaById[item.lessonId]!.title.trim()
+          : item.lessonId;
+      await CourseFeedbackService.archiveAndDeleteLessonComment(
+        courseId: _courseId,
+        lessonId: item.lessonId,
+        commentId: item.id,
+        actorUid: teacherUid,
+        actorName: teacherName,
+        reason: 'not_approved',
+        context: <String, dynamic>{
+          'courseTitle': widget.courseTitle,
+          'lessonTitle': lessonTitle,
+          'learnerUid': item.uid,
+          'learnerName': item.displayName,
+        },
+      );
+      try {
+        await InternalMailService.sendAutoMail(
+          senderUid: teacherUid,
+          senderName: teacherName,
+          senderRole: 'teacher',
+          receiverUid: item.uid,
+          receiverName: item.displayName.trim().isEmpty
+              ? 'Learner'
+              : item.displayName.trim(),
+          receiverRole: 'learner',
+          subject: 'Learning Reflection Needs Improvement',
+          body:
+              '$lessonTitle\n\n'
+              'Dear ${item.firstName.trim().isEmpty ? 'Learner' : item.firstName.trim()},\n\n'
+              'Thank you for writing your learning reflection.\n\n'
+              'Please watch the lesson carefully and submit a revised reflection that clearly connects to the lesson topic.\n\n'
+              'Best regards,\n$teacherName',
+        );
+      } catch (_) {}
+      if (mounted) {
+        AppToast.show(
+          context,
+          'Reflection rejected, removed, and learner notified.',
+        );
+      }
+      await _loadComments();
       return;
     }
     await CourseFeedbackService.moderateLessonComment(
@@ -1004,24 +1069,29 @@ class _TeacherRecordedCourseCommentsScreenState
                               fontSize: 11,
                             ),
                           ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            _lessonLabel(item.lessonId),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFF1D4ED8),
-                              fontWeight: FontWeight.w800,
-                              fontSize: 10,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                _lessonLabel(item.lessonId),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF1D4ED8),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 10,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1131,9 +1201,9 @@ class _TeacherRecordedCourseCommentsScreenState
                         child: Text('Approve'),
                       ),
                     if (!_isNotApproved(item))
-                      PopupMenuItem(
+                      const PopupMenuItem(
                         value: CourseFeedbackService.statusNotApproved,
-                        child: const Text('Not approve'),
+                        child: Text('Not approve'),
                       ),
                     const PopupMenuItem(value: 'hidden', child: Text('Hide')),
                     if (_isRemoved(item))
@@ -1290,6 +1360,7 @@ class _TeacherRecordedCourseCommentsScreenState
     );
   }
 
+  // ignore: unused_element
   Widget _statsButton() {
     return IconButton(
       tooltip: 'Statistics',
@@ -1322,13 +1393,25 @@ class _TeacherRecordedCourseCommentsScreenState
     final removedVisibleComments = comments.where(_isRemoved).toList();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Course comments'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Course Reflection'),
+            Text(
+              widget.courseTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
         actions: [
-          _statsButton(),
           IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loadComments,
-            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Removed reflections',
+            onPressed: () => setState(() {
+              _filter = _CourseCommentFilter.removed;
+            }),
+            icon: const Icon(Icons.delete_outline_rounded),
           ),
         ],
       ),
@@ -1338,207 +1421,135 @@ class _TeacherRecordedCourseCommentsScreenState
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-            child: Column(
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF0B2545), Color(0xFF2563EB)],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: RefreshIndicator(
+              onRefresh: _loadComments,
+              child: Column(
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      const Text(
-                        'Recorded course discussion',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
+                      _filterChip(
+                        _CourseCommentFilter.all,
+                        'All',
+                        const Color(0xFF1D4ED8),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.courseTitle,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      _filterChip(
+                        _CourseCommentFilter.pending,
+                        'Pending',
+                        const Color(0xFFF59E0B),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _miniStatChip(
-                            'Approved',
-                            _approvedCount,
-                            const Color(0xFFDCFCE7),
-                            const Color(0xFF166534),
-                          ),
-                          _miniStatChip(
-                            'All',
-                            _totalComments,
-                            const Color(0xFFE0F2FE),
-                            const Color(0xFF0369A1),
-                          ),
-                          _miniStatChip(
-                            'Pending',
-                            _pendingCount,
-                            const Color(0xFFFEF3C7),
-                            const Color(0xFFB45309),
-                          ),
-                          _miniStatChip(
-                            'Reported',
-                            _reportedCount,
-                            const Color(0xFFFEE2E2),
-                            const Color(0xFFB91C1C),
-                          ),
-                          _miniStatChip(
-                            'Removed',
-                            _removedCount,
-                            const Color(0xFFFEE2E2),
-                            const Color(0xFFB91C1C),
-                          ),
-                        ],
+                      _filterChip(
+                        _CourseCommentFilter.notApproved,
+                        'Rejected',
+                        const Color(0xFF9333EA),
+                      ),
+                      _filterChip(
+                        _CourseCommentFilter.approved,
+                        'Approved',
+                        const Color(0xFF16A34A),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _filterChip(
-                      _CourseCommentFilter.approved,
-                      'Approved',
-                      const Color(0xFF16A34A),
-                    ),
-                    _filterChip(
-                      _CourseCommentFilter.all,
-                      'All',
-                      const Color(0xFF1D4ED8),
-                    ),
-                    _filterChip(
-                      _CourseCommentFilter.pending,
-                      'Pending',
-                      const Color(0xFFF59E0B),
-                    ),
-                    _filterChip(
-                      _CourseCommentFilter.reported,
-                      'Reported',
-                      const Color(0xFFEF4444),
-                    ),
-                    _filterChip(
-                      _CourseCommentFilter.removed,
-                      'Removed',
-                      const Color(0xFFDC2626),
-                    ),
-                    _filterChip(
-                      _CourseCommentFilter.notApproved,
-                      'Not approved',
-                      const Color(0xFF9333EA),
+                  if (removedView) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        border: Border.all(color: const Color(0xFFFED7AA)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          FilledButton.tonal(
+                            onPressed: _deletingPermanently
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _selectedRemovedCommentIds
+                                        ..clear()
+                                        ..addAll(
+                                          removedVisibleComments.map(
+                                            (e) => e.id,
+                                          ),
+                                        );
+                                    });
+                                  },
+                            child: const Text('Select all loaded'),
+                          ),
+                          OutlinedButton(
+                            onPressed: _deletingPermanently
+                                ? null
+                                : () => setState(
+                                    () => _selectedRemovedCommentIds.clear(),
+                                  ),
+                            child: const Text('Clear'),
+                          ),
+                          FilledButton.icon(
+                            onPressed:
+                                _deletingPermanently ||
+                                    _selectedRemovedCommentIds.isEmpty
+                                ? null
+                                : () => _deleteSelectedRemovedComments(
+                                    removedVisibleComments,
+                                  ),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFB91C1C),
+                            ),
+                            icon: const Icon(Icons.delete_forever_rounded),
+                            label: Text(
+                              _deletingPermanently
+                                  ? 'Deleting...'
+                                  : 'Delete selected (${_selectedRemovedCommentIds.length})',
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
-                ),
-                if (removedView) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF7ED),
-                      border: Border.all(color: const Color(0xFFFED7AA)),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        FilledButton.tonal(
-                          onPressed: _deletingPermanently
-                              ? null
-                              : () {
-                                  setState(() {
-                                    _selectedRemovedCommentIds
-                                      ..clear()
-                                      ..addAll(
-                                        removedVisibleComments.map((e) => e.id),
-                                      );
-                                  });
-                                },
-                          child: const Text('Select all loaded'),
-                        ),
-                        OutlinedButton(
-                          onPressed: _deletingPermanently
-                              ? null
-                              : () => setState(
-                                  () => _selectedRemovedCommentIds.clear(),
-                                ),
-                          child: const Text('Clear'),
-                        ),
-                        FilledButton.icon(
-                          onPressed:
-                              _deletingPermanently ||
-                                  _selectedRemovedCommentIds.isEmpty
-                              ? null
-                              : () => _deleteSelectedRemovedComments(
-                                  removedVisibleComments,
-                                ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFB91C1C),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: _busy
+                        ? const Center(child: CircularProgressIndicator())
+                        : _error != null
+                        ? Center(
+                            child: Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          )
+                        : comments.isEmpty
+                        ? const Center(
+                            child: Text('No comments for this course yet.'),
+                          )
+                        : ListView.builder(
+                            itemCount: groups.length,
+                            itemBuilder: (_, index) {
+                              final group = groups[index];
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _commentGroupHeader(group),
+                                  for (final item in group.items)
+                                    _commentCard(
+                                      item,
+                                      removedView: removedView,
+                                    ),
+                                ],
+                              );
+                            },
                           ),
-                          icon: const Icon(Icons.delete_forever_rounded),
-                          label: Text(
-                            _deletingPermanently
-                                ? 'Deleting...'
-                                : 'Delete selected (${_selectedRemovedCommentIds.length})',
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                Expanded(
-                  child: _busy
-                      ? const Center(child: CircularProgressIndicator())
-                      : _error != null
-                      ? Center(
-                          child: Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        )
-                      : comments.isEmpty
-                      ? const Center(
-                          child: Text('No comments for this course yet.'),
-                        )
-                      : ListView.builder(
-                          itemCount: groups.length,
-                          itemBuilder: (_, index) {
-                            final group = groups[index];
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _commentGroupHeader(group),
-                                for (final item in group.items)
-                                  _commentCard(item, removedView: removedView),
-                              ],
-                            );
-                          },
-                        ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -1546,6 +1557,7 @@ class _TeacherRecordedCourseCommentsScreenState
     );
   }
 
+  // ignore: unused_element
   Widget _miniStatChip(String label, int value, Color bg, Color fg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),

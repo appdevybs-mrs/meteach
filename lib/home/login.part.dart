@@ -15,9 +15,19 @@ class LoginScreen extends StatelessWidget {
     if (context.isDesktopOrWider) {
       return Scaffold(
         backgroundColor: Brand.appBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back_rounded),
+            color: Brand.primaryBlue,
+          ),
+        ),
         body: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             child: form,
           ),
         ),

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../services/course_feedback_service.dart';
 import '../services/internal_mail_service.dart';
+import '../shared/app_feedback.dart';
+import '../shared/human_error.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/study_variant.dart';
 import 'teacher_learner_profile_screen.dart';
@@ -18,8 +20,6 @@ class TeacherMyPlatformScreen extends StatefulWidget {
   State<TeacherMyPlatformScreen> createState() =>
       _TeacherMyPlatformScreenState();
 }
-
-enum _MyPlatformMainTab { learners, courses }
 
 class _MyPlatformItem {
   const _MyPlatformItem({
@@ -139,7 +139,7 @@ class _RecordedLessonDetail {
   final String? commentId;
 
   bool get isDone {
-    if (hasVideo && hasMaterials) return videoDone && materialsDone;
+    if (hasVideo && hasMaterials) return videoDone;
     if (hasVideo) return videoDone;
     if (hasMaterials) return materialsDone;
     return false;
@@ -160,15 +160,20 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   String? _error;
   bool _learnersBusy = true;
   String? _learnersError;
-  _MyPlatformMainTab _mainTab = _MyPlatformMainTab.learners;
 
   List<_MyPlatformItem> _all = const [];
   List<_LearnerRecordedProgressItem> _learnerProgressRows = const [];
   Set<String> _assignedCourseIds = const <String>{};
   final Map<String, String> _courseLabelById = <String, String>{};
+  final Map<String, String> _courseThumbnailById = <String, String>{};
+  final Set<String> _expandedCourseIds = <String>{};
+  final Map<String, String> _learnerSearchByCourse = <String, String>{};
+  final Map<String, Set<String>> _assignedCourseKeysByLearnerUid =
+      <String, Set<String>>{};
+  final Map<String, Map<String, Map<String, String>>> _commentCacheByCourse =
+      <String, Map<String, Map<String, String>>>{};
   final Map<String, Map<String, _RecordedSessionMeta>> _recordedMetaCache =
       <String, Map<String, _RecordedSessionMeta>>{};
-  final Set<String> _expandedRecordedRows = <String>{};
   final Map<String, Future<_RecordedLearnerDetails>>
   _recordedDetailsFutureByRow = <String, Future<_RecordedLearnerDetails>>{};
 
@@ -188,6 +193,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       _learnersError = null;
     });
     try {
+      _assignedCourseKeysByLearnerUid.clear();
+      _commentCacheByCourse.clear();
+      _courseThumbnailById.clear();
       final assignedMap = await _loadAssignedCourses();
       final assigned = assignedMap.keys.toSet();
       final items = await _loadFeedbackItems(assigned);
@@ -204,11 +212,11 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           ..addAll(assignedMap);
         _all = items;
         _learnerProgressRows = learnerRows;
-        _expandedRecordedRows.clear();
         _recordedDetailsFutureByRow.clear();
         _busy = false;
         _learnersBusy = false;
       });
+      _silentLegacyCleanup();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -220,6 +228,12 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     }
   }
 
+  void _silentLegacyCleanup() {
+    Future(
+      () => CourseFeedbackService.approveLegacyLessonCommentsGlobally(),
+    ).catchError((_) => <String, int>{});
+  }
+
   Future<Map<String, String>> _loadAssignedCourses() async {
     final out = <String, String>{};
 
@@ -228,6 +242,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       String title = '',
       String code = '',
       String fallback = '',
+      String thumbnail = '',
     }) {
       final cleanId = id.trim();
       if (cleanId.isEmpty) return;
@@ -240,6 +255,17 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                 : cleanCode)
           : (cleanCode.isEmpty ? cleanTitle : '$cleanTitle ($cleanCode)');
       out[cleanId] = label;
+      final cleanThumb = thumbnail.trim();
+      if (cleanThumb.isNotEmpty) _courseThumbnailById[cleanId] = cleanThumb;
+    }
+
+    void addLearnerCandidate(String uid, String courseKeyOrId) {
+      final cleanUid = uid.trim();
+      final cleanCourse = courseKeyOrId.trim();
+      if (cleanUid.isEmpty || cleanCourse.isEmpty) return;
+      _assignedCourseKeysByLearnerUid
+          .putIfAbsent(cleanUid, () => <String>{})
+          .add(cleanCourse);
     }
 
     bool teacherMatches(dynamic raw) {
@@ -294,12 +320,14 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           id: id,
           title: (m['title'] ?? '').toString(),
           code: (m['course_code'] ?? m['courseCode'] ?? '').toString(),
+          thumbnail: (m['thumbnail'] ?? m['thumbnailUrl'] ?? '').toString(),
           fallback: id.isEmpty ? nodeKey : id,
         );
         addCourse(
           id: nodeKey,
           title: (m['title'] ?? '').toString(),
           code: (m['course_code'] ?? m['courseCode'] ?? '').toString(),
+          thumbnail: (m['thumbnail'] ?? m['thumbnailUrl'] ?? '').toString(),
           fallback: id.isEmpty ? nodeKey : id,
         );
       }
@@ -320,6 +348,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           id: courseId,
           title: (m['title'] ?? '').toString(),
           code: (m['course_code'] ?? m['courseCode'] ?? '').toString(),
+          thumbnail: (m['thumbnail'] ?? m['thumbnailUrl'] ?? '').toString(),
         );
       }
     }
@@ -344,6 +373,28 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           id: (m['course_id'] ?? m['courseId'] ?? '').toString(),
           title: (m['course_title'] ?? m['courseTitle'] ?? '').toString(),
         );
+
+        final classCourseId = (m['course_id'] ?? m['courseId'] ?? '')
+            .toString()
+            .trim();
+        final learners = m['learners'];
+        if (learners is Map) {
+          final learnerMap = Map<dynamic, dynamic>.from(learners);
+          for (final learnerEntry in learnerMap.entries) {
+            addLearnerCandidate(learnerEntry.key.toString(), classCourseId);
+          }
+        } else if (learners is List) {
+          for (final learner in learners) {
+            if (learner is Map) {
+              addLearnerCandidate(
+                (learner['uid'] ?? '').toString(),
+                classCourseId,
+              );
+            } else {
+              addLearnerCandidate(learner.toString(), classCourseId);
+            }
+          }
+        }
       }
     }
 
@@ -369,6 +420,19 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           id: (m['courseKey'] ?? m['course_key'] ?? '').toString(),
           title: (m['courseTitle'] ?? m['course_title'] ?? '').toString(),
         );
+        final learnerUid =
+            (m['uid'] ??
+                    m['learnerUid'] ??
+                    m['learner_uid'] ??
+                    m['studentUid'] ??
+                    m['student_uid'] ??
+                    '')
+                .toString();
+        addLearnerCandidate(learnerUid, _extractCourseId(m));
+        addLearnerCandidate(
+          learnerUid,
+          (m['courseKey'] ?? m['course_key'] ?? '').toString(),
+        );
       }
     }
 
@@ -382,6 +446,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
             if (raw is! Map) continue;
             final m = Map<String, dynamic>.from(raw);
             out[courseId] = labelFromCourseMap(m, out[courseId] ?? courseId);
+            final thumb = (m['thumbnail'] ?? m['thumbnailUrl'] ?? '')
+                .toString()
+                .trim();
+            if (thumb.isNotEmpty) _courseThumbnailById[courseId] = thumb;
           }
         }
       } catch (_) {}
@@ -457,11 +525,15 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final out = <_MyPlatformItem>[];
 
     for (final courseId in courseIds) {
+      final courseCommentCache = <String, Map<String, String>>{};
       final commentsSnap = await _db
           .child('lesson_comments')
           .child(courseId)
           .get();
-      if (!commentsSnap.exists || commentsSnap.value is! Map) continue;
+      if (!commentsSnap.exists || commentsSnap.value is! Map) {
+        _commentCacheByCourse[courseId] = courseCommentCache;
+        continue;
+      }
 
       final lessons = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
       for (final lesson in lessons.entries) {
@@ -473,6 +545,20 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           if (entry.value is! Map) continue;
           final m = (entry.value as Map).map((k, v) => MapEntry('$k', v));
           final item = LessonCommentItem.fromMap(entry.key.toString(), m);
+          final status = CourseFeedbackService.normalizeLessonCommentStatus(
+            item.status,
+          );
+          if (status == CourseFeedbackService.statusRemoved ||
+              status == CourseFeedbackService.statusNotApproved ||
+              status == 'hidden') {
+            continue;
+          }
+          final cacheKey = '${lessonId}__${item.uid}';
+          courseCommentCache[cacheKey] = {
+            'status': status,
+            'text': item.text,
+            'id': item.id,
+          };
           out.add(
             _MyPlatformItem(
               courseId: courseId,
@@ -491,6 +577,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           );
         }
       }
+      _commentCacheByCourse[courseId] = courseCommentCache;
     }
 
     out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -523,12 +610,14 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           final sessionId = (m['id'] ?? '').toString().trim();
           if (sessionId.isEmpty) return;
 
+          final matUrl = (m['materialsUrl'] ?? '').toString().trim();
+          final matHidden = (m['materialsHidden'] ?? false) is bool
+              ? (m['materialsHidden'] as bool)
+              : (m['materialsHidden'] ?? '').toString().trim().toLowerCase() ==
+                    'true';
           out[sessionId] = _RecordedSessionMeta(
             hasVideo: (m['videoUrl'] ?? '').toString().trim().isNotEmpty,
-            hasMaterials: (m['materialsUrl'] ?? '')
-                .toString()
-                .trim()
-                .isNotEmpty,
+            hasMaterials: matUrl.isNotEmpty && !matHidden,
           );
         }
 
@@ -584,7 +673,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final materialsDone = asBool(progress['materialsCompleted']);
 
     if (meta.hasVideo && meta.hasMaterials) {
-      return videoDone && materialsDone;
+      return videoDone;
     }
     if (meta.hasVideo) return videoDone;
     if (meta.hasMaterials) return materialsDone;
@@ -596,16 +685,25 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   }) async {
     final out = <_LearnerRecordedProgressItem>[];
 
+    final users = <String, Map<String, dynamic>>{};
     final usersSnap = await _db.child('users').get();
-    if (!usersSnap.exists || usersSnap.value is! Map) return out;
-
-    final users = Map<dynamic, dynamic>.from(usersSnap.value as Map);
+    if (usersSnap.exists && usersSnap.value is Map) {
+      final rawUsers = Map<dynamic, dynamic>.from(usersSnap.value as Map);
+      for (final entry in rawUsers.entries) {
+        if (entry.value is Map) {
+          users[entry.key.toString()] = Map<String, dynamic>.from(
+            entry.value as Map,
+          );
+        }
+      }
+    }
+    if (users.isEmpty) return out;
 
     for (final userEntry in users.entries) {
       final learnerUid = userEntry.key.toString().trim();
-      if (learnerUid.isEmpty || userEntry.value is! Map) continue;
+      if (learnerUid.isEmpty) continue;
 
-      final user = Map<String, dynamic>.from(userEntry.value as Map);
+      final user = userEntry.value;
       if (_isClearlyNonLearnerRole((user['role'] ?? '').toString())) continue;
 
       final first = (user['first_name'] ?? '').toString().trim();
@@ -630,6 +728,14 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
         final courseId = _extractCourseId(course);
         if (courseId.isEmpty) continue;
+
+        final candidateCourses = _assignedCourseKeysByLearnerUid[learnerUid];
+        if (candidateCourses != null &&
+            candidateCourses.isNotEmpty &&
+            !candidateCourses.contains(courseId) &&
+            !candidateCourses.contains(courseKey)) {
+          continue;
+        }
 
         if (assignedCourseKeys.isNotEmpty &&
             !assignedCourseKeys.contains(courseId) &&
@@ -767,9 +873,15 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         ? Map<dynamic, dynamic>.from(progressSnap.value as Map)
         : <dynamic, dynamic>{};
 
-    // Load comments for this course, indexed by lessonId for this learner
     final commentDataByLesson = <String, Map<String, String>>{};
-    try {
+    final cachedCourseComments = _commentCacheByCourse[courseId];
+    if (cachedCourseComments != null) {
+      cachedCourseComments.forEach((key, value) {
+        final parts = key.split('__');
+        if (parts.length != 2 || parts[1] != learnerUid) return;
+        commentDataByLesson[parts[0]] = value;
+      });
+    } else {
       final commentsSnap = await _db
           .child('lesson_comments')
           .child(courseId)
@@ -783,9 +895,17 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           for (final commentEntry in comments.entries) {
             if (commentEntry.value is! Map) continue;
             final m = Map<dynamic, dynamic>.from(commentEntry.value as Map);
+            final status = CourseFeedbackService.normalizeLessonCommentStatus(
+              m['status'],
+            );
+            if (status == CourseFeedbackService.statusRemoved ||
+                status == CourseFeedbackService.statusNotApproved ||
+                status == 'hidden') {
+              continue;
+            }
             if ((m['uid'] ?? '').toString().trim() == learnerUid) {
               commentDataByLesson[lessonId] = {
-                'status': (m['status'] ?? 'pending').toString(),
+                'status': status,
                 'text': (m['text'] ?? '').toString(),
                 'id': commentEntry.key.toString(),
               };
@@ -793,7 +913,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           }
         }
       }
-    } catch (_) {}
+    }
 
     final sessionItems = <Map<String, dynamic>>[];
     if (syllabusSnap.exists && syllabusSnap.value is Map) {
@@ -955,6 +1075,54 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     ).push(MaterialPageRoute(builder: (_) => const TeacherReminderScreen()));
   }
 
+  Future<void> _resetLearnerRecordedCourse(
+    _LearnerRecordedProgressItem item,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset learner course?'),
+        content: Text(
+          'This will clear ${item.learnerName}\'s recorded progress for ${item.courseTitle} and archive/remove their active reflections for this course. The learner will start fresh.',
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C),
+            ),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      final teacher = FirebaseAuth.instance.currentUser;
+      final result = await CourseFeedbackService.resetRecordedCourseForLearner(
+        learnerUid: item.learnerUid,
+        courseId: item.courseId,
+        courseKey: item.courseKey,
+        actorUid: teacher?.uid ?? _uid,
+        actorName: teacher?.displayName ?? 'Teacher',
+      );
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        'Progress reset. Archived ${result['archivedComments'] ?? 0} reflections.',
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, toHumanError(e), type: AppToastType.error);
+    }
+  }
+
   void _showLearnerActions(_LearnerRecordedProgressItem item) {
     showModalBottomSheet<void>(
       context: context,
@@ -1031,6 +1199,16 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                 onTap: () {
                   Navigator.pop(ctx);
                   _openLearnerReminder(item);
+                },
+              ),
+              _sheetAction(
+                icon: Icons.restart_alt_rounded,
+                title: 'Clean up',
+                subtitle: 'Clear corrupted progress and start fresh',
+                color: const Color(0xFFB91C1C),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _resetLearnerRecordedCourse(item);
                 },
               ),
             ],
@@ -1140,6 +1318,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         item.status,
       );
       commentCounts[item.courseId] = (commentCounts[item.courseId] ?? 0) + 1;
+      learnerSets.putIfAbsent(item.courseId, () => <String>{}).add(item.uid);
       if (status == CourseFeedbackService.statusPending) {
         pendingCounts[item.courseId] = (pendingCounts[item.courseId] ?? 0) + 1;
       }
@@ -1200,6 +1379,100 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     );
   }
 
+  int _pendingReflectionCountForLearner(_LearnerRecordedProgressItem learner) {
+    final comments = _commentCacheByCourse[learner.courseId];
+    if (comments == null) return 0;
+    var count = 0;
+    comments.forEach((key, value) {
+      if (!key.endsWith('__${learner.learnerUid}')) return;
+      if (value['status'] == CourseFeedbackService.statusPending) count += 1;
+    });
+    return count;
+  }
+
+  List<_LearnerRecordedProgressItem> _learnersForCourse(
+    String courseId,
+    String search,
+  ) {
+    final q = search.trim().toLowerCase();
+    final out = <_LearnerRecordedProgressItem>[];
+    final seen = <String>{};
+
+    for (final row in _learnerProgressRows) {
+      if (row.courseId != courseId && row.courseKey != courseId) continue;
+      if (q.isNotEmpty &&
+          !row.learnerName.toLowerCase().contains(q) &&
+          !row.courseTitle.toLowerCase().contains(q)) {
+        continue;
+      }
+      out.add(row);
+      seen.add(row.learnerUid);
+    }
+
+    for (final item in _all) {
+      if (item.courseId != courseId || seen.contains(item.uid)) continue;
+      final name = item.displayName.trim().isEmpty
+          ? (item.firstName.trim().isEmpty ? 'Learner' : item.firstName.trim())
+          : item.displayName.trim();
+      if (q.isNotEmpty && !name.toLowerCase().contains(q)) continue;
+      out.add(
+        _LearnerRecordedProgressItem(
+          learnerUid: item.uid,
+          learnerName: name,
+          photoUrl: item.photoUrl,
+          courseKey: courseId,
+          courseId: courseId,
+          courseTitle: _courseLabel(courseId),
+          completedSessions: 0,
+          totalSessions: 0,
+          progressPct: 0,
+        ),
+      );
+      seen.add(item.uid);
+    }
+
+    out.sort((a, b) {
+      final pendingCmp = _pendingReflectionCountForLearner(
+        b,
+      ).compareTo(_pendingReflectionCountForLearner(a));
+      if (pendingCmp != 0) return pendingCmp;
+      final progressCmp = a.progressPct.compareTo(b.progressPct);
+      if (progressCmp != 0) return progressCmp;
+      return a.learnerName.toLowerCase().compareTo(b.learnerName.toLowerCase());
+    });
+    return out;
+  }
+
+  Widget _courseThumbnail(String courseId, Color accent) {
+    final url = (_courseThumbnailById[courseId] ?? '').trim();
+    if (url.isEmpty) {
+      return Container(
+        width: 62,
+        height: 62,
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Icon(Icons.video_library_rounded, color: accent, size: 26),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Image.network(
+        url,
+        width: 62,
+        height: 62,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => Container(
+          width: 62,
+          height: 62,
+          color: accent.withValues(alpha: 0.14),
+          child: Icon(Icons.video_library_rounded, color: accent),
+        ),
+      ),
+    );
+  }
+
   Widget _buildRecordedCoursesBody() {
     final summaries =
         _recordedCourseSummaries
@@ -1231,14 +1504,23 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         final course = summaries[index];
         final accent = _courseAccent(course.courseId);
 
+        final expanded = _expandedCourseIds.contains(course.courseId);
+        final search = _learnerSearchByCourse[course.courseId] ?? '';
+        final learners = _learnersForCourse(course.courseId, search);
+
         return Material(
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(18),
-            onTap: () => _openRecordedCourseComments(
-              course,
-              pendingFirst: course.pendingCommentCount > 0,
-            ),
+            onTap: () {
+              setState(() {
+                if (expanded) {
+                  _expandedCourseIds.remove(course.courseId);
+                } else {
+                  _expandedCourseIds.add(course.courseId);
+                }
+              });
+            },
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -1259,19 +1541,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(
-                          Icons.video_library_rounded,
-                          color: accent,
-                          size: 22,
-                        ),
-                      ),
+                      _courseThumbnail(course.courseId, accent),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1327,6 +1597,13 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: const Color(0xFF64748B),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -1353,12 +1630,6 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         const Color(0xFFB45309),
                       ),
                       _courseStatChip(
-                        'Reported',
-                        course.reportedCommentCount,
-                        const Color(0xFFFEE2E2),
-                        const Color(0xFFB91C1C),
-                      ),
-                      _courseStatChip(
                         'Completed learners',
                         course.completedLearnerCount,
                         const Color(0xFFD1FAE5),
@@ -1366,58 +1637,59 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: course.pendingCommentCount > 0
-                              ? () => _openRecordedCourseComments(
-                                  course,
-                                  pendingFirst: true,
-                                )
-                              : null,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: accent,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: const Color(0xFFE2E8F0),
-                            disabledForegroundColor: const Color(0xFF64748B),
-                            minimumSize: const Size.fromHeight(48),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                  if (expanded) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Search learners',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        isDense: true,
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE2E8F0),
                           ),
-                          icon: const Icon(
-                            Icons.pending_actions_rounded,
-                            size: 18,
-                          ),
-                          label: const Text('Review pending'),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _openRecordedCourseComments(course),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: accent,
-                            side: BorderSide(
-                              color: accent.withValues(alpha: 0.4),
+                      onChanged: (value) => setState(() {
+                        _learnerSearchByCourse[course.courseId] = value;
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 620),
+                      child: learners.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(14),
+                              child: Text('No learners found for this course.'),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: learners.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, learnerIndex) {
+                                final learner = learners[learnerIndex];
+                                final pending =
+                                    _pendingReflectionCountForLearner(learner);
+                                return _expandedCourseLearnerTile(
+                                  learner,
+                                  pending,
+                                  accent,
+                                );
+                              },
                             ),
-                            minimumSize: const Size.fromHeight(48),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                          label: const Text('Open all'),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => _openRecordedCourseComments(course),
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Open Course Reflection'),
+                    ),
+                    SizedBox(height: MediaQuery.of(context).padding.bottom),
+                  ],
                 ],
               ),
             ),
@@ -1441,6 +1713,90 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     );
   }
 
+  Widget _expandedCourseLearnerTile(
+    _LearnerRecordedProgressItem learner,
+    int pendingCount,
+    Color accent,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: pendingCount > 0
+            ? const Color(0xFFFFFBEB)
+            : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: pendingCount > 0
+              ? const Color(0xFFFDE68A)
+              : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Row(
+        children: [
+          InkWell(
+            onTap: () => _showLearnerActions(learner),
+            borderRadius: BorderRadius.circular(999),
+            child: ProfileAvatar(
+              name: learner.learnerName,
+              photoUrl: learner.photoUrl,
+              radius: 18,
+              borderColor: const Color(0xFFE0E7FF),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  learner.learnerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${learner.completedSessions}/${learner.totalSessions} lessons • ${learner.progressPct}%',
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (pendingCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$pendingCount pending',
+                style: const TextStyle(
+                  color: Color(0xFF92400E),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 10.5,
+                ),
+              ),
+            ),
+          IconButton(
+            tooltip: 'View lessons',
+            onPressed: () => _openLearnerProgressPopup(learner),
+            icon: Icon(Icons.account_tree_rounded, color: accent),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _mainTabChip({
     required String label,
     required IconData icon,
@@ -1493,6 +1849,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _buildLearnersProgressBody() {
     if (_learnersBusy) {
       return const Center(child: CircularProgressIndicator());
@@ -1592,8 +1949,6 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, i) {
               final item = _learnerProgressRows[i];
-              final rowKey = _recordedRowKey(item);
-              final expanded = _expandedRecordedRows.contains(rowKey);
               final progress = item.totalSessions > 0
                   ? (item.completedSessions / item.totalSessions).clamp(
                       0.0,
@@ -1684,24 +2039,12 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           splashRadius: 16,
-                          tooltip: expanded ? 'Hide details' : 'Show details',
-                          icon: Icon(
-                            expanded
-                                ? Icons.keyboard_arrow_up_rounded
-                                : Icons.keyboard_arrow_down_rounded,
-                            color: const Color(0xFF334155),
+                          tooltip: 'View progress',
+                          icon: const Icon(
+                            Icons.open_in_new_rounded,
+                            color: Color(0xFF334155),
                           ),
-                          onPressed: () {
-                            setState(() {
-                              if (expanded) {
-                                _expandedRecordedRows.remove(rowKey);
-                              } else {
-                                _expandedRecordedRows.add(rowKey);
-                                _recordedDetailsFutureByRow[rowKey] ??=
-                                    _loadRecordedLearnerDetails(item);
-                              }
-                            });
-                          },
+                          onPressed: () => _openLearnerProgressPopup(item),
                         ),
                       ],
                     ),
@@ -1738,124 +2081,6 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                         },
                       ),
                     ),
-                    if (expanded) ...[
-                      const SizedBox(height: 10),
-                      DefaultTabController(
-                        length: 2,
-                        child: FutureBuilder<_RecordedLearnerDetails>(
-                          future: _recordedDetailsFutureByRow[rowKey],
-                          builder: (context, snap) {
-                            if (snap.hasError) {
-                              return const Text(
-                                'Could not load lesson details.',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFFB91C1C),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              );
-                            }
-                            if (!snap.hasData) {
-                              return const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 6),
-                                child: SizedBox(
-                                  height: 16,
-                                  width: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              );
-                            }
-
-                            final details = snap.data!;
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: const Color(0xFFE2E8F0),
-                                    ),
-                                  ),
-                                  child: TabBar(
-                                    indicator: BoxDecoration(
-                                      color: const Color(0xFFDBEAFE),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    labelColor: const Color(0xFF1D4ED8),
-                                    unselectedLabelColor: const Color(
-                                      0xFF64748B,
-                                    ),
-                                    labelStyle: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 11.5,
-                                    ),
-                                    tabs: const [
-                                      Tab(
-                                        height: 34,
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.pending_actions_rounded,
-                                              size: 16,
-                                            ),
-                                            SizedBox(width: 6),
-                                            Text('Left lessons'),
-                                          ],
-                                        ),
-                                      ),
-                                      Tab(
-                                        height: 34,
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.check_circle_rounded,
-                                              size: 16,
-                                            ),
-                                            SizedBox(width: 6),
-                                            Text('Studied lessons'),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                SizedBox(
-                                  height: 230,
-                                  child: TabBarView(
-                                    children: [
-                                      _lessonTabList(
-                                        details.left,
-                                        learnerItem: item,
-                                        done: false,
-                                        emptyText: 'No pending lessons.',
-                                        accent: const Color(0xFF9A3412),
-                                      ),
-                                      _lessonTabList(
-                                        details.studied,
-                                        learnerItem: item,
-                                        done: true,
-                                        emptyText: 'No studied lessons yet.',
-                                        accent: const Color(0xFF166534),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               );
@@ -1866,80 +2091,396 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     );
   }
 
-  Widget _lessonTabList(
-    List<_RecordedLessonDetail> items, {
-    required _LearnerRecordedProgressItem learnerItem,
-    required bool done,
-    required String emptyText,
-    required Color accent,
-  }) {
-    if (items.isEmpty) {
-      return Center(
-        child: Text(
-          emptyText,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF64748B),
-          ),
-        ),
-      );
-    }
+  Future<void> _openLearnerProgressPopup(
+    _LearnerRecordedProgressItem item,
+  ) async {
+    final rowKey = _recordedRowKey(item);
+    final future = _recordedDetailsFutureByRow[rowKey] ??=
+        _loadRecordedLearnerDetails(item);
 
-    return ListView.separated(
-      itemCount: items.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 6),
-      itemBuilder: (context, index) {
-        final item = items[index];
-        final contextBits = <String>[];
-        if (item.moduleTitle.isNotEmpty) contextBits.add(item.moduleTitle);
-        if (item.unitTitle.isNotEmpty) contextBits.add(item.unitTitle);
-
-        return Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: done ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: accent.withValues(alpha: 0.18)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
-                      ),
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      backgroundColor: const Color(0xFFF8FAFC),
+      builder: (ctx) {
+        final media = MediaQuery.of(ctx);
+        return SizedBox(
+          height: media.size.height * 0.88,
+          child: FutureBuilder<_RecordedLearnerDetails>(
+            future: future,
+            builder: (context, snap) {
+              if (snap.hasError) {
+                return const Center(
+                  child: Text(
+                    'Could not load lesson details.',
+                    style: TextStyle(
+                      color: Color(0xFFB91C1C),
+                      fontWeight: FontWeight.w800,
                     ),
-                    if (contextBits.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        contextBits.join(' • '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              _commentStatusIcon(item, learnerItem),
-            ],
+                  ),
+                );
+              }
+              if (!snap.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return _buildLearnerProgressPopup(item, snap.data!);
+            },
           ),
         );
       },
+    );
+  }
+
+  Widget _buildLearnerProgressPopup(
+    _LearnerRecordedProgressItem learner,
+    _RecordedLearnerDetails details,
+  ) {
+    final lessons = <_RecordedLessonDetail>[
+      ...details.left,
+      ...details.studied,
+    ];
+    final byModule = <String, Map<String, List<_RecordedLessonDetail>>>{};
+    for (final lesson in lessons) {
+      final module = lesson.moduleTitle.trim().isEmpty
+          ? 'Module'
+          : lesson.moduleTitle.trim();
+      final unit = lesson.unitTitle.trim().isEmpty
+          ? 'Unit'
+          : lesson.unitTitle.trim();
+      byModule
+          .putIfAbsent(module, () => <String, List<_RecordedLessonDetail>>{})
+          .putIfAbsent(unit, () => <_RecordedLessonDetail>[])
+          .add(lesson);
+    }
+
+    final progress = learner.totalSessions > 0
+        ? learner.completedSessions / learner.totalSessions
+        : 0.0;
+    final selectedUnitByModule = <String, String>{
+      for (final entry in byModule.entries)
+        if (entry.value.isNotEmpty) entry.key: entry.value.keys.first,
+    };
+
+    return StatefulBuilder(
+      builder: (context, setSheetState) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0F766E), Color(0xFF2563EB)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
+                children: [
+                  ProfileAvatar(
+                    name: learner.learnerName,
+                    photoUrl: learner.photoUrl,
+                    radius: 24,
+                    borderColor: Colors.white,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          learner.learnerName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 17,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          learner.courseTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.86),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            minHeight: 7,
+                            value: progress.clamp(0.0, 1.0),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.24,
+                            ),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                              Color(0xFFA7F3D0),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      '${learner.completedSessions}/${learner.totalSessions}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: byModule.isEmpty
+                  ? const Center(child: Text('No recorded lessons found.'))
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        0,
+                        16,
+                        18 + MediaQuery.of(context).padding.bottom,
+                      ),
+                      itemCount: byModule.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final moduleEntry = byModule.entries.elementAt(index);
+                        final moduleTitle = moduleEntry.key;
+                        final units = moduleEntry.value;
+                        final selectedUnit = selectedUnitByModule[moduleTitle];
+                        final unitLessons =
+                            units[selectedUnit] ??
+                            (units.isEmpty
+                                ? const <_RecordedLessonDetail>[]
+                                : units.values.first);
+                        final moduleLessons = units.values
+                            .expand((items) => items)
+                            .toList(growable: false);
+                        final done = moduleLessons
+                            .where((e) => e.isDone)
+                            .length;
+
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFF0F172A,
+                                ).withValues(alpha: 0.04),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      moduleTitle,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 15,
+                                        color: Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    '$done/${moduleLessons.length} lessons',
+                                    style: const TextStyle(
+                                      color: Color(0xFF64748B),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                height: 42,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: units.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(width: 8),
+                                  itemBuilder: (context, unitIndex) {
+                                    final unitEntry = units.entries.elementAt(
+                                      unitIndex,
+                                    );
+                                    final isSelected =
+                                        unitEntry.key == selectedUnit;
+                                    final unitDone = unitEntry.value
+                                        .where((lesson) => lesson.isDone)
+                                        .length;
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(13),
+                                      onTap: () {
+                                        setSheetState(() {
+                                          selectedUnitByModule[moduleTitle] =
+                                              unitEntry.key;
+                                        });
+                                      },
+                                      child: Container(
+                                        constraints: const BoxConstraints(
+                                          minWidth: 108,
+                                          maxWidth: 220,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: isSelected
+                                              ? const Color(0xFFEEF2FF)
+                                              : const Color(0xFFF8FAFC),
+                                          borderRadius: BorderRadius.circular(
+                                            13,
+                                          ),
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? const Color(0xFF4F46E5)
+                                                : const Color(0xFFE2E8F0),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              unitDone == unitEntry.value.length
+                                                  ? Icons.check_circle_rounded
+                                                  : Icons
+                                                        .radio_button_unchecked_rounded,
+                                              size: 15,
+                                              color:
+                                                  unitDone ==
+                                                      unitEntry.value.length
+                                                  ? const Color(0xFF16A34A)
+                                                  : const Color(0xFF64748B),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Flexible(
+                                              child: Text(
+                                                unitEntry.key,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: const Color(
+                                                    0xFF1E293B,
+                                                  ),
+                                                  fontWeight: isSelected
+                                                      ? FontWeight.w900
+                                                      : FontWeight.w700,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              for (final lesson in unitLessons)
+                                _popupLessonRow(lesson, learner),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _popupLessonRow(
+    _RecordedLessonDetail lesson,
+    _LearnerRecordedProgressItem learner,
+  ) {
+    final done = lesson.isDone;
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: done ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: done ? const Color(0xFFBBF7D0) : const Color(0xFFFDE68A),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            done ? Icons.check_circle_rounded : Icons.pending_actions_rounded,
+            color: done ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+            size: 19,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  lesson.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  [
+                    if (lesson.hasVideo)
+                      lesson.videoDone ? 'Video done' : 'Video left',
+                    if (lesson.hasMaterials)
+                      lesson.materialsDone
+                          ? 'Materials done'
+                          : 'Materials left',
+                  ].join(' • '),
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _commentStatusIcon(lesson, learner),
+        ],
+      ),
     );
   }
 
@@ -1963,11 +2504,6 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       color = const Color(0xFF2563EB);
       bgColor = const Color(0xFFDBEAFE);
       tooltip = 'Reflection approved';
-    } else if (status == CourseFeedbackService.statusNotApproved) {
-      icon = Icons.error_outline_rounded;
-      color = const Color(0xFFDC2626);
-      bgColor = const Color(0xFFFEE2E2);
-      tooltip = 'Reflection not approved';
     } else {
       icon = Icons.hourglass_bottom_rounded;
       color = const Color(0xFFD97706);
@@ -1998,7 +2534,15 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   String? _normalizedReflectionStatus(String? raw) {
     final rawStatus = (raw ?? '').trim();
     if (rawStatus.isEmpty) return null;
-    return CourseFeedbackService.normalizeLessonCommentStatus(rawStatus);
+    final status = CourseFeedbackService.normalizeLessonCommentStatus(
+      rawStatus,
+    );
+    if (status == CourseFeedbackService.statusRemoved ||
+        status == CourseFeedbackService.statusNotApproved ||
+        status == 'hidden') {
+      return null;
+    }
+    return status;
   }
 
   Future<void> _moderateComment({
@@ -2009,37 +2553,47 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final commentId = lesson.commentId;
     if (commentId == null || commentId.isEmpty) return;
 
-    final newStatus = approve
-        ? CourseFeedbackService.statusVisible
-        : CourseFeedbackService.statusNotApproved;
-
-    await CourseFeedbackService.moderateLessonComment(
-      courseId: learner.courseId,
-      lessonId: lesson.lessonId,
-      commentId: commentId,
-      status: newStatus,
-    );
-
     if (approve) {
+      await CourseFeedbackService.moderateLessonComment(
+        courseId: learner.courseId,
+        lessonId: lesson.lessonId,
+        commentId: commentId,
+        status: CourseFeedbackService.statusVisible,
+      );
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Reflection approved.')));
       }
     } else {
-      // Send auto-mail to learner
+      final teacher = FirebaseAuth.instance.currentUser;
+      final teacherName = teacher?.displayName ?? 'Teacher';
+      final teacherUid = teacher?.uid ?? _uid;
+      final contextBits = <String>[];
+      if (lesson.moduleTitle.isNotEmpty) contextBits.add(lesson.moduleTitle);
+      if (lesson.unitTitle.isNotEmpty) contextBits.add(lesson.unitTitle);
+      final lessonPath = contextBits.isEmpty
+          ? lesson.title
+          : '${contextBits.join(' / ')} / ${lesson.title}';
+
+      await CourseFeedbackService.archiveAndDeleteLessonComment(
+        courseId: learner.courseId,
+        lessonId: lesson.lessonId,
+        commentId: commentId,
+        actorUid: teacherUid,
+        actorName: teacherName,
+        reason: 'not_approved',
+        context: <String, dynamic>{
+          'learnerUid': learner.learnerUid,
+          'learnerName': learner.learnerName,
+          'courseTitle': learner.courseTitle,
+          'moduleTitle': lesson.moduleTitle,
+          'unitTitle': lesson.unitTitle,
+          'lessonTitle': lesson.title,
+        },
+      );
+
       try {
-        final teacher = FirebaseAuth.instance.currentUser;
-        final teacherName = teacher?.displayName ?? 'Teacher';
-        final teacherUid = teacher?.uid ?? _uid;
-
-        final contextBits = <String>[];
-        if (lesson.moduleTitle.isNotEmpty) contextBits.add(lesson.moduleTitle);
-        if (lesson.unitTitle.isNotEmpty) contextBits.add(lesson.unitTitle);
-        final lessonPath = contextBits.isEmpty
-            ? lesson.title
-            : '${contextBits.join(' / ')} / ${lesson.title}';
-
         await InternalMailService.sendAutoMail(
           senderUid: teacherUid,
           senderName: teacherName,
@@ -2064,7 +2618,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Reflection marked as not approved. Learner notified.',
+              'Reflection rejected, removed, and learner notified.',
             ),
           ),
         );
@@ -2075,27 +2629,38 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final rowKey = _recordedRowKey(learner);
     if (mounted) {
       setState(() {
-        _all = _all.map((item) {
-          if (item.courseId != learner.courseId ||
-              item.lessonId != lesson.lessonId ||
-              item.entryId != commentId) {
-            return item;
-          }
-          return _MyPlatformItem(
-            courseId: item.courseId,
-            lessonId: item.lessonId,
-            entryId: item.entryId,
-            uid: item.uid,
-            firstName: item.firstName,
-            displayName: item.displayName,
-            photoUrl: item.photoUrl,
-            abbr: item.abbr,
-            text: item.text,
-            status: newStatus,
-            reportCount: item.reportCount,
-            createdAt: item.createdAt,
-          );
-        }).toList();
+        final cacheKey = '${lesson.lessonId}__${learner.learnerUid}';
+        if (approve) {
+          _commentCacheByCourse[learner.courseId]?[cacheKey]?['status'] =
+              CourseFeedbackService.statusVisible;
+        } else {
+          _commentCacheByCourse[learner.courseId]?.remove(cacheKey);
+        }
+        _all = _all
+            .map((item) {
+              if (item.courseId != learner.courseId ||
+                  item.lessonId != lesson.lessonId ||
+                  item.entryId != commentId) {
+                return item;
+              }
+              if (!approve) return null;
+              return _MyPlatformItem(
+                courseId: item.courseId,
+                lessonId: item.lessonId,
+                entryId: item.entryId,
+                uid: item.uid,
+                firstName: item.firstName,
+                displayName: item.displayName,
+                photoUrl: item.photoUrl,
+                abbr: item.abbr,
+                text: item.text,
+                status: CourseFeedbackService.statusVisible,
+                reportCount: item.reportCount,
+                createdAt: item.createdAt,
+              );
+            })
+            .whereType<_MyPlatformItem>()
+            .toList();
         _recordedDetailsFutureByRow[rowKey] = _loadRecordedLearnerDetails(
           learner,
         );
@@ -2331,63 +2896,21 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Platform'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _load,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _mainTabChip(
-                    label: 'Learners',
-                    icon: Icons.groups_rounded,
-                    selected: _mainTab == _MyPlatformMainTab.learners,
-                    accent: const Color(0xFF0EA5A4),
-                    onTap: () {
-                      setState(() => _mainTab = _MyPlatformMainTab.learners);
-                    },
+      appBar: AppBar(title: const Text('My Platform'), actions: const []),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _busy
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? ListView(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(_error!, textAlign: TextAlign.center),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _mainTabChip(
-                    label: 'Reflections',
-                    icon: Icons.rate_review_rounded,
-                    selected: _mainTab == _MyPlatformMainTab.courses,
-                    accent: const Color(0xFF7C3AED),
-                    onTap: () {
-                      setState(() => _mainTab = _MyPlatformMainTab.courses);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _mainTab == _MyPlatformMainTab.learners
-                ? _buildLearnersProgressBody()
-                : (_busy
-                      ? const Center(child: CircularProgressIndicator())
-                      : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(_error!, textAlign: TextAlign.center),
-                          ),
-                        )
-                      : _buildRecordedCoursesBody()),
-          ),
-        ],
+                ],
+              )
+            : _buildRecordedCoursesBody(),
       ),
     );
   }

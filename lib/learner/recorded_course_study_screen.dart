@@ -23,7 +23,6 @@ import '../services/course_feedback_service.dart';
 import '../services/recorded_course_offline_cache_service.dart';
 import '../services/recorded_offline_video_service.dart';
 import '../services/recorded_progress_sync_service.dart';
-import '../services/study_streak_service.dart';
 import '../services/storage_existence.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_connectivity.dart';
@@ -31,6 +30,7 @@ import '../shared/offline_action_guard.dart';
 import '../shared/human_error.dart';
 import '../shared/material_webview_screen.dart';
 import '../shared/learner_web_layout.dart';
+import '../shared/app_theme.dart';
 import '../shared/learner_notice_popup.dart';
 import '../shared/responsive_layout.dart';
 import '../shared/web_download.dart';
@@ -65,6 +65,71 @@ class RecordedCourseStudyScreen extends StatefulWidget {
   @override
   State<RecordedCourseStudyScreen> createState() =>
       _RecordedCourseStudyScreenState();
+}
+
+class _RecordedIntroPoint extends StatelessWidget {
+  const _RecordedIntroPoint({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: const Color(0xFF2563EB), size: 19),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF0F172A),
+                    fontSize: 13.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF475569),
+                    fontSize: 12.2,
+                    height: 1.28,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
@@ -106,12 +171,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       for (final ref in _flatSessions) {
         var approved = false;
         for (final cid in courseIds) {
-          approved = await CourseFeedbackService
-              .isLearnerLessonReflectionApproved(
-            courseId: cid,
-            lessonId: ref.session.id,
-            uid: _uid,
-          );
+          approved =
+              await CourseFeedbackService.isLearnerLessonReflectionApproved(
+                courseId: cid,
+                lessonId: ref.session.id,
+                uid: _uid,
+              );
           if (approved) break;
         }
         if (!approved) {
@@ -160,6 +225,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   String _cachedShortDescription = '';
   String _cachedInstructorName = '';
   Map<String, String> _cachedIdentity = <String, String>{};
+  final Set<String> _sessionsWithSubmittedReflections = <String>{};
+  final Set<String> _sessionsWithApprovedReflections = <String>{};
+  final Set<String> _sessionsWithRejectedReflections = <String>{};
+  bool _reflectionCacheReady = false;
 
   late final ConfettiController _confettiController = ConfettiController(
     duration: const Duration(seconds: 4),
@@ -177,6 +246,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     unawaited(_offlineVideos.ensureLoaded());
     unawaited(_loadMilestonesFromPrefs());
     _loadAll();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_showRecordedCourseIntroIfNeeded());
+    });
   }
 
   @override
@@ -189,6 +261,123 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   void _onOfflineVideosChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _showRecordedCourseIntroIfNeeded() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.trim().isEmpty || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'learner.recorded_course_intro.v1.$uid';
+    if (prefs.getBool(key) == true || !mounted) return;
+
+    final agreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titlePadding: EdgeInsets.zero,
+        contentPadding: const EdgeInsets.fromLTRB(22, 18, 22, 8),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+        title: Container(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0B2545), Color(0xFF2563EB)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Image.asset('assets/images/ybs_logo.png'),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  'How Recorded Courses Work',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 19,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        content: const SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _RecordedIntroPoint(
+                icon: Icons.play_circle_fill_rounded,
+                title: 'Watch carefully',
+                text:
+                    'Lessons must be watched properly before they count as completed.',
+              ),
+              _RecordedIntroPoint(
+                icon: Icons.block_rounded,
+                title: 'No skipping at first',
+                text:
+                    'Fast-forward and high speed are locked until the lesson is completed.',
+              ),
+              _RecordedIntroPoint(
+                icon: Icons.visibility_rounded,
+                title: 'Stay with the lesson',
+                text:
+                    'You may see a short check to confirm that you are still following.',
+              ),
+              _RecordedIntroPoint(
+                icon: Icons.edit_note_rounded,
+                title: 'Write a Learning Reflection',
+                text:
+                    'Required lessons need a reflection before your certificate can be issued.',
+              ),
+              _RecordedIntroPoint(
+                icon: Icons.verified_rounded,
+                title: 'Teacher approval matters',
+                text:
+                    'Your teacher reviews reflections. If one is not accepted, you will rewrite it.',
+              ),
+              _RecordedIntroPoint(
+                icon: Icons.fast_forward_rounded,
+                title: 'Replay freely after completion',
+                text:
+                    'Once completed, you can replay and move through the lesson more freely.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => Navigator.pop(ctx, true),
+              icon: const Icon(Icons.check_circle_rounded),
+              label: const Text('I understand and agree'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE56A00),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (agreed == true) await prefs.setBool(key, true);
   }
 
   DatabaseReference get _usersRef => _db.ref(_usersNode);
@@ -241,7 +430,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _paymentSummaryRef.get(),
         _syllabiRef.child(_courseId).child('recorded').get(),
       ]).timeout(const Duration(seconds: 12));
-
+      if (!mounted) return;
       final DataSnapshot accessSnap = results[0] as DataSnapshot;
       final DataSnapshot progressSnap = results[1] as DataSnapshot;
       final DataSnapshot paymentSummarySnap = results[2] as DataSnapshot;
@@ -275,14 +464,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       for (final unit in units) {
         for (final session in unit.sessions) {
           final existing = progressById[session.id];
-          final merged = await _progressSync.mergeWithLocalProgress(
-            uid: _uid,
-            courseKey: widget.courseKey,
-            sessionId: session.id,
-            firebaseProgress: existing != null
-                ? existing.toMap()
-                : const <String, dynamic>{},
-          );
+          final merged = await _progressSync
+              .mergeWithLocalProgress(
+                uid: _uid,
+                courseKey: widget.courseKey,
+                sessionId: session.id,
+                firebaseProgress: existing != null
+                    ? existing.toMap()
+                    : const <String, dynamic>{},
+              )
+              .timeout(const Duration(seconds: 6));
           if (merged.isNotEmpty) {
             progressById[session.id] = _RecordedProgress.fromMap(merged);
           }
@@ -343,6 +534,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _hasLoaded = true;
       });
       _celebrateIfComplete();
+      unawaited(_certHandler.refreshReflectionCache().then((_) {
+        if (mounted) setState(() {});
+      }));
+      unawaited(_refreshReflectionStatuses());
+      unawaited(
+        CourseFeedbackService.cleanAllLegacyProgressWithoutReflections()
+            .catchError((_) {}),
+      );
       _debug(
         'loadAll success units=${_units.length} totalSessions=$_totalSessions '
         'completed=$_completedSessions expiresAt=$_expiresAt',
@@ -357,6 +556,167 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _busy = false;
       });
     }
+  }
+
+  Future<void> _refreshReflectionStatuses() async {
+    if (!_hasLoaded || _units.isEmpty) return;
+    try {
+      final courseId =
+          _courseId.trim().isEmpty ? widget.courseKey : _courseId;
+      final snap = await FirebaseDatabase.instance
+          .ref('lesson_comments/$courseId')
+          .get();
+      final submitted = <String>{};
+      final approved = <String>{};
+      final rejected = <String>{};
+      if (snap.exists && snap.value is Map) {
+        final data = Map<String, dynamic>.from(snap.value as Map);
+        for (final lessonEntry in data.entries) {
+          final lessonId = lessonEntry.key;
+          if (lessonEntry.value is! Map) continue;
+          final comments = Map<String, dynamic>.from(
+            lessonEntry.value as Map,
+          );
+          for (final commentEntry in comments.entries) {
+            if (commentEntry.value is! Map) continue;
+            final comment = Map<String, dynamic>.from(
+              commentEntry.value as Map,
+            );
+            final uid = (comment['uid'] ?? '').toString().trim();
+            if (uid != _uid) continue;
+            final status = (comment['status'] ?? '').toString().trim();
+            if (status == 'visible') {
+              submitted.add(lessonId);
+              approved.add(lessonId);
+            } else if (status == 'pending') {
+              submitted.add(lessonId);
+            } else if (status == 'not_approved') {
+              rejected.add(lessonId);
+            }
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _sessionsWithSubmittedReflections
+            ..clear()
+            ..addAll(submitted);
+          _sessionsWithApprovedReflections
+            ..clear()
+            ..addAll(approved);
+          _sessionsWithRejectedReflections
+            ..clear()
+            ..addAll(rejected);
+          _reflectionCacheReady = true;
+        });
+      }
+    } catch (_) {
+      // Cache stays unready — old gating applies, no false blocks
+    }
+  }
+
+  Future<void> _showModuleLockedPopup(
+    int moduleIndex,
+    List<MapEntry<String, List<_RecordedUnit>>> moduleEntries,
+  ) async {
+    if (moduleIndex <= 0 || !mounted) return;
+    final prevModuleLabel = moduleEntries[moduleIndex - 1].key;
+    final prevUnits = moduleEntries[moduleIndex - 1].value;
+
+    final sections = <Widget>[];
+    sections.add(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(
+          prevModuleLabel,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: _kYbsDeepOrange,
+            fontSize: 15,
+          ),
+        ),
+      ),
+    );
+
+    for (final unit in prevUnits) {
+      final missingLessons = <String>[];
+      for (final session in unit.sessions) {
+        if (!_sessionsWithApprovedReflections.contains(session.id)) {
+          final title = session.title.trim().isEmpty ? 'Untitled' : session.title.trim();
+          missingLessons.add(title);
+        }
+      }
+      if (missingLessons.isEmpty) continue;
+
+      sections.add(
+        Padding(
+          padding: const EdgeInsets.only(left: 10, top: 4),
+          child: Text(
+            unit.displayTitle,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: _kYbsDeepBlue,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      );
+
+      for (final lesson in missingLessons) {
+        sections.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 22),
+            child: Text(
+              '• $lesson',
+              style: TextStyle(
+                color: Colors.grey[700],
+                fontSize: 12.5,
+                height: 1.5,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    if (sections.length <= 1) return;
+
+    await _showLockedContentPopup(
+      englishTitle: 'Module Locked',
+      arabicTitle: 'الوحدة مقفلة',
+      description: 'Get your learning reflections approved in "$prevModuleLabel" first.',
+      sections: sections,
+    );
+  }
+
+  Future<void> _showUnitReflectionLockedPopup(
+    String unitTitle,
+    Iterable<_RecordedSession> missingSessions,
+  ) async {
+    if (!mounted) return;
+    final sections = missingSessions.map((s) {
+      final title = s.title.trim().isEmpty ? 'Untitled' : s.title.trim();
+      return Padding(
+        padding: const EdgeInsets.only(left: 10),
+        child: Text(
+          '• $title',
+          style: TextStyle(
+            color: Colors.grey[700],
+            fontSize: 12.5,
+            height: 1.5,
+          ),
+        ),
+      );
+    }).toList();
+
+    if (sections.isEmpty) return;
+
+    await _showLockedContentPopup(
+      englishTitle: 'Unit Reflections Needed',
+      arabicTitle: 'التأملات مطلوبة',
+      description: 'Complete reflections for all lessons in "$unitTitle" first.',
+      sections: sections,
+    );
   }
 
   Future<void> _refreshProgressFromSync() async {
@@ -453,10 +813,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<bool> _loadFromOfflineCourseCache() async {
-    final cache = await _offlineCourseCache.load(
-      uid: _uid,
-      courseKey: widget.courseKey,
-    );
+    final cache = await _offlineCourseCache
+        .load(uid: _uid, courseKey: widget.courseKey)
+        .timeout(const Duration(seconds: 8));
     if (cache == null || cache.recordedSyllabus.isEmpty) return false;
 
     final units = _parseUnits(cache.recordedSyllabus);
@@ -464,14 +823,22 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final progressById = _parseProgress(cache.courseData['recorded_progress']);
     for (final unit in units) {
       for (final session in unit.sessions) {
-        final pendingOrRemote = await _progressSync.loadSessionProgress(
-          progressRef: _recordedProgressRef.child(session.id),
-          uid: _uid,
-          courseKey: widget.courseKey,
-          sessionId: session.id,
-        );
-        if (pendingOrRemote.isNotEmpty) {
-          progressById[session.id] = _RecordedProgress.fromMap(pendingOrRemote);
+        try {
+          final pendingOrRemote = await _progressSync
+              .loadSessionProgress(
+                progressRef: _recordedProgressRef.child(session.id),
+                uid: _uid,
+                courseKey: widget.courseKey,
+                sessionId: session.id,
+              )
+              .timeout(const Duration(seconds: 6));
+          if (pendingOrRemote.isNotEmpty) {
+            progressById[session.id] = _RecordedProgress.fromMap(
+              pendingOrRemote,
+            );
+          }
+        } catch (_) {
+          // skip session that timed out; rely on cached progress
         }
       }
     }
@@ -507,10 +874,18 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (moduleEntries.isEmpty) return;
 
     String? currentModule;
-    for (final entry in moduleEntries) {
+    for (int i = 0; i < moduleEntries.length; i++) {
+      final entry = moduleEntries[i];
       if (!_isModuleCompleted(entry.value)) {
-        currentModule = entry.key;
-        break;
+        bool previousModuleApproved = true;
+        if (i > 0) {
+          previousModuleApproved =
+              _allModuleLessonsApproved(moduleEntries[i - 1].value);
+        }
+        if (previousModuleApproved) {
+          currentModule = entry.key;
+          break;
+        }
       }
     }
     currentModule ??= moduleEntries.last.key;
@@ -691,8 +1066,21 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       if (moduleEntries[i].key == currentModule) {
         for (int j = 0; j < i; j++) {
           if (!_isModuleCompleted(moduleEntries[j].value)) return false;
+          if (!_allModuleLessonsApproved(moduleEntries[j].value)) return false;
         }
         return true;
+      }
+    }
+    return true;
+  }
+
+  bool _allModuleLessonsApproved(List<_RecordedUnit> moduleUnits) {
+    if (!_reflectionCacheReady) return true;
+    for (final unit in moduleUnits) {
+      for (final session in unit.sessions) {
+        if (!_sessionsWithApprovedReflections.contains(session.id)) {
+          return false;
+        }
       }
     }
     return true;
@@ -702,6 +1090,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (flatIndex <= 0) return true;
     final previous = _flatSessions[flatIndex - 1].session;
     if (!_isSessionCompleted(previous)) return false;
+    if (_reflectionCacheReady &&
+        !_sessionsWithSubmittedReflections.contains(previous.id)) {
+      return false;
+    }
     return _arePreviousModulesCompleted(flatIndex);
   }
 
@@ -811,12 +1203,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Future<void> _markMaterialsCompleted(_RecordedSession session) async {
     _debug('markMaterialsCompleted sessionId=${session.id}');
     if (_progressOf(session.id).materialsCompleted) return;
-    unawaited(
-      StudyStreakService.instance.updateStreak(
-        uid: _uid,
-        courseKey: widget.courseKey,
-      ),
-    );
     final current = _progressOf(session.id);
     final updated = current.copyWith(
       materialsCompleted: true,
@@ -1045,7 +1431,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final check = await StorageExistence.checkUrlExistsOnManagedStorage(
       cacheKey,
       expect: 'file',
-    );
+    ).timeout(const Duration(seconds: 10));
     _storageCheckCacheByUrl[cacheKey] = check;
     return check == StorageCheckResult.missing;
   }
@@ -1070,9 +1456,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         courseKey: widget.courseKey,
         sessionId: session.id,
       );
+      if (!mounted) return;
 
       if (localPath != null) {
-        if (!mounted) return;
         await OfflineActionGuard.runExclusive(
           context,
           'learner.recorded.read.${widget.courseKey}.${session.id}',
@@ -1141,6 +1527,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     certificateUnlocked: _courseCertificateUnlocked,
     completedSessions: _completedSessions,
     totalSessions: _totalSessions,
+    generatingCertificate: _certHandler._generatingCourseCertificate,
     onCertificateTap: _onCertificateTap,
   );
 
@@ -1198,7 +1585,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     style: TextStyle(
                       fontSize: isNarrow ? 12 : 12.5,
                       fontWeight: FontWeight.w900,
-                      color: Color(0xFF0F172A),
+                      color: const Color(0xFF0F172A),
                     ),
                   ),
                   const Spacer(),
@@ -1289,13 +1676,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(13),
+                    const Padding(
+                      padding: EdgeInsets.all(13),
                       child: CircularProgressIndicator(
                         value: 1,
                         strokeWidth: 8,
-                        backgroundColor: const Color(0xFFE2E8F0),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
+                        backgroundColor: Color(0xFFE2E8F0),
+                        valueColor: AlwaysStoppedAnimation<Color>(
                           Color(0xFFE2E8F0),
                         ),
                       ),
@@ -1311,13 +1698,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         ),
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(26),
+                    const Padding(
+                      padding: EdgeInsets.all(26),
                       child: CircularProgressIndicator(
                         value: 1,
                         strokeWidth: 6,
-                        backgroundColor: const Color(0xFFE2E8F0),
-                        valueColor: const AlwaysStoppedAnimation<Color>(
+                        backgroundColor: Color(0xFFE2E8F0),
+                        valueColor: AlwaysStoppedAnimation<Color>(
                           Color(0xFFE2E8F0),
                         ),
                       ),
@@ -2179,24 +2566,26 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     required String moduleLabel,
     required List<_RecordedUnit> moduleUnits,
     required int moduleIndex,
-  }) => _certHandler._buildModuleMilestoneCard(
-    moduleLabel: moduleLabel,
-    moduleUnits: moduleUnits,
-    moduleIndex: moduleIndex,
-    deepOrange: _kYbsDeepOrange,
-    orangeTextStrong: _kYbsOrangeTextStrong,
-    deepBlue: _kYbsDeepBlue,
-    onModuleCertificateTap:
-        ({
-          required String moduleLabel,
-          required List<_RecordedUnit> moduleUnits,
-          required int moduleIndex,
-        }) => _onModuleCertificateTap(
-          moduleLabel: moduleLabel,
-          moduleUnits: moduleUnits,
-          moduleIndex: moduleIndex,
-        ),
-  );
+  }) {
+    return _certHandler._buildModuleMilestoneCard(
+      moduleLabel: moduleLabel,
+      moduleUnits: moduleUnits,
+      moduleIndex: moduleIndex,
+      deepOrange: _kYbsDeepOrange,
+      orangeTextStrong: _kYbsOrangeTextStrong,
+      deepBlue: _kYbsDeepBlue,
+      onModuleCertificateTap:
+          ({
+            required String moduleLabel,
+            required List<_RecordedUnit> moduleUnits,
+            required int moduleIndex,
+          }) => _onModuleCertificateTap(
+            moduleLabel: moduleLabel,
+            moduleUnits: moduleUnits,
+            moduleIndex: moduleIndex,
+          ),
+    );
+  }
 
   void _snack(String message) {
     if (!mounted) return;
@@ -2713,6 +3102,182 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     );
   }
 
+  String _lessonTitle(_RecordedSession s) =>
+      s.title.trim().isEmpty ? 'Untitled' : s.title.trim();
+
+  String? _sessionLockMessage(int flatIndex) {
+    if (flatIndex <= 0) return null;
+    final previous = _flatSessions[flatIndex - 1].session;
+    if (!_isSessionCompleted(previous)) {
+      return 'Complete "${_lessonTitle(previous)}" first.';
+    }
+    if (_reflectionCacheReady &&
+        !_sessionsWithSubmittedReflections.contains(previous.id)) {
+      return 'Submit your reflection for "${_lessonTitle(previous)}" first.';
+    }
+    return null;
+  }
+
+  Future<void> _showLockedPopup(String message) async {
+    if (!mounted) return;
+    await _showLockedContentPopup(
+      englishTitle: 'Lesson Locked',
+      arabicTitle: 'الدرس مقفل',
+      description: message,
+    );
+  }
+
+  Future<void> _showLockedContentPopup({
+    required String englishTitle,
+    required String arabicTitle,
+    required String description,
+    List<Widget>? sections,
+  }) async {
+    if (!mounted) return;
+    final palette = appThemeController.palette;
+    const color = Color(0xFFC27A12);
+    const softColor = Color(0xFFFFF7E8);
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          elevation: 16,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+          backgroundColor: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(26),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [palette.cardBg, softColor],
+                ),
+                border: Border.all(color: color.withValues(alpha: 0.22)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x2E000000),
+                    blurRadius: 24,
+                    offset: Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(26),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -28, top: -30,
+                      child: Container(
+                        width: 116, height: 116,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0x17C27A12),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 58, height: 58,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: color.withValues(alpha: 0.13),
+                              border: Border.all(color: color.withValues(alpha: 0.28)),
+                            ),
+                            child: const Icon(Icons.lock_rounded, color: color, size: 29),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            arabicTitle,
+                            textDirection: TextDirection.rtl,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: palette.text,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w900,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            englishTitle,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: color,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(maxHeight: 260),
+                            padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.74),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: color.withValues(alpha: 0.14)),
+                            ),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    description,
+                                    style: TextStyle(
+                                      color: palette.text.withValues(alpha: 0.84),
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.42,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  if (sections != null && sections.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    ...sections,
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: color,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              child: const Text(
+                                'حسنًا / OK',
+                                style: TextStyle(fontWeight: FontWeight.w900),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSessionCard({
     required _RecordedSession session,
     required int flatIndex,
@@ -2739,125 +3304,176 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       dotColor = const Color(0xFF4F46E5);
     }
 
-    Widget card = Container(
-      margin: EdgeInsets.only(top: isNarrow ? 6 : 7),
-      padding: EdgeInsets.symmetric(
-        horizontal: isNarrow
-            ? 9
-            : isWide
-            ? 20
-            : 10,
-        vertical: isNarrow
-            ? 8
-            : isWide
-            ? 16
-            : 9,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isCompleted
-              ? const Color(0xFFBBF7D0)
-              : const Color(0xFFE2E8F0),
+    // Reflection status
+    IconData? reflectionIcon;
+    Color? reflectionColor;
+    String? reflectionTooltip;
+    if (_reflectionCacheReady) {
+      if (_sessionsWithApprovedReflections.contains(session.id)) {
+        reflectionIcon = Icons.done_all;
+        reflectionColor = const Color(0xFF16A34A);
+        reflectionTooltip = 'Reflection approved';
+      } else if (_sessionsWithRejectedReflections.contains(session.id)) {
+        reflectionIcon = Icons.cancel;
+        reflectionColor = const Color(0xFFDC2626);
+        reflectionTooltip = 'Reflection not approved - please revise';
+      } else if (_sessionsWithSubmittedReflections.contains(session.id)) {
+        reflectionIcon = Icons.schedule;
+        reflectionColor = const Color(0xFFD97706);
+        reflectionTooltip = 'Reflection pending review';
+      } else {
+        reflectionIcon = Icons.radio_button_unchecked;
+        reflectionColor = const Color(0xFF94A3B8);
+        reflectionTooltip = 'No reflection submitted';
+      }
+    }
+
+    Widget card = GestureDetector(
+      onTap: _openingVideoSessionId == null
+          ? () {
+              if (isUnlocked) {
+                if (requiresVideo) {
+                  _openVideoPlaceholder(session);
+                } else if (requiresMaterials) {
+                  _openMaterials(session);
+                }
+              } else {
+                final msg = _sessionLockMessage(flatIndex);
+                if (msg != null) _showLockedPopup(msg);
+              }
+            }
+          : null,
+      child: Container(
+        margin: EdgeInsets.only(top: isNarrow ? 6 : 7),
+        padding: EdgeInsets.symmetric(
+          horizontal: isNarrow
+              ? 9
+              : isWide
+              ? 20
+              : 10,
+          vertical: isNarrow
+              ? 8
+              : isWide
+              ? 16
+              : 9,
         ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: isNarrow
-                    ? 20
-                    : isWide
-                    ? 32
-                    : 22,
-                height: isNarrow
-                    ? 20
-                    : isWide
-                    ? 32
-                    : 22,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: dotColor.withValues(alpha: 0.12),
-                  border: Border.all(color: dotColor, width: 1.2),
-                ),
-                child: Text(
-                  '$number',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: dotColor,
-                    fontSize: isNarrow
-                        ? 9.5
-                        : isWide
-                        ? 14
-                        : 10,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isCompleted
+                ? const Color(0xFFBBF7D0)
+                : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: isNarrow
+                      ? 20
+                      : isWide
+                      ? 32
+                      : 22,
+                  height: isNarrow
+                      ? 20
+                      : isWide
+                      ? 32
+                      : 22,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: dotColor.withValues(alpha: 0.12),
+                    border: Border.all(color: dotColor, width: 1.2),
+                  ),
+                  child: Text(
+                    '$number',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: dotColor,
+                      fontSize: isNarrow
+                          ? 9.5
+                          : isWide
+                          ? 14
+                          : 10,
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(
-                width: isNarrow
-                    ? 7
-                    : isWide
-                    ? 12
-                    : 8,
-              ),
-              Expanded(
-                child: Text(
-                  session.title.trim().isEmpty
-                      ? 'Untitled lesson'
-                      : session.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Color(0xFF0F172A),
-                    fontWeight: FontWeight.w800,
-                    fontSize: isNarrow
-                        ? 12.5
-                        : isWide
-                        ? 18
-                        : 13,
+                SizedBox(
+                  width: isNarrow
+                      ? 7
+                      : isWide
+                      ? 12
+                      : 8,
+                ),
+                Expanded(
+                  child: Text(
+                    session.title.trim().isEmpty
+                        ? 'Untitled lesson'
+                        : session.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: const Color(0xFF0F172A),
+                      fontWeight: FontWeight.w800,
+                      fontSize: isNarrow
+                          ? 12.5
+                          : isWide
+                          ? 18
+                          : 13,
+                    ),
                   ),
                 ),
-              ),
-              if (canExpandDetails)
-                Tooltip(
-                  message: showDetails ? 'Hide details' : 'Show details',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () {
-                      setState(() {
-                        if (showDetails) {
-                          _expandedLessonDetails.remove(session.id);
-                        } else {
-                          _expandedLessonDetails.add(session.id);
-                        }
-                      });
-                    },
-                    child: Container(
-                      width: isNarrow
-                          ? 22
-                          : isWide
-                          ? 34
-                          : 24,
-                      height: isNarrow
-                          ? 22
-                          : isWide
-                          ? 34
-                          : 24,
-                      alignment: Alignment.center,
-                      child: Text(
-                        '!',
-                        style: TextStyle(
-                          color: Color(0xFF334155),
-                          fontWeight: FontWeight.w900,
-                          fontSize: isWide ? 20 : 14,
+                if (_reflectionCacheReady && reflectionIcon != null)
+                  Padding(
+                    padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
+                    child: Tooltip(
+                      message: reflectionTooltip ?? '',
+                      child: Icon(
+                        reflectionIcon,
+                        size: isNarrow ? 16 : isWide ? 24 : 18,
+                        color: reflectionColor,
+                      ),
+                    ),
+                  ),
+                if (canExpandDetails)
+                  Tooltip(
+                    message: showDetails ? 'Hide details' : 'Show details',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () {
+                        setState(() {
+                          if (showDetails) {
+                            _expandedLessonDetails.remove(session.id);
+                          } else {
+                            _expandedLessonDetails.add(session.id);
+                          }
+                        });
+                      },
+                      child: Container(
+                        width: isNarrow
+                            ? 22
+                            : isWide
+                            ? 34
+                            : 24,
+                        height: isNarrow
+                            ? 22
+                            : isWide
+                            ? 34
+                            : 24,
+                        alignment: Alignment.center,
+                        child: Text(
+                          '!',
+                          style: TextStyle(
+                            color: const Color(0xFF334155),
+                            fontWeight: FontWeight.w900,
+                            fontSize: isWide ? 20 : 14,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
               if (requiresVideo)
                 Padding(
                   padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
@@ -2868,8 +3484,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         ? 'Rewatch video'
                         : 'Watch video',
                     child: TextButton.icon(
-                      onPressed: isUnlocked && _openingVideoSessionId == null
-                          ? () => _openVideoPlaceholder(session)
+                      onPressed: _openingVideoSessionId == null
+                          ? () {
+                              if (isUnlocked) {
+                                _openVideoPlaceholder(session);
+                              } else {
+                                final msg =
+                                    _sessionLockMessage(flatIndex);
+                                if (msg != null) _showLockedPopup(msg);
+                              }
+                            }
                           : null,
                       icon: Icon(
                         Icons.play_arrow_rounded,
@@ -2926,9 +3550,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         ? 'Open reading again'
                         : 'Open reading',
                     child: TextButton.icon(
-                      onPressed:
-                          isUnlocked && _openingMaterialsSessionId == null
-                          ? () => _openMaterials(session)
+                      onPressed: _openingMaterialsSessionId == null
+                          ? () {
+                              if (isUnlocked) {
+                                _openMaterials(session);
+                              } else {
+                                final msg =
+                                    _sessionLockMessage(flatIndex);
+                                if (msg != null) _showLockedPopup(msg);
+                              }
+                            }
                           : null,
                       icon: Icon(
                         Icons.menu_book_rounded,
@@ -2988,9 +3619,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Locked: finish the previous lesson first.',
+                  _sessionLockMessage(flatIndex) ?? 'Lesson locked',
                   style: TextStyle(
-                    color: Color(0xFF64748B),
+                    color: const Color(0xFF64748B),
                     fontWeight: FontWeight.w700,
                     fontSize: isWide ? 15 : 11.4,
                   ),
@@ -3014,6 +3645,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               ),
             ),
         ],
+      ),
       ),
     );
 
@@ -3064,6 +3696,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 if (idx <= 0) return false;
                 for (int k = 0; k < idx; k++) {
                   if (!_isModuleCompleted(moduleEntries[k].value)) return true;
+                  if (!_allModuleLessonsApproved(moduleEntries[k].value)) {
+                    return true;
+                  }
                 }
                 return false;
               }
@@ -3103,6 +3738,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                     InkWell(
                       borderRadius: BorderRadius.circular(isNarrow ? 14 : 16),
                       onTap: () {
+                        if (moduleLocked) {
+                          _showModuleLockedPopup(moduleIndex, moduleEntries);
+                          return;
+                        }
                         setState(() {
                           if (moduleExpanded) {
                             _expandedModuleLabels.remove(moduleLabel);
@@ -3218,7 +3857,37 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   final unitDone = _isUnitCompleted(unit);
                                   return InkWell(
                                     borderRadius: BorderRadius.circular(12),
-                                    onTap: () {
+                                    onTap: () async {
+                                      if (_reflectionCacheReady && i > 0) {
+                                        final prevUnit = moduleUnits[i - 1];
+                                        bool allDone = true;
+                                        for (final s
+                                            in prevUnit.sessions) {
+                                          if (!_sessionsWithSubmittedReflections
+                                              .contains(s.id)) {
+                                            allDone = false;
+                                            break;
+                                          }
+                                        }
+                                        if (!allDone) {
+                                          final missingSessions =
+                                              prevUnit.sessions.where(
+                                            (s) =>
+                                                !_sessionsWithSubmittedReflections
+                                                    .contains(s.id),
+                                          );
+                                          final title = prevUnit.title
+                                                  .trim()
+                                                  .isEmpty
+                                              ? 'Unit $i'
+                                              : prevUnit.title.trim();
+                                          await _showUnitReflectionLockedPopup(
+                                            title,
+                                            missingSessions,
+                                          );
+                                          return;
+                                        }
+                                      }
                                       setState(() {
                                         _selectedUnitByModule[moduleLabel] =
                                             unitId;
@@ -3292,7 +3961,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: Color(0xFF0F172A),
+                                      color: const Color(0xFF0F172A),
                                       fontWeight: FontWeight.w900,
                                       fontSize: isNarrow ? 13 : 13.5,
                                     ),
@@ -3351,7 +4020,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                 child: Text(
                                   selectedUnit.description.trim(),
                                   style: TextStyle(
-                                    color: Color(0xFF475569),
+                                    color: const Color(0xFF475569),
                                     fontWeight: FontWeight.w600,
                                     fontSize: isNarrow ? 11.6 : 12,
                                     height: 1.25,

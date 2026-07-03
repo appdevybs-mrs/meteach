@@ -52,6 +52,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   static const String _recordedProgressNode = 'recorded_progress';
   static const int _completionEndAreaMs = 1200;
   static const int _naturalEndEligibleToleranceMs = 3000;
+  static const Duration _videoInitializeTimeout = Duration(seconds: 15);
   static final math.Random _attentionRandom = math.Random();
 
   final FirebaseDatabase _db = FirebaseDatabase.instance;
@@ -79,6 +80,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   bool _markingVideoCompleted = false;
   bool _completionClosing = false;
   bool _completionOverlayVisible = false;
+
+  bool _loadingInit = false;
 
   final TextEditingController _commentC = TextEditingController();
   final FocusNode _commentFocus = FocusNode();
@@ -142,7 +145,10 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     WidgetsBinding.instance.addObserver(this);
     _initWebVisibilityTracking();
     _enableScreenRotations();
-    _loadAndInit();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isDisposing) return;
+      _loadAndInit();
+    });
     _loadComments();
   }
 
@@ -286,19 +292,31 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   Future<void> _loadAndInit() async {
+    if (_isDisposing || _loadingInit) return;
+    _loadingInit = true;
     _debug('loadAndInit start sessionId=${widget.sessionId}');
     setState(() {
       _busy = true;
       _error = null;
+      _initialized = false;
     });
 
+    final previous = _controller;
+    if (previous != null) {
+      previous.removeListener(_videoListener);
+      _controller = null;
+      unawaited(previous.dispose());
+    }
+
     try {
-      final map = await _progressSync.loadSessionProgress(
-        progressRef: _progressRef,
-        uid: widget.uid,
-        courseKey: widget.courseKey,
-        sessionId: widget.sessionId,
-      );
+      final map = await _progressSync
+          .loadSessionProgress(
+            progressRef: _progressRef,
+            uid: widget.uid,
+            courseKey: widget.courseKey,
+            sessionId: widget.sessionId,
+          )
+          .timeout(const Duration(seconds: 12));
       _savedPositionMs = _asInt(map['videoPositionMs']);
       _savedDurationMs = _asInt(map['videoDurationMs']);
       _eligibleWatchMs = _asInt(map['videoEligibleWatchMs']);
@@ -320,7 +338,9 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       final localFile = (!kIsWeb && localPath.isNotEmpty)
           ? File(localPath)
           : null;
-      final hasLocal = localFile != null && await localFile.exists();
+      final hasLocal =
+          localFile != null &&
+          await localFile.exists().timeout(const Duration(seconds: 8));
       final controller = hasLocal
           ? VideoPlayerController.file(localFile)
           : VideoPlayerController.networkUrl(uri);
@@ -328,10 +348,15 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
 
       final initTimer = Stopwatch()..start();
       _debug('video initialize start sessionId=${widget.sessionId}');
-      await controller.initialize();
+      await controller.initialize().timeout(_videoInitializeTimeout);
       _debug(
         'video initialize done sessionId=${widget.sessionId} elapsedMs=${initTimer.elapsedMilliseconds}',
       );
+      if (!mounted || _isDisposing || _controller != controller) {
+        await controller.dispose();
+        _loadingInit = false;
+        return;
+      }
       controller.addListener(_videoListener);
 
       final durationMs = controller.value.duration.inMilliseconds;
@@ -345,6 +370,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
       await _writeInitialMetaIfNeeded();
 
       if (!mounted) return;
+      _loadingInit = false;
       setState(() {
         _initialized = true;
         _busy = false;
@@ -358,12 +384,20 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     } catch (e) {
       _debug('loadAndInit error sessionId=${widget.sessionId} error=$e');
       final message = e.toString();
+      final failedController = _controller;
+      if (failedController != null) {
+        failedController.removeListener(_videoListener);
+        _controller = null;
+        unawaited(failedController.dispose());
+      }
+      _loadingInit = false;
       if (!mounted) return;
       setState(() {
         _error = _looksLikeMissingAssetError(message)
             ? _videoUnavailableMessage()
             : toHumanError(e);
         _busy = false;
+        _initialized = false;
       });
     }
   }
@@ -842,12 +876,14 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     _markingVideoCompleted = true;
 
     try {
-      final map = await _progressSync.loadSessionProgress(
-        progressRef: _progressRef,
-        uid: widget.uid,
-        courseKey: widget.courseKey,
-        sessionId: widget.sessionId,
-      );
+      final map = await _progressSync
+          .loadSessionProgress(
+            progressRef: _progressRef,
+            uid: widget.uid,
+            courseKey: widget.courseKey,
+            sessionId: widget.sessionId,
+          )
+          .timeout(const Duration(seconds: 12));
       if (_asBool(map['videoCompleted'])) {
         if (mounted) setState(() => _isCompleted = true);
         return;
@@ -859,25 +895,27 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
         _lastSavedEligibleWatchMs = durationMs;
       }
 
-      await _progressSync.updateProgress(
-        progressRef: _progressRef,
-        uid: widget.uid,
-        courseKey: widget.courseKey,
-        sessionId: widget.sessionId,
-        patch: {
-          'videoCompleted': true,
-          'videoCompletedAt': ServerValue.timestamp,
-          'videoPositionMs': durationMs,
-          'videoDurationMs': durationMs,
-          'videoEligibleWatchMs': durationMs,
-          'videoWatchMsTotal': _totalWatchMs,
-          'attentionChecksPassed': _attentionChecksPassed,
-          'attentionChecksFailed': _attentionChecksFailed,
-          'completed': true,
-          'lastOpenedAt': ServerValue.timestamp,
-          'updatedAt': ServerValue.timestamp,
-        },
-      );
+      await _progressSync
+          .updateProgress(
+            progressRef: _progressRef,
+            uid: widget.uid,
+            courseKey: widget.courseKey,
+            sessionId: widget.sessionId,
+            patch: {
+              'videoCompleted': true,
+              'videoCompletedAt': ServerValue.timestamp,
+              'videoPositionMs': durationMs,
+              'videoDurationMs': durationMs,
+              'videoEligibleWatchMs': durationMs,
+              'videoWatchMsTotal': _totalWatchMs,
+              'attentionChecksPassed': _attentionChecksPassed,
+              'attentionChecksFailed': _attentionChecksFailed,
+              'completed': true,
+              'lastOpenedAt': ServerValue.timestamp,
+              'updatedAt': ServerValue.timestamp,
+            },
+          )
+          .timeout(const Duration(seconds: 12));
 
       if (!mounted) return;
       setState(() {
@@ -1425,11 +1463,11 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   }
 
   Widget _buildCompactActionPanel({required bool isLandscape}) {
-    final accent = const Color(0xFF0EA5E9);
-    final title = 'My Private Notes';
+    const accent = Color(0xFF0EA5E9);
+    const title = 'My Private Notes';
 
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -1445,96 +1483,76 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           Row(
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 26,
+                height: 26,
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(Icons.note_alt_rounded, color: accent, size: 16),
+                child: Icon(Icons.note_alt_rounded, color: accent, size: 14),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 13.5,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                    Text(
-                      '${_lessonNotes.length} saved notes',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF475569),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 10.5,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  '$title · ${_lessonNotes.length} notes',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                    color: Color(0xFF0F172A),
+                  ),
                 ),
+              ),
+              const SizedBox(width: 4),
+              TextButton.icon(
+                onPressed: () =>
+                    setState(() => _notesExpanded = !_notesExpanded),
+                icon: Icon(
+                  size: 16,
+                  _notesExpanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                ),
+                label: Text(_notesExpanded ? 'Collapse' : 'Expand'),
+                style: TextButton.styleFrom(
+                  foregroundColor: accent,
+                  minimumSize: const Size.fromHeight(32),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              FilledButton.icon(
+                onPressed: () => _openNoteEditor(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(32),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11.5,
+                  ),
+                ),
+                icon: const Icon(Icons.add_rounded, size: 14),
+                label: const Text('Add'),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: () =>
-                      setState(() => _notesExpanded = !_notesExpanded),
-                  icon: Icon(
-                    size: 18,
-                    _notesExpanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                  ),
-                  label: Text(_notesExpanded ? 'Collapse' : 'Expand'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: accent,
-                    minimumSize: const Size.fromHeight(48),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => _openNoteEditor(),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size.fromHeight(48),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text('Add note'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
             crossFadeState: _notesExpanded
@@ -1587,7 +1605,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: _lessonNotes.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      separatorBuilder: (_, _) => const SizedBox(height: 6),
                       itemBuilder: (_, index) =>
                           _buildLessonNoteTile(_lessonNotes[index]),
                     ),
@@ -1601,71 +1619,62 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Widget _buildLessonNoteTile(_LessonNoteItem note) {
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: () => _seekToNote(note),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      _formatDurationMs(note.positionMs),
-                      style: const TextStyle(
-                        color: Color(0xFF1D4ED8),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 10.5,
-                      ),
-                    ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 5,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  _formatDurationMs(note.positionMs),
+                  style: const TextStyle(
+                    color: Color(0xFF1D4ED8),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 10,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      note.text,
-                      softWrap: true,
-                      maxLines: null,
-                      style: const TextStyle(
-                        color: Color(0xFF0F172A),
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  _noteActionIcon(
-                    icon: Icons.edit_rounded,
-                    tooltip: 'Edit note',
-                    onPressed: () => _openNoteEditor(note: note),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  note.text,
+                  softWrap: true,
+                  maxLines: null,
+                  style: const TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    fontSize: 12.5,
                   ),
-                  const SizedBox(width: 6),
-                  _noteActionIcon(
-                    icon: Icons.delete_outline_rounded,
-                    tooltip: 'Delete note',
-                    onPressed: () => _deleteLessonNote(note),
-                  ),
-                ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              _noteActionIcon(
+                icon: Icons.edit_rounded,
+                tooltip: 'Edit note',
+                onPressed: () => _openNoteEditor(note: note),
+              ),
+              const SizedBox(width: 2),
+              _noteActionIcon(
+                icon: Icons.delete_outline_rounded,
+                tooltip: 'Delete note',
+                onPressed: () => _deleteLessonNote(note),
               ),
             ],
           ),
@@ -1688,8 +1697,8 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
           onTap: onPressed,
           borderRadius: BorderRadius.circular(999),
           child: Padding(
-            padding: const EdgeInsets.all(7),
-            child: Icon(icon, size: 16, color: const Color(0xFF334155)),
+            padding: const EdgeInsets.all(5),
+            child: Icon(icon, size: 14, color: const Color(0xFF334155)),
           ),
         ),
       ),
@@ -1939,23 +1948,61 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   Widget _buildErrorState() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFF5B5B5)),
-          ),
-          child: Text(
-            _error ?? 'Could not open video.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFC62828),
-              fontWeight: FontWeight.w800,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 64,
+              color: Color(0xFF94A3B8),
             ),
-          ),
+            const SizedBox(height: 16),
+            const Text(
+              'Video unavailable',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Please check your internet connection and try refreshing.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+            if (_error != null && _error!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontWeight: FontWeight.w500,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () {
+                setState(() {
+                  _error = null;
+                  _busy = true;
+                  _initialized = false;
+                });
+                _loadAndInit();
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+            ),
+          ],
         ),
       ),
     );

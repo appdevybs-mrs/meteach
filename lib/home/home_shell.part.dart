@@ -2654,6 +2654,59 @@ class _JobsHomeState extends State<JobsHome> {
 
   @override
   Widget build(BuildContext context) {
+    if (context.isDesktopOrWider) {
+      return Scaffold(
+        backgroundColor: Brand.appBg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            tooltip: 'Back',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back_rounded),
+            color: Brand.primaryBlue,
+          ),
+          title: const Text(
+            'Jobs',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: Brand.primaryBlue,
+            ),
+          ),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+          children: [
+            CardShell(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Work With Us',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Brand.primaryBlue,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _jobDescriptions[_descIndex],
+                    style: TextStyle(
+                      color: Brand.mainText.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const CardShell(child: JobApplicationScreen()),
+          ],
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(

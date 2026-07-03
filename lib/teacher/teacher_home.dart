@@ -1429,14 +1429,22 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               if (webDesktop)
                 _TeacherHomeWebRail(
                   palette: p,
-                  onOpenClasses: _openClassesScreen,
+                  onOpenProfile: _openProfileScreen,
                   onOpenSchedule: _openScheduleScreen,
+                  onOpenClasses: _openClassesScreen,
+                  onOpenGallery: _openGalleryScreen,
+                  onOpenGames: _openGamesScreen,
+                  onOpenStories: _openStoriesScreen,
+                  onOpenInstructions: _openInstructionsScreen,
+                  onOpenBooking: _openOnlineAvailabilityScreen,
+                  onOpenOnlineCircle: _openOnlineCircleScreen,
                   onOpenMail: _openMailScreen,
                   onOpenReminders: _openRemindersScreen,
-                  onOpenBooking: _openOnlineAvailabilityScreen,
-                  onOpenGallery: _openGalleryScreen,
-                  onOpenSyllabi: _openSyllabiScreen,
                   onOpenWages: _openWagesScreen,
+                  onOpenRegulations: _openRegulationsScreen,
+                  onOpenSyllabi: _openSyllabiScreen,
+                  onOpenShared: _openSharedScreen,
+                  onOpenMyPlatform: _openMyPlatformScreen,
                   onLogout: () => _logout(context),
                 ),
               if (webDesktop) const SizedBox(width: 14),
@@ -1663,48 +1671,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                               );
                             },
                           ),
-                          if (webDesktop) ...[
-                            const SizedBox(height: 14),
-                            Text(
-                              'Quick Actions',
-                              style: TextStyle(
-                                color: p.primary,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
-                              children: [
-                                _WebQuickActionTile(
-                                  palette: p,
-                                  icon: TeacherIcons.onlineBooking,
-                                  title: 'Online Booking',
-                                  onTap: _openOnlineAvailabilityScreen,
-                                ),
-                                _WebQuickActionTile(
-                                  palette: p,
-                                  icon: TeacherIcons.gallery,
-                                  title: 'Gallery',
-                                  onTap: _openGalleryScreen,
-                                ),
-                                _WebQuickActionTile(
-                                  palette: p,
-                                  icon: TeacherIcons.syllabi,
-                                  title: 'Syllabi',
-                                  onTap: _openSyllabiScreen,
-                                ),
-                                _WebQuickActionTile(
-                                  palette: p,
-                                  icon: TeacherIcons.wages,
-                                  title: 'Wages',
-                                  onTap: _openWagesScreen,
-                                ),
-                              ],
-                            ),
-                          ],
+
                         ],
                       ),
                     ),
@@ -1839,26 +1806,42 @@ class _HomeAttendanceReminder {
 class _TeacherHomeWebRail extends StatelessWidget {
   const _TeacherHomeWebRail({
     required this.palette,
-    required this.onOpenClasses,
+    required this.onOpenProfile,
     required this.onOpenSchedule,
+    required this.onOpenClasses,
+    required this.onOpenGallery,
+    required this.onOpenGames,
+    required this.onOpenStories,
+    required this.onOpenInstructions,
+    required this.onOpenBooking,
+    required this.onOpenOnlineCircle,
     required this.onOpenMail,
     required this.onOpenReminders,
-    required this.onOpenBooking,
-    required this.onOpenGallery,
-    required this.onOpenSyllabi,
     required this.onOpenWages,
+    required this.onOpenRegulations,
+    required this.onOpenSyllabi,
+    required this.onOpenShared,
+    required this.onOpenMyPlatform,
     required this.onLogout,
   });
 
   final _HomePalette palette;
-  final VoidCallback onOpenClasses;
+  final VoidCallback onOpenProfile;
   final VoidCallback onOpenSchedule;
+  final VoidCallback onOpenClasses;
+  final VoidCallback onOpenGallery;
+  final VoidCallback onOpenGames;
+  final VoidCallback onOpenStories;
+  final VoidCallback onOpenInstructions;
+  final VoidCallback onOpenBooking;
+  final VoidCallback onOpenOnlineCircle;
   final VoidCallback onOpenMail;
   final VoidCallback onOpenReminders;
-  final VoidCallback onOpenBooking;
-  final VoidCallback onOpenGallery;
-  final VoidCallback onOpenSyllabi;
   final VoidCallback onOpenWages;
+  final VoidCallback onOpenRegulations;
+  final VoidCallback onOpenSyllabi;
+  final VoidCallback onOpenShared;
+  final VoidCallback onOpenMyPlatform;
   final VoidCallback onLogout;
 
   @override
@@ -1899,10 +1882,10 @@ class _TeacherHomeWebRail extends StatelessWidget {
                 children: [
                   _DrawerTile(
                     palette: palette,
-                    icon: TeacherIcons.classes,
-                    accent: const Color(0xFF2563EB),
-                    title: 'My Classes',
-                    onTap: onOpenClasses,
+                    icon: TeacherIcons.profile,
+                    accent: const Color(0xFF1E40AF),
+                    title: 'Profile',
+                    onTap: onOpenProfile,
                   ),
                   _DrawerTile(
                     palette: palette,
@@ -1910,6 +1893,55 @@ class _TeacherHomeWebRail extends StatelessWidget {
                     accent: const Color(0xFF0F766E),
                     title: 'Schedule',
                     onTap: onOpenSchedule,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.classes,
+                    accent: const Color(0xFF2563EB),
+                    title: 'My Classes',
+                    onTap: onOpenClasses,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.gallery,
+                    accent: const Color(0xFF8B5CF6),
+                    title: 'Gallery',
+                    onTap: onOpenGallery,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.games,
+                    accent: const Color(0xFFEC4899),
+                    title: 'Games',
+                    onTap: onOpenGames,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.stories,
+                    accent: const Color(0xFFD97706),
+                    title: 'Stories',
+                    onTap: onOpenStories,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.instructions,
+                    accent: const Color(0xFF0891B2),
+                    title: 'Instructions',
+                    onTap: onOpenInstructions,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.onlineBooking,
+                    accent: const Color(0xFF10B981),
+                    title: 'Online Booking',
+                    onTap: onOpenBooking,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.onlineCircle,
+                    accent: const Color(0xFF7C3AED),
+                    title: 'Online Circle',
+                    onTap: onOpenOnlineCircle,
                   ),
                   _DrawerTile(
                     palette: palette,
@@ -1927,17 +1959,17 @@ class _TeacherHomeWebRail extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: TeacherIcons.onlineBooking,
-                    accent: const Color(0xFF10B981),
-                    title: 'Online Booking',
-                    onTap: onOpenBooking,
+                    icon: TeacherIcons.wages,
+                    accent: const Color(0xFF0F766E),
+                    title: 'Wages',
+                    onTap: onOpenWages,
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: TeacherIcons.gallery,
-                    accent: const Color(0xFF8B5CF6),
-                    title: 'Gallery',
-                    onTap: onOpenGallery,
+                    icon: TeacherIcons.regulations,
+                    accent: const Color(0xFFDC2626),
+                    title: 'Regulations',
+                    onTap: onOpenRegulations,
                   ),
                   _DrawerTile(
                     palette: palette,
@@ -1948,10 +1980,17 @@ class _TeacherHomeWebRail extends StatelessWidget {
                   ),
                   _DrawerTile(
                     palette: palette,
-                    icon: TeacherIcons.wages,
+                    icon: TeacherIcons.shared,
                     accent: const Color(0xFF0F766E),
-                    title: 'Wages',
-                    onTap: onOpenWages,
+                    title: 'Shared',
+                    onTap: onOpenShared,
+                  ),
+                  _DrawerTile(
+                    palette: palette,
+                    icon: TeacherIcons.myPlatform,
+                    accent: const Color(0xFF9333EA),
+                    title: 'My Platform',
+                    onTap: onOpenMyPlatform,
                   ),
                 ],
               ),
@@ -3661,77 +3700,4 @@ class _MiniStatCard extends StatelessWidget {
   }
 }
 
-class _WebQuickActionTile extends StatelessWidget {
-  const _WebQuickActionTile({
-    required this.palette,
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
 
-  final _HomePalette palette;
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    const accent = Color(0xFF0F766E);
-    return SizedBox(
-      width: 210,
-      child: Material(
-        color: Colors.white.withValues(alpha: 0.98),
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: accent.withValues(alpha: 0.14)),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.07),
-                  blurRadius: 12,
-                  offset: const Offset(0, 7),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, color: accent, size: 18),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: const Color(0xFF101B4D),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                Icon(
-                  TeacherIcons.chevron,
-                  size: 18,
-                  color: palette.text.withValues(alpha: 0.45),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

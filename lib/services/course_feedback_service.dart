@@ -123,6 +123,7 @@ class CourseFeedbackService {
   static const String reviewReportsNode = 'review_reports';
   static const String lessonCommentsNode = 'lesson_comments';
   static const String lessonRepliesNode = 'lesson_comment_replies';
+  static const String lessonCommentArchiveNode = 'lesson_comment_archive';
   static const String commentReportsNode = 'comment_reports';
 
   static const String statusPending = 'pending';
@@ -224,7 +225,7 @@ class CourseFeedbackService {
         ? textPreview
         : '${textPreview.substring(0, 117)}...';
 
-    final title = 'Recorded class comment';
+    const title = 'Recorded class comment';
     final body = '$safeActorName commented: $shortText';
 
     final baseData = <String, dynamic>{
@@ -312,7 +313,7 @@ class CourseFeedbackService {
     final m = Map<String, dynamic>.from(snap.value as Map);
     final first = _safe(m['first_name']);
     final last = _safe(m['last_name']);
-    final display = ('$first $last').trim();
+    final display = '$first $last'.trim();
     final finalName = display.isEmpty ? 'Learner' : display;
 
     final photo = _safe(m['profile_photo']);
@@ -443,7 +444,7 @@ class CourseFeedbackService {
   }
 
   static Future<void> recomputeCourseReviewStats(String courseId) async {
-    final reviews = await listCourseReviews(courseId, visibleOnly: true);
+    final reviews = await listCourseReviews(courseId);
     var total = 0;
     final stars = <String, int>{'1': 0, '2': 0, '3': 0, '4': 0, '5': 0};
     for (final r in reviews) {
@@ -471,40 +472,90 @@ class CourseFeedbackService {
   }) async {
     final identity = await loadUserIdentity(uid);
     final now = DateTime.now().millisecondsSinceEpoch;
-    final ref = _db
-        .child(lessonCommentsNode)
-        .child(courseId)
-        .child(lessonId)
-        .push();
-    await ref.set({
-      'uid': uid,
-      'courseId': courseId,
-      'lessonId': lessonId,
-      'firstName': identity['firstName'] ?? 'Learner',
-      'displayName': identity['displayName'] ?? 'Learner',
-      'photoUrl': identity['photoUrl'] ?? '',
-      'abbr': identity['abbr'] ?? 'L',
-      'type': type,
-      'text': text.trim(),
-      'status': statusPending,
-      'reportCount': 0,
-      'createdAt': now,
-      'updatedAt': now,
-    });
 
-    final commentId = (ref.key ?? '').trim();
-    if (commentId.isEmpty) return;
+    // Check for existing pending or not_approved comment to update instead
+    String? existingCommentId;
+    if (uid.trim().isNotEmpty) {
+      final existingSnap = await _db
+          .child(lessonCommentsNode)
+          .child(courseId)
+          .child(lessonId)
+          .get();
+      if (existingSnap.exists && existingSnap.value is Map) {
+        final raw = Map<dynamic, dynamic>.from(existingSnap.value as Map);
+        for (final entry in raw.entries) {
+          if (entry.value is! Map) continue;
+          final map = Map<String, dynamic>.from(entry.value as Map);
+          final entryUid = (map['uid'] ?? '').toString().trim();
+          if (entryUid != uid.trim()) continue;
+          final entryStatus = normalizeLessonCommentStatus(map['status']);
+          if (entryStatus == statusNotApproved || entryStatus == statusPending) {
+            existingCommentId = entry.key.toString();
+            break;
+          }
+        }
+      }
+    }
 
-    try {
-      await _notifyRecordedCommentImmediately(
-        courseId: courseId,
-        lessonId: lessonId,
-        commentId: commentId,
-        actorUid: uid,
-        actorName: identity['displayName'] ?? 'Learner',
-        text: text,
-      );
-    } catch (_) {}
+    if (existingCommentId != null) {
+      await _db
+          .child(lessonCommentsNode)
+          .child(courseId)
+          .child(lessonId)
+          .child(existingCommentId)
+          .update({
+        'text': text.trim(),
+        'type': type,
+        'status': statusPending,
+        'updatedAt': now,
+      });
+
+      try {
+        await _notifyRecordedCommentImmediately(
+          courseId: courseId,
+          lessonId: lessonId,
+          commentId: existingCommentId,
+          actorUid: uid,
+          actorName: identity['displayName'] ?? 'Learner',
+          text: text,
+        );
+      } catch (_) {}
+    } else {
+      final ref = _db
+          .child(lessonCommentsNode)
+          .child(courseId)
+          .child(lessonId)
+          .push();
+      await ref.set({
+        'uid': uid,
+        'courseId': courseId,
+        'lessonId': lessonId,
+        'firstName': identity['firstName'] ?? 'Learner',
+        'displayName': identity['displayName'] ?? 'Learner',
+        'photoUrl': identity['photoUrl'] ?? '',
+        'abbr': identity['abbr'] ?? 'L',
+        'type': type,
+        'text': text.trim(),
+        'status': statusPending,
+        'reportCount': 0,
+        'createdAt': now,
+        'updatedAt': now,
+      });
+
+      final commentId = (ref.key ?? '').trim();
+      if (commentId.isEmpty) return;
+
+      try {
+        await _notifyRecordedCommentImmediately(
+          courseId: courseId,
+          lessonId: lessonId,
+          commentId: commentId,
+          actorUid: uid,
+          actorName: identity['displayName'] ?? 'Learner',
+          text: text,
+        );
+      } catch (_) {}
+    }
   }
 
   static Future<void> addLessonReply({
@@ -841,6 +892,397 @@ class CourseFeedbackService {
       '$lessonRepliesNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
       '$commentReportsNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
     });
+  }
+
+  static Future<void> archiveAndDeleteLessonComment({
+    required String courseId,
+    required String lessonId,
+    required String commentId,
+    required String actorUid,
+    required String actorName,
+    required String reason,
+    Map<String, dynamic> context = const <String, dynamic>{},
+  }) async {
+    final safeCourseId = courseId.trim();
+    final safeLessonId = lessonId.trim();
+    final safeCommentId = commentId.trim();
+    if (safeCourseId.isEmpty || safeLessonId.isEmpty || safeCommentId.isEmpty) {
+      return;
+    }
+
+    final commentPath =
+        '$lessonCommentsNode/$safeCourseId/$safeLessonId/$safeCommentId';
+    final snap = await _db.child(commentPath).get();
+    if (!snap.exists || snap.value is! Map) return;
+
+    final original = Map<String, dynamic>.from(snap.value as Map);
+    final archivedAt = DateTime.now().millisecondsSinceEpoch;
+    final archivePath =
+        '$lessonCommentArchiveNode/$safeCourseId/$safeLessonId/$safeCommentId';
+
+    final safeReason = reason.trim().isEmpty ? 'not_approved' : reason.trim();
+    final keepInPlace = safeReason == 'not_approved';
+
+    await _db.update({
+      archivePath: {
+        ...original,
+        'archivedAt': archivedAt,
+        'archivedBy': actorUid.trim(),
+        'archivedByName': actorName.trim(),
+        'archiveReason': safeReason,
+        'courseId': safeCourseId,
+        'lessonId': safeLessonId,
+        'commentId': safeCommentId,
+        if (context.isNotEmpty) 'context': context,
+      },
+      if (keepInPlace) ...{
+        '$commentPath/status': statusNotApproved,
+        '$commentPath/updatedAt': archivedAt,
+      } else ...{
+        commentPath: null,
+      },
+      '$lessonRepliesNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
+      '$commentReportsNode/$safeCourseId/$safeLessonId/$safeCommentId': null,
+    });
+  }
+
+  static Future<Map<String, int>> approveLegacyLessonCommentsGlobally({
+    String migrationKey = 'approveLegacyLessonCommentsV1',
+  }) async {
+    // ... existing method (unchanged) ...
+    final migrationRef = _db
+        .child('appConfig')
+        .child('migrations')
+        .child(migrationKey);
+    final migrationSnap = await migrationRef.get();
+    if (migrationSnap.exists) {
+      return const <String, int>{
+        'approved': 0,
+        'deleted': 0,
+        'skipped': 0,
+        'alreadyRan': 1,
+      };
+    }
+
+    final snap = await _db.child(lessonCommentsNode).get();
+    if (!snap.exists || snap.value is! Map) {
+      await migrationRef.set({
+        'ranAt': DateTime.now().millisecondsSinceEpoch,
+        'approved': 0,
+        'deleted': 0,
+        'skipped': 0,
+      });
+      return const <String, int>{'approved': 0, 'deleted': 0, 'skipped': 0};
+    }
+
+    final updates = <String, dynamic>{};
+    var approved = 0;
+    var deleted = 0;
+    var skipped = 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final rawCourses = Map<dynamic, dynamic>.from(snap.value as Map);
+
+    for (final courseEntry in rawCourses.entries) {
+      final courseId = courseEntry.key.toString();
+      if (courseEntry.value is! Map) continue;
+      final lessons = Map<dynamic, dynamic>.from(courseEntry.value as Map);
+      for (final lessonEntry in lessons.entries) {
+        final lessonId = lessonEntry.key.toString();
+        if (lessonEntry.value is! Map) continue;
+        final comments = Map<dynamic, dynamic>.from(lessonEntry.value as Map);
+        for (final commentEntry in comments.entries) {
+          final commentId = commentEntry.key.toString();
+          if (commentEntry.value is! Map) continue;
+          final comment = Map<String, dynamic>.from(commentEntry.value as Map);
+          final status = normalizeLessonCommentStatus(comment['status']);
+          final path = '$lessonCommentsNode/$courseId/$lessonId/$commentId';
+
+          if (status == statusVisible) {
+            skipped += 1;
+          } else if (status == statusRemoved || status == statusNotApproved) {
+            updates[path] = null;
+            updates['$lessonRepliesNode/$courseId/$lessonId/$commentId'] = null;
+            updates['$commentReportsNode/$courseId/$lessonId/$commentId'] =
+                null;
+            deleted += 1;
+          } else {
+            updates['$path/status'] = statusVisible;
+            updates['$path/updatedAt'] = now;
+            approved += 1;
+          }
+        }
+      }
+    }
+
+    updates['appConfig/migrations/$migrationKey'] = {
+      'ranAt': now,
+      'approved': approved,
+      'deleted': deleted,
+      'skipped': skipped,
+    };
+    if (updates.isNotEmpty) await _db.update(updates);
+    return <String, int>{
+      'approved': approved,
+      'deleted': deleted,
+      'skipped': skipped,
+    };
+  }
+
+  static Future<void> cleanAllLegacyProgressWithoutReflections({
+    String migrationKey = 'cleanLegacyProgressWithoutReflectionsV1',
+  }) async {
+    final migrationRef = _db
+        .child('appConfig')
+        .child('migrations')
+        .child(migrationKey);
+    final migrationSnap = await migrationRef.get();
+    if (migrationSnap.exists) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var processedUsers = 0;
+    var processedCourses = 0;
+
+    final usersSnap = await _db.child('users').get();
+    if (!usersSnap.exists || usersSnap.value is! Map) {
+      await migrationRef.set({
+        'ranAt': now,
+        'processedUsers': 0,
+        'processedCourses': 0,
+      });
+      return;
+    }
+
+    final users = Map<String, dynamic>.from(usersSnap.value as Map);
+
+    for (final userEntry in users.entries) {
+      final uid = userEntry.key;
+      if (userEntry.value is! Map) continue;
+      final userData = Map<String, dynamic>.from(userEntry.value as Map);
+      final coursesRaw = userData['courses'];
+      if (coursesRaw is! Map) continue;
+      processedUsers++;
+
+      final userCourses = Map<String, dynamic>.from(coursesRaw);
+      for (final courseEntry in userCourses.entries) {
+        final courseKey = courseEntry.key;
+        if (courseEntry.value is! Map) continue;
+        final courseData = Map<String, dynamic>.from(
+          courseEntry.value as Map,
+        );
+
+        final progressRaw = courseData['recorded_progress'];
+        if (progressRaw is! Map) continue;
+        final progressMap = Map<String, dynamic>.from(progressRaw);
+
+        // Resolve courseId
+        final cls = courseData['class'];
+        String? courseId;
+        if (cls is Map) {
+          courseId = (cls['course_id'] ?? '').toString().trim();
+        }
+        if (courseId == null || courseId.isEmpty) {
+          courseId = (courseData['id'] ?? '').toString().trim();
+        }
+        if (courseId.isEmpty) continue;
+
+        // Fetch approved reflections for this course by this user
+        final commentsSnap = await _db
+            .child('lesson_comments/$courseId')
+            .get();
+        final approvedSessions = <String>{};
+        if (commentsSnap.exists && commentsSnap.value is Map) {
+          final comments = Map<String, dynamic>.from(
+            commentsSnap.value as Map,
+          );
+          for (final lessonEntry in comments.entries) {
+            final lessonId = lessonEntry.key;
+            if (lessonEntry.value is! Map) continue;
+            final lessonComments = Map<String, dynamic>.from(
+              lessonEntry.value as Map,
+            );
+            for (final commentEntry in lessonComments.entries) {
+              if (commentEntry.value is! Map) continue;
+              final comment = Map<String, dynamic>.from(
+                commentEntry.value as Map,
+              );
+              final commentUid = (comment['uid'] ?? '').toString().trim();
+              if (commentUid != uid) continue;
+              final status =
+                  normalizeLessonCommentStatus(comment['status']);
+              if (status == statusVisible) {
+                approvedSessions.add(lessonId);
+              }
+            }
+          }
+        }
+
+        // Fetch syllabus for ordered session list
+        final syllabusSnap = await _db
+            .child('syllabi/$courseId/recorded')
+            .get();
+
+        if (!syllabusSnap.exists) continue;
+        final orderedSessions = <String>[];
+        final syllabusVal = syllabusSnap.value;
+        if (syllabusVal is List) {
+          for (final rawUnit in syllabusVal) {
+            if (rawUnit is! Map) continue;
+            final sessions = rawUnit['sessions'];
+            if (sessions is! List) continue;
+            for (final sess in sessions) {
+              if (sess is! Map) continue;
+              final sid = (sess['id'] ?? '').toString().trim();
+              if (sid.isNotEmpty) orderedSessions.add(sid);
+            }
+          }
+        } else if (syllabusVal is Map) {
+          final rawUnits = Map<String, dynamic>.from(syllabusVal);
+          final unitList = rawUnits.entries.toList()
+            ..sort((a, b) {
+              final aVal = a.value;
+              final bVal = b.value;
+              final aOrder = aVal is Map
+                  ? (aVal['order'] ?? 0)
+                  : 0;
+              final bOrder = bVal is Map
+                  ? (bVal['order'] ?? 0)
+                  : 0;
+              return (aOrder is int ? aOrder : 0)
+                  .compareTo(bOrder is int ? bOrder : 0);
+            });
+          for (final unitEntry in unitList) {
+            if (unitEntry.value is! Map) continue;
+            final sessions =
+                (unitEntry.value as Map)['sessions'];
+            if (sessions is! List) continue;
+            for (final sess in sessions) {
+              if (sess is! Map) continue;
+              final sid = (sess['id'] ?? '').toString().trim();
+              if (sid.isNotEmpty) orderedSessions.add(sid);
+            }
+          }
+        }
+
+        if (orderedSessions.isEmpty) continue;
+
+        // Find last session with an approved reflection
+        int lastApprovedIndex = -1;
+        for (int i = 0; i < orderedSessions.length; i++) {
+          if (approvedSessions.contains(orderedSessions[i])) {
+            lastApprovedIndex = i;
+          }
+        }
+
+        // Clear progress for sessions after the last approved one
+        final updates = <String, dynamic>{};
+        for (int i = lastApprovedIndex + 1;
+            i < orderedSessions.length;
+            i++) {
+          final sid = orderedSessions[i];
+          if (progressMap.containsKey(sid)) {
+            final p = progressMap[sid];
+            if (p is Map && p['videoCompleted'] == true) {
+              updates[
+                  'users/$uid/courses/$courseKey/recorded_progress/$sid/videoCompleted'] =
+                  false;
+            }
+          }
+        }
+
+        if (updates.isNotEmpty) {
+          await _db.update(updates);
+          processedCourses++;
+        }
+      }
+    }
+
+    await migrationRef.set({
+      'ranAt': now,
+      'processedUsers': processedUsers,
+      'processedCourses': processedCourses,
+    });
+  }
+
+  static Future<Map<String, int>> resetRecordedCourseForLearner({
+    required String learnerUid,
+    required String courseId,
+    required String courseKey,
+    required String actorUid,
+    required String actorName,
+    String reason = 'fresh_start',
+  }) async {
+    final safeLearnerUid = learnerUid.trim();
+    final safeCourseId = courseId.trim();
+    final safeCourseKey = courseKey.trim();
+    if (safeLearnerUid.isEmpty ||
+        safeCourseId.isEmpty ||
+        safeCourseKey.isEmpty) {
+      throw Exception('Missing learner or course details.');
+    }
+
+    final updates = <String, dynamic>{};
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var archivedComments = 0;
+
+    final commentsSnap = await _db
+        .child(lessonCommentsNode)
+        .child(safeCourseId)
+        .get();
+    if (commentsSnap.exists && commentsSnap.value is Map) {
+      final lessons = Map<dynamic, dynamic>.from(commentsSnap.value as Map);
+      for (final lessonEntry in lessons.entries) {
+        final lessonId = lessonEntry.key.toString();
+        if (lessonEntry.value is! Map) continue;
+        final comments = Map<dynamic, dynamic>.from(lessonEntry.value as Map);
+        for (final commentEntry in comments.entries) {
+          final commentId = commentEntry.key.toString();
+          if (commentEntry.value is! Map) continue;
+          final comment = Map<String, dynamic>.from(commentEntry.value as Map);
+          if (_safe(comment['uid']) != safeLearnerUid) continue;
+
+          final archivePath =
+              '$lessonCommentArchiveNode/$safeCourseId/$lessonId/$commentId';
+          updates[archivePath] = {
+            ...comment,
+            'archivedAt': now,
+            'archivedBy': actorUid.trim(),
+            'archivedByName': actorName.trim(),
+            'archiveReason': reason.trim().isEmpty
+                ? 'fresh_start'
+                : reason.trim(),
+            'courseId': safeCourseId,
+            'lessonId': lessonId,
+            'commentId': commentId,
+          };
+          updates['$lessonCommentsNode/$safeCourseId/$lessonId/$commentId'] =
+              null;
+          updates['$lessonRepliesNode/$safeCourseId/$lessonId/$commentId'] =
+              null;
+          updates['$commentReportsNode/$safeCourseId/$lessonId/$commentId'] =
+              null;
+          archivedComments += 1;
+        }
+      }
+    }
+
+    final resetId =
+        _db.child('recorded_progress_resets').push().key ?? 'reset_$now';
+    updates['users/$safeLearnerUid/courses/$safeCourseKey/recorded_progress'] =
+        null;
+    updates['recorded_progress_resets/$safeLearnerUid/$safeCourseKey/$resetId'] =
+        {
+          'learnerUid': safeLearnerUid,
+          'courseId': safeCourseId,
+          'courseKey': safeCourseKey,
+          'resetAt': now,
+          'resetBy': actorUid.trim(),
+          'resetByName': actorName.trim(),
+          'reason': reason.trim().isEmpty ? 'fresh_start' : reason.trim(),
+          'archivedComments': archivedComments,
+        };
+
+    await _db.update(updates);
+    return <String, int>{'archivedComments': archivedComments};
   }
 
   static Future<bool> hasUserLessonReflection({

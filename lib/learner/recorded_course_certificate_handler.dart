@@ -48,6 +48,8 @@ class _CertificateHandler {
   final CertificateService _certificateService;
   final CertificatePdfService _certificatePdfService;
   final Set<String> _generatingModuleCertificateKeys = <String>{};
+  bool _generatingCourseCertificate = false;
+  List<_SessionRef>? _cachedMissingReflections;
 
   final String Function() _getUid;
   final String Function() _getCourseId;
@@ -330,8 +332,37 @@ class _CertificateHandler {
   }
 
   Future<List<_SessionRef>> _missingReflectionsOrNull() async {
+    if (_cachedMissingReflections != null) return _cachedMissingReflections!;
     final missing = await _checkLearningReflections();
+    _cachedMissingReflections = missing;
     return missing;
+  }
+
+  bool get isGeneratingCourseCertificate => _generatingCourseCertificate;
+
+  Future<void> refreshReflectionCache() async {
+    _cachedMissingReflections = await _checkLearningReflections();
+  }
+
+  (int, int) _moduleReflectionCounts(List<_RecordedUnit> moduleUnits) {
+    final ids = <String>{};
+    for (final unit in moduleUnits) {
+      for (final session in unit.sessions) {
+        ids.add(session.id);
+      }
+    }
+    final total = ids.length;
+    if (total == 0 || _cachedMissingReflections == null) return (0, total);
+    int missing = 0;
+    for (final ref in _cachedMissingReflections!) {
+      if (ids.contains(ref.session.id)) missing++;
+    }
+    return (total - missing, total);
+  }
+
+  bool _moduleReflectionsDone(List<_RecordedUnit> moduleUnits) {
+    final (approved, total) = _moduleReflectionCounts(moduleUnits);
+    return total > 0 && approved == total;
   }
 
   Future<void> _showMissingReflectionsPopup({
@@ -366,13 +397,30 @@ class _CertificateHandler {
     required bool mounted,
     required void Function(void Function()) setState,
   }) async {
+    if (_generatingCourseCertificate) return;
     if (AppConnectivity.instance.isOffline) {
       _snack(
         'Certificate generation needs internet. Come back online to generate your certificate.',
       );
       return;
     }
-    final missingRefs = await _missingReflectionsOrNull();
+    List<_SessionRef> missingRefs;
+    try {
+      missingRefs = await _missingReflectionsOrNull();
+    } catch (e) {
+      if (!mounted) return;
+      unawaited(
+        showLearnerNoticePopup(
+          context,
+          message: toHumanError(
+            e,
+            fallback: 'Could not check learning reflections. Try again.',
+          ),
+          tone: LearnerNoticeTone.error,
+        ),
+      );
+      return;
+    }
     if (missingRefs.isNotEmpty) {
       await _showMissingReflectionsPopup(
         context: context,
@@ -382,6 +430,11 @@ class _CertificateHandler {
       return;
     }
     if (!mounted) return;
+    if (mounted) {
+      setState(() { _generatingCourseCertificate = true; });
+    } else {
+      _generatingCourseCertificate = true;
+    }
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -432,6 +485,12 @@ class _CertificateHandler {
             tone: LearnerNoticeTone.error,
           ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _generatingCourseCertificate = false; });
+      } else {
+        _generatingCourseCertificate = false;
       }
     }
   }
@@ -785,6 +844,7 @@ class _CertificateHandler {
     required bool certificateUnlocked,
     required int completedSessions,
     required int totalSessions,
+    required bool generatingCertificate,
     required VoidCallback onCertificateTap,
   }) {
     if (!certificateUnlocked) return const SizedBox.shrink();
@@ -842,12 +902,23 @@ class _CertificateHandler {
             ),
           ),
           FilledButton.icon(
-            onPressed: onCertificateTap,
-            icon: const Icon(Icons.workspace_premium_rounded, size: 16),
-            label: const Text('Certificate'),
+            onPressed: generatingCertificate ? null : onCertificateTap,
+            icon: generatingCertificate
+                ? const SizedBox(
+                    width: 15,
+                    height: 15,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.workspace_premium_rounded, size: 16),
+            label: Text(generatingCertificate ? 'Preparing…' : 'Certificate'),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF166534),
               foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFF86EFAC),
+              disabledForegroundColor: const Color(0xFF166534),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -878,6 +949,8 @@ class _CertificateHandler {
   }) {
     final completed = _isModuleCompleted(moduleUnits);
     if (!completed) return const SizedBox.shrink();
+    final reflectionsDone = _moduleReflectionsDone(moduleUnits);
+    if (!reflectionsDone) return const SizedBox.shrink();
     final moduleActionKey = _moduleCertificateActionKey(
       moduleLabel,
       moduleIndex,

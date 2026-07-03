@@ -41,7 +41,6 @@ import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
 import '../services/learner_notification_settings_service.dart';
 import '../services/notification_service.dart';
-import '../services/study_streak_service.dart';
 import '../services/learner_join_signal_service.dart';
 import '../services/story_preload_service.dart';
 import '../services/window_access_service.dart';
@@ -2704,20 +2703,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
           }
         }
 
-        int streak = 0;
-        int weeklySessions = 0;
-        if (variantKey == 'recorded') {
-          try {
-            final streakData = await StudyStreakService.instance.getStreakData(
-              uid: uid,
-              courseKey: key,
-            );
-            streak = (streakData['currentStreak'] as num?)?.toInt() ?? 0;
-            weeklySessions =
-                (streakData['weeklySessions'] as num?)?.toInt() ?? 0;
-          } catch (_) {}
-        }
-
         out.add(
           _CourseProgressItem(
             courseKey: key,
@@ -2737,8 +2722,6 @@ class _LearnerDashboardLiteState extends State<_LearnerDashboardLite>
             sessionDurationMinutes: sessionDurationMinutes,
             meetUrl: meetUrl,
             teacherUid: teacherUid,
-            streak: streak,
-            weeklySessions: weeklySessions,
           ),
         );
       }
@@ -3100,8 +3083,6 @@ class _CourseProgressItem {
   final int sessionDurationMinutes;
   final String meetUrl;
   final String teacherUid;
-  final int streak;
-  final int weeklySessions;
 
   const _CourseProgressItem({
     required this.courseKey,
@@ -3121,8 +3102,6 @@ class _CourseProgressItem {
     required this.sessionDurationMinutes,
     required this.meetUrl,
     required this.teacherUid,
-    this.streak = 0,
-    this.weeklySessions = 0,
   });
 }
 
@@ -3545,7 +3524,6 @@ class _ProgressCard extends StatelessWidget {
     final textScale = MediaQuery.textScalerOf(context).scale(1);
     final hasMeet = item.meetUrl.trim().isNotEmpty;
     final isRecorded = item.variantKey == 'recorded';
-    final showMotivation = isRecorded && hasProgress;
 
     return Material(
       color: Colors.transparent,
@@ -3818,99 +3796,12 @@ class _ProgressCard extends StatelessWidget {
                       },
                     ),
                   ],
-                  if (showMotivation) ...[
-                    const SizedBox(height: 4),
-                    Divider(
-                      height: 1,
-                      color: Colors.white.withValues(alpha: 0.30),
-                    ),
-                    const SizedBox(height: 4),
-                    _MotivationBar(
-                      streak: item.streak,
-                      weeklySessions: item.weeklySessions,
-                      compact: compact,
-                      textColor: hasProgress ? Colors.white : palette.text,
-                    ),
-                  ],
                 ],
               ),
             );
           },
         ),
       ),
-    );
-  }
-}
-
-class _MotivationBar extends StatelessWidget {
-  const _MotivationBar({
-    required this.streak,
-    required this.weeklySessions,
-    required this.compact,
-    required this.textColor,
-  });
-
-  final int streak;
-  final int weeklySessions;
-  final bool compact;
-  final Color textColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final starColor = const Color(0xFFFFB800);
-    final inactiveStar = textColor.withValues(alpha: 0.20);
-
-    return Row(
-      children: [
-        Icon(
-          Icons.local_fire_department_rounded,
-          size: compact ? 14 : 16,
-          color: streak > 0
-              ? const Color(0xFFFF6B35)
-              : textColor.withValues(alpha: 0.30),
-        ),
-        const SizedBox(width: 3),
-        Text(
-          '$streak',
-          style: TextStyle(
-            color: streak > 0
-                ? const Color(0xFFFF6B35)
-                : textColor.withValues(alpha: 0.30),
-            fontWeight: FontWeight.w900,
-            fontSize: compact ? 11 : 12,
-          ),
-        ),
-        const SizedBox(width: 2),
-        Text(
-          streak == 1 ? 'day' : 'days',
-          style: TextStyle(
-            color: textColor.withValues(alpha: 0.70),
-            fontWeight: FontWeight.w700,
-            fontSize: compact ? 9 : 10,
-          ),
-        ),
-        const Spacer(),
-        ...List.generate(5, (i) {
-          final filled = i < weeklySessions;
-          return Padding(
-            padding: EdgeInsets.only(right: compact ? 1 : 2),
-            child: Icon(
-              filled ? Icons.star_rounded : Icons.star_outline_rounded,
-              size: compact ? 14 : 16,
-              color: filled ? starColor : inactiveStar,
-            ),
-          );
-        }),
-        const SizedBox(width: 3),
-        Text(
-          '$weeklySessions/5',
-          style: TextStyle(
-            color: textColor.withValues(alpha: 0.70),
-            fontWeight: FontWeight.w700,
-            fontSize: compact ? 8 : 9,
-          ),
-        ),
-      ],
     );
   }
 }
