@@ -111,18 +111,22 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   DatabaseReference get _indexRef => _db.ref('mail_index');
   DatabaseReference get _stateRef => _db.ref('mail_state');
 
-  late final Stream<DatabaseEvent> _msgStream;
+  List<_MailMsg> _allMessages = [];
+  StreamSubscription<DatabaseEvent>? _childSub;
+  bool _initialLoadDone = false;
 
   bool _sending = false;
   final List<Map<String, String>> _attachments = [];
   final Set<String> _selectedMessageIds = <String>{};
+  List<_MailMsg> get _visibleMessages => _applyLocalSearch(_allMessages);
+  Timer? _searchDebounce;
 
   final ImagePicker _picker = ImagePicker();
 
   final AudioPlayer _audio = AudioPlayer();
-  StreamSubscription<Duration>? _posSub;
-  StreamSubscription<Duration>? _durSub;
-  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<Duration>? _posSub; // ignore: unused_field
+  StreamSubscription<Duration>? _durSub; // ignore: unused_field
+  StreamSubscription<PlayerState>? _stateSub; // ignore: unused_field
   StreamSubscription<void>? _completeSub;
   StreamSubscription<DatabaseEvent>? _peerStateSub;
   String? _playingUrl;
@@ -131,18 +135,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   bool _isPlaying = false;
 
   final AudioRecorder _rec = AudioRecorder();
-  List<_MailMsg> _visibleMessages = const <_MailMsg>[];
-  final Set<String> _readReceiptWriteInFlight = <String>{};
-  final Map<String, ChatSenderIdentity> _senderByUid =
-      <String, ChatSenderIdentity>{};
-  final Set<String> _senderLoadInFlight = <String>{};
 
   bool _recStarting = false;
   bool _recRecording = false;
   bool _recUploading = false;
-  bool _fileUploading = false;
-  double _fileUploadProgress = 0;
-  String _uploadingFileName = '';
 
   bool _recLocked = false;
   bool _recCancelling = false;
@@ -160,6 +156,14 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
   static const double _cancelDxThreshold = 110;
   static const double _lockDyThreshold = 95;
   static const double _lockDeadzoneDx = 45;
+
+  final Set<String> _readReceiptWriteInFlight = <String>{};
+  final Map<String, ChatSenderIdentity> _senderByUid =
+      <String, ChatSenderIdentity>{};
+  final Set<String> _senderLoadInFlight = <String>{};
+  bool _fileUploading = false;
+  double _fileUploadProgress = 0;
+  String _uploadingFileName = '';
 
   bool get _composerBusy =>
       _sending ||
@@ -183,11 +187,8 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     super.initState();
     RouteState.enterMailThread(widget.threadId);
 
-    _msgStream = _msgsRef
-        .orderByChild('createdAt')
-        .limitToLast(_messageWindowSize)
-        .onValue
-        .asBroadcastStream();
+    _setupMessageListener();
+    _searchC.addListener(_onSearchChanged);
     _markRead();
     _listenPeerState();
     _loadNames();
@@ -233,9 +234,18 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     _audio.dispose();
 
     _recTicker?.cancel();
+    _searchDebounce?.cancel();
+    _childSub?.cancel();
     unawaited(_rec.dispose());
 
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) setState(() {});
+    });
   }
 
   void _snack(String msg) {
@@ -568,6 +578,149 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
     return msgs
         .where((m) => m.body.toLowerCase().contains(q) || attMatch(m))
         .toList();
+  }
+
+  void _setupMessageListener() {
+    _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(_messageWindowSize)
+        .once()
+        .then((event) {
+      if (!mounted) return;
+      final msgs = _parseMessages(event.snapshot.value);
+      setState(() {
+        _allMessages = msgs;
+        _initialLoadDone = true;
+      });
+      unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
+      unawaited(_markMessagesSeen(msgs));
+    });
+
+    _childSub = _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(1)
+        .onChildAdded
+        .skip(1)
+        .listen((event) {
+      if (!mounted) return;
+      final id = event.snapshot.key!;
+      if (_allMessages.any((m) => m.id == id)) return;
+      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+      final msg = _MailMsg.fromMap(id, data);
+      if (msg.deletedFor.contains(_meUid)) return;
+      setState(() {
+        _allMessages.add(msg);
+        _allMessages.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+      });
+      unawaited(_warmSenderIdentities([msg.fromUid]));
+      unawaited(_markMessagesSeen([msg]));
+    });
+  }
+
+  Widget _buildMessageList() {
+    if (!_initialLoadDone) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final msgs = _visibleMessages;
+
+    if (_allMessages.isEmpty) {
+      return const Center(child: Text('No mail yet.'));
+    }
+    if (msgs.isEmpty) {
+      return const Center(child: Text('No results in this thread.'));
+    }
+
+    return ListView.builder(
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      itemCount: msgs.length,
+      itemBuilder: (_, i) {
+        final m = msgs[i];
+        final mine = m.fromUid == _meUid;
+
+        final thisDateLabel = _dateLabel(m.createdAtMs);
+        String? nextDateLabel;
+        if (i + 1 < msgs.length) {
+          nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
+        }
+        final showDate =
+            (i == msgs.length - 1) || (nextDateLabel != thisDateLabel);
+
+        final grouped = _isSameSenderNearby(msgs, i);
+        final showSeenStatusLine = _isLatestSeenOutgoing(msgs, i);
+
+        return Column(
+          children: [
+            if (showDate) _dateSeparator(thisDateLabel),
+            Padding(
+              padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
+              child: Align(
+                alignment: mine
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: GestureDetector(
+                  onLongPress: () => _toggleMessageSelection(m),
+                  onTap: _selectionMode
+                      ? () => _toggleMessageSelection(m)
+                      : null,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!mine && !grouped) ...[
+                        _buildSenderAvatar(
+                          uid: m.fromUid,
+                          mine: false,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: mine
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: _selectedMessageIds.contains(m.id)
+                                  ? Border.all(
+                                      color: _orange,
+                                      width: 1.5,
+                                    )
+                                  : null,
+                            ),
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: _messageMaxWidth(m),
+                              ),
+                              child: _buildMessageBubble(m, mine: mine),
+                            ),
+                          ),
+                          if (m.reactions.isNotEmpty)
+                            _buildReactionsRow(m, mine: mine),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: _messageMaxWidth(m),
+                            ),
+                            child: _buildMessageMeta(
+                              m,
+                              mine: mine,
+                              showSeenStatusLine: showSeenStatusLine,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _pickAndUploadAttachment() async {
@@ -2620,7 +2773,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
                   color: _navy,
                   fontWeight: FontWeight.w900,
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) {},
               )
             : Text(
                 title,
@@ -2726,144 +2879,7 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           child: Column(
             children: [
               Expanded(
-                child: StreamBuilder<DatabaseEvent>(
-                  stream: _msgStream,
-                  builder: (_, snap) {
-                    if (snap.hasError) {
-                      return const Center(
-                        child: Text(
-                          'Could not load messages. Check your internet.',
-                        ),
-                      );
-                    }
-                    if (snap.connectionState == ConnectionState.waiting &&
-                        !snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final msgsAll = _parseMessages(snap.data?.snapshot.value);
-                    unawaited(
-                      _warmSenderIdentities(msgsAll.map((m) => m.fromUid)),
-                    );
-                    unawaited(_markMessagesSeen(msgsAll));
-                    final msgs = _applyLocalSearch(msgsAll);
-                    _visibleMessages = msgs;
-
-                    if (msgsAll.isEmpty) {
-                      return const Center(child: Text('No mail yet.'));
-                    }
-                    if (msgs.isEmpty) {
-                      return const Center(
-                        child: Text('No results in this thread.'),
-                      );
-                    }
-
-                    return ListView.builder(
-                      reverse: true,
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                      itemCount: msgs.length,
-                      itemBuilder: (_, i) {
-                        final m = msgs[i];
-                        final mine = m.fromUid == _meUid;
-
-                        final thisDateLabel = _dateLabel(m.createdAtMs);
-                        String? nextDateLabel;
-                        if (i + 1 < msgs.length) {
-                          nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
-                        }
-                        final showDate =
-                            (i == msgs.length - 1) ||
-                            (nextDateLabel != thisDateLabel);
-
-                        final grouped = _isSameSenderNearby(msgs, i);
-                        final showSeenStatusLine = _isLatestSeenOutgoing(
-                          msgs,
-                          i,
-                        );
-
-                        return Column(
-                          children: [
-                            if (showDate) _dateSeparator(thisDateLabel),
-                            Padding(
-                              padding: EdgeInsets.only(
-                                bottom: grouped ? 4 : 10,
-                              ),
-                              child: Align(
-                                alignment: mine
-                                    ? Alignment.centerRight
-                                    : Alignment.centerLeft,
-                                child: GestureDetector(
-                                  onLongPress: () => _toggleMessageSelection(m),
-                                  onTap: _selectionMode
-                                      ? () => _toggleMessageSelection(m)
-                                      : null,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (!mine && !grouped) ...[
-                                        _buildSenderAvatar(
-                                          uid: m.fromUid,
-                                          mine: false,
-                                        ),
-                                        const SizedBox(width: 6),
-                                      ],
-                                      Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment: mine
-                                            ? CrossAxisAlignment.end
-                                            : CrossAxisAlignment.start,
-                                        children: [
-                                          Container(
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              border:
-                                                  _selectedMessageIds.contains(
-                                                    m.id,
-                                                  )
-                                                  ? Border.all(
-                                                      color: _orange,
-                                                      width: 1.5,
-                                                    )
-                                                  : null,
-                                            ),
-                                            child: ConstrainedBox(
-                                              constraints: BoxConstraints(
-                                                maxWidth: _messageMaxWidth(m),
-                                              ),
-                                              child: _buildMessageBubble(
-                                                m,
-                                                mine: mine,
-                                              ),
-                                            ),
-                                          ),
-                                          if (m.reactions.isNotEmpty)
-                                            _buildReactionsRow(m, mine: mine),
-                                          ConstrainedBox(
-                                            constraints: BoxConstraints(
-                                              maxWidth: _messageMaxWidth(m),
-                                            ),
-                                            child: _buildMessageMeta(
-                                              m,
-                                              mine: mine,
-                                              showSeenStatusLine:
-                                                  showSeenStatusLine,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                ),
+                child: _buildMessageList(),
               ),
 
               SafeArea(

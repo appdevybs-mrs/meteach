@@ -1,14 +1,18 @@
 1) Open cPanel -> File Manager.
-2) Go to: public_html/app/secure
+2) Go to the live secure API folder.
+   Most likely: public_html/apps/your-bridge-school/secure
+   If your server uses the older path, use: public_html/app/secure
 3) Backup current files:
    - bootstrap.php -> bootstrap.php.bak
    - push_secure.php -> push_secure.php.bak
-4) Upload these files from this folder into public_html/app/secure and overwrite:
+   - check_item_exists_secure.php -> check_item_exists_secure.php.bak
+   - .htaccess -> .htaccess.bak
+4) Upload these files from this folder into the secure API folder and overwrite:
    - bootstrap.php
    - push_secure.php
    - .htaccess
-5) In public_html/app/secure/bootstrap.php keep this line during testing:
-   const SECURE_API_DEBUG = true;
-6) Test push by sending one reminder from the app.
-7) If working, set:
-   const SECURE_API_DEBUG = false;
+   - check_item_exists_secure.php
+5) Test the upload preflight from your computer:
+   curl -i -X OPTIONS "https://api.yourbridgeschool.com/apps/your-bridge-school/secure/upload_secure.php" -H "Origin: https://www.yourbridgeschool.com" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: authorization,x-auth-token,x-auth-uid,x-requested-with"
+6) Correct result: HTTP/1.1 204 No Content.
+7) Test by sending one file in mail from the website.

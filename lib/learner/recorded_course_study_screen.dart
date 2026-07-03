@@ -67,64 +67,399 @@ class RecordedCourseStudyScreen extends StatefulWidget {
       _RecordedCourseStudyScreenState();
 }
 
-class _RecordedIntroPoint extends StatelessWidget {
-  const _RecordedIntroPoint({
+class _GuidelineData {
+  const _GuidelineData({
     required this.icon,
     required this.title,
-    required this.text,
+    required this.description,
+    required this.arabicTitle,
+    required this.arabicDescription,
   });
 
   final IconData icon;
   final String title;
-  final String text;
+  final String description;
+  final String arabicTitle;
+  final String arabicDescription;
+}
+
+class _GuidelineStepperDialog extends StatefulWidget {
+  const _GuidelineStepperDialog();
+
+  @override
+  State<_GuidelineStepperDialog> createState() =>
+      _GuidelineStepperDialogState();
+}
+
+class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
+  static const List<_GuidelineData> _guidelines = [
+    _GuidelineData(
+      icon: Icons.play_circle_fill_rounded,
+      title: 'Watch Lessons Carefully',
+      description:
+          'Each lesson must be watched from start to finish before it counts as completed. Your progress is tracked during every session, and only properly completed lessons move you toward your certificate.',
+      arabicTitle: 'شاهد الدروس بعناية',
+      arabicDescription:
+          'يجب مشاهدة كل درس من البداية إلى النهاية حتى يُحتسب مكتملاً. يتم تتبع تقدمك أثناء كل جلسة، والدروس المكتملة بشكل صحيح فقط تقربك من الحصول على الشهادة.',
+    ),
+    _GuidelineData(
+      icon: Icons.block_rounded,
+      title: 'No Fast-Forwarding',
+      description:
+          'Fast-forward and high playback speed are locked until you finish the lesson. This protects your learning time and helps make sure you do not miss important explanations.',
+      arabicTitle: 'لا للتقديم السريع',
+      arabicDescription:
+          'يتم قفل التقديم السريع وسرعات التشغيل العالية حتى تنهي الدرس. هذا يحمي وقت التعلم الخاص بك ويساعد على عدم تفويت الشروحات المهمة.',
+    ),
+    _GuidelineData(
+      icon: Icons.visibility_rounded,
+      title: 'Stay With the Lesson',
+      description:
+          'Short attention checks may appear while the video is playing. Respond when they appear so the app knows you are still following the lesson actively.',
+      arabicTitle: 'ابقَ منتبهاً مع الدرس',
+      arabicDescription:
+          'قد تظهر اختبارات انتباه قصيرة أثناء تشغيل الفيديو. قم بالرد عند ظهورها حتى يعرف التطبيق أنك ما زلت تتابع الدرس بتركيز.',
+    ),
+    _GuidelineData(
+      icon: Icons.edit_note_rounded,
+      title: 'Write a Learning Reflection',
+      description:
+          'Required lessons need a short reflection about what you learned. Reflections help you remember the lesson and are required before your certificate can be issued.',
+      arabicTitle: 'اكتب تأملاً تعليمياً',
+      arabicDescription:
+          'الدروس المطلوبة تحتاج إلى تأمل قصير حول ما تعلمته. التأملات تساعدك على تذكر الدرس، وهي مطلوبة قبل إصدار الشهادة.',
+    ),
+    _GuidelineData(
+      icon: Icons.verified_rounded,
+      title: 'Teacher Approval Matters',
+      description:
+          'Your teacher reviews your reflections. If one is not accepted, you will need to rewrite it. Approved reflections show that you understood the lesson properly.',
+      arabicTitle: 'موافقة المعلم مهمة',
+      arabicDescription:
+          'يقوم معلمك بمراجعة التأملات التي تكتبها. إذا لم يتم قبول أحدها، ستحتاج إلى إعادة كتابته. التأملات المقبولة تثبت أنك فهمت الدرس جيداً.',
+    ),
+    _GuidelineData(
+      icon: Icons.fast_forward_rounded,
+      title: 'Replay Freely After Completion',
+      description:
+          'After a lesson is completed, you can replay it, move through it more freely, and review difficult parts whenever you need extra practice.',
+      arabicTitle: 'أعد المشاهدة بحرية بعد الإكمال',
+      arabicDescription:
+          'بعد إكمال الدرس، يمكنك إعادة مشاهدته والتنقل فيه بحرية أكبر ومراجعة الأجزاء الصعبة كلما احتجت إلى تدريب إضافي.',
+    ),
+  ];
+
+  int _currentStep = 0;
+  bool _isArabic = false;
+
+  bool get _isLastStep => _currentStep == _guidelines.length - 1;
+
+  void _toggleLanguage() => setState(() => _isArabic = !_isArabic);
+
+  void _agree() {
+    if (_isLastStep) {
+      Navigator.of(context).pop(true);
+      return;
+    }
+    setState(() => _currentStep += 1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final step = _guidelines[_currentStep];
+    final direction = _isArabic ? TextDirection.rtl : TextDirection.ltr;
+    final title = _isArabic ? step.arabicTitle : step.title;
+    final description = _isArabic ? step.arabicDescription : step.description;
+    final stepLabel = _isArabic
+        ? 'القاعدة ${_currentStep + 1} من ${_guidelines.length}'
+        : 'Guideline ${_currentStep + 1} of ${_guidelines.length}';
+    final actionLabel = _isArabic
+        ? (_isLastStep ? 'حسناً، ابدأ التعلم' : 'أوافق')
+        : (_isLastStep ? 'Done, Start Learning' : 'I Agree');
+
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.22),
+                blurRadius: 32,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(30),
+            child: SingleChildScrollView(
+              child: Stack(
+                children: [
+                  Positioned(
+                    right: -42,
+                    bottom: 88,
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _kYbsDeepOrange.withValues(alpha: 0.08),
+                      ),
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _GuidelineHeader(
+                        icon: step.icon,
+                        stepLabel: stepLabel,
+                        currentStep: _currentStep,
+                        totalSteps: _guidelines.length,
+                        isArabic: _isArabic,
+                        onToggleLanguage: _toggleLanguage,
+                      ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 330),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          final offset = Tween<Offset>(
+                            begin: const Offset(0.12, 0),
+                            end: Offset.zero,
+                          ).animate(animation);
+                          return FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: offset,
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          key: ValueKey('$_currentStep-$_isArabic'),
+                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                          child: Directionality(
+                            textDirection: direction,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  title,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xFF0F172A),
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.18,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: const Color(0xFFE2E8F0),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    description,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Color(0xFF475569),
+                                      fontSize: 14.2,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.52,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _agree,
+                            icon: Icon(
+                              _isLastStep
+                                  ? Icons.play_arrow_rounded
+                                  : Icons.check_circle_rounded,
+                            ),
+                            label: Text(actionLabel),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: _kYbsDeepOrange,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(17),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GuidelineHeader extends StatelessWidget {
+  const _GuidelineHeader({
+    required this.icon,
+    required this.stepLabel,
+    required this.currentStep,
+    required this.totalSteps,
+    required this.isArabic,
+    required this.onToggleLanguage,
+  });
+
+  final IconData icon;
+  final String stepLabel;
+  final int currentStep;
+  final int totalSteps;
+  final bool isArabic;
+  final VoidCallback onToggleLanguage;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_kYbsDeepBlue, Color(0xFF2563EB)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
         children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: const Color(0xFF2563EB), size: 19),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.22),
+                  ),
+                ),
+                child: Text(
+                  stepLabel,
                   style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
-                    fontSize: 13.5,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  text,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF475569),
-                    fontSize: 12.2,
-                    height: 1.28,
+              ),
+              const Spacer(),
+              InkWell(
+                onTap: onToggleLanguage,
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.14),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.translate_rounded,
+                        size: 15,
+                        color: isArabic ? _kYbsDeepOrange : _kYbsDeepBlue,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        isArabic ? 'English' : 'عربي',
+                        style: TextStyle(
+                          color: isArabic ? _kYbsDeepOrange : _kYbsDeepBlue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            child: Container(
+              key: ValueKey(icon),
+              width: 78,
+              height: 78,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: _kYbsDeepBlue, size: 38),
             ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(totalSteps, (index) {
+              final active = index <= currentStep;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: active ? 24 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: active
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.34),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              );
+            }),
           ),
         ],
       ),
@@ -273,111 +608,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final agreed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        titlePadding: EdgeInsets.zero,
-        contentPadding: const EdgeInsets.fromLTRB(22, 18, 22, 8),
-        actionsPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-        title: Container(
-          padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF0B2545), Color(0xFF2563EB)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Image.asset('assets/images/ybs_logo.png'),
-              ),
-              const SizedBox(width: 14),
-              const Expanded(
-                child: Text(
-                  'How Recorded Courses Work',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 19,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        content: const SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _RecordedIntroPoint(
-                icon: Icons.play_circle_fill_rounded,
-                title: 'Watch carefully',
-                text:
-                    'Lessons must be watched properly before they count as completed.',
-              ),
-              _RecordedIntroPoint(
-                icon: Icons.block_rounded,
-                title: 'No skipping at first',
-                text:
-                    'Fast-forward and high speed are locked until the lesson is completed.',
-              ),
-              _RecordedIntroPoint(
-                icon: Icons.visibility_rounded,
-                title: 'Stay with the lesson',
-                text:
-                    'You may see a short check to confirm that you are still following.',
-              ),
-              _RecordedIntroPoint(
-                icon: Icons.edit_note_rounded,
-                title: 'Write a Learning Reflection',
-                text:
-                    'Required lessons need a reflection before your certificate can be issued.',
-              ),
-              _RecordedIntroPoint(
-                icon: Icons.verified_rounded,
-                title: 'Teacher approval matters',
-                text:
-                    'Your teacher reviews reflections. If one is not accepted, you will rewrite it.',
-              ),
-              _RecordedIntroPoint(
-                icon: Icons.fast_forward_rounded,
-                title: 'Replay freely after completion',
-                text:
-                    'Once completed, you can replay and move through the lesson more freely.',
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () => Navigator.pop(ctx, true),
-              icon: const Icon(Icons.check_circle_rounded),
-              label: const Text('I understand and agree'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFE56A00),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+      builder: (ctx) => const _GuidelineStepperDialog(),
     );
-    if (agreed == true) await prefs.setBool(key, true);
+    if (agreed == true && mounted) await prefs.setBool(key, true);
   }
 
   DatabaseReference get _usersRef => _db.ref(_usersNode);
@@ -534,14 +767,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         _hasLoaded = true;
       });
       _celebrateIfComplete();
-      unawaited(_certHandler.refreshReflectionCache().then((_) {
-        if (mounted) setState(() {});
-      }));
-      unawaited(_refreshReflectionStatuses());
       unawaited(
-        CourseFeedbackService.cleanAllLegacyProgressWithoutReflections()
-            .catchError((_) {}),
+        _certHandler.refreshReflectionCache().then((_) {
+          if (mounted) setState(() {});
+        }),
       );
+      unawaited(_refreshReflectionStatuses());
+      unawaited(_cleanCurrentUserLegacyProgress());
       _debug(
         'loadAll success units=${_units.length} totalSessions=$_totalSessions '
         'completed=$_completedSessions expiresAt=$_expiresAt',
@@ -558,11 +790,42 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     }
   }
 
+  Future<void> _cleanCurrentUserLegacyProgress() async {
+    if (!_hasLoaded || _courseId.isEmpty || widget.courseKey.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    if (uid.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final flagKey = 'cleaned_legacy_${uid}_$_courseId';
+    if (prefs.getBool(flagKey) == true) return;
+    try {
+      final clearedSessionIds =
+          await CourseFeedbackService.cleanCurrentUserLegacyProgress(
+            uid: uid,
+            courseId: _courseId,
+            courseKey: widget.courseKey,
+          );
+      await prefs.setBool(flagKey, true);
+      if (mounted && clearedSessionIds.isNotEmpty) {
+        setState(() {
+          for (final sessionId in clearedSessionIds) {
+            final current = _progressOf(sessionId);
+            _progressBySessionId[sessionId] = current.copyWith(
+              videoCompleted: false,
+              completed: false,
+            );
+          }
+          _ensureExpandedModules();
+          _ensureSelectedUnits();
+        });
+        widget.onProgressChanged?.call();
+      }
+    } catch (_) {}
+  }
+
   Future<void> _refreshReflectionStatuses() async {
     if (!_hasLoaded || _units.isEmpty) return;
     try {
-      final courseId =
-          _courseId.trim().isEmpty ? widget.courseKey : _courseId;
+      final courseId = _courseId.trim().isEmpty ? widget.courseKey : _courseId;
       final snap = await FirebaseDatabase.instance
           .ref('lesson_comments/$courseId')
           .get();
@@ -574,9 +837,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
         for (final lessonEntry in data.entries) {
           final lessonId = lessonEntry.key;
           if (lessonEntry.value is! Map) continue;
-          final comments = Map<String, dynamic>.from(
-            lessonEntry.value as Map,
-          );
+          final comments = Map<String, dynamic>.from(lessonEntry.value as Map);
           for (final commentEntry in comments.entries) {
             if (commentEntry.value is! Map) continue;
             final comment = Map<String, dynamic>.from(
@@ -623,16 +884,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final prevModuleLabel = moduleEntries[moduleIndex - 1].key;
     final prevUnits = moduleEntries[moduleIndex - 1].value;
 
+    final moduleNumber = moduleIndex;
     final sections = <Widget>[];
     sections.add(
       Padding(
-        padding: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.only(bottom: 8),
         child: Text(
-          prevModuleLabel,
+          'Module $moduleNumber: $prevModuleLabel',
           style: const TextStyle(
             fontWeight: FontWeight.w900,
             color: _kYbsDeepOrange,
-            fontSize: 15,
+            fontSize: 16,
           ),
         ),
       ),
@@ -642,7 +904,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       final missingLessons = <String>[];
       for (final session in unit.sessions) {
         if (!_sessionsWithApprovedReflections.contains(session.id)) {
-          final title = session.title.trim().isEmpty ? 'Untitled' : session.title.trim();
+          final title = session.title.trim().isEmpty
+              ? 'Untitled'
+              : session.title.trim();
           missingLessons.add(title);
         }
       }
@@ -679,12 +943,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       }
     }
 
-    if (sections.length <= 1) return;
+    if (sections.isEmpty) return;
 
     await _showLockedContentPopup(
       englishTitle: 'Module Locked',
       arabicTitle: 'الوحدة مقفلة',
-      description: 'Get your learning reflections approved in "$prevModuleLabel" first.',
+      description:
+          'Get your learning reflections approved in "Module $moduleNumber: $prevModuleLabel" first.',
       sections: sections,
     );
   }
@@ -714,7 +979,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     await _showLockedContentPopup(
       englishTitle: 'Unit Reflections Needed',
       arabicTitle: 'التأملات مطلوبة',
-      description: 'Complete reflections for all lessons in "$unitTitle" first.',
+      description:
+          'Complete reflections for all lessons in "$unitTitle" first.',
       sections: sections,
     );
   }
@@ -873,14 +1139,18 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final moduleEntries = _unitsByModule.entries.toList();
     if (moduleEntries.isEmpty) return;
 
+    bool isModuleSkippable(List<_RecordedUnit> mu) =>
+        _isModuleCompleted(mu) && _allModuleLessonsApproved(mu);
+
     String? currentModule;
     for (int i = 0; i < moduleEntries.length; i++) {
       final entry = moduleEntries[i];
-      if (!_isModuleCompleted(entry.value)) {
+      if (!isModuleSkippable(entry.value)) {
         bool previousModuleApproved = true;
         if (i > 0) {
-          previousModuleApproved =
-              _allModuleLessonsApproved(moduleEntries[i - 1].value);
+          previousModuleApproved = _allModuleLessonsApproved(
+            moduleEntries[i - 1].value,
+          );
         }
         if (previousModuleApproved) {
           currentModule = entry.key;
@@ -1049,7 +1319,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     final requiresMaterials = _sessionRequiresMaterials(session);
 
     if (requiresVideo && requiresMaterials) {
-      return p.videoCompleted;
+      return p.videoCompleted && p.materialsCompleted;
     }
 
     if (requiresVideo) return p.videoCompleted;
@@ -1115,7 +1385,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   bool get _courseCertificateUnlocked {
-    return _totalUnits > 0 && _completedUnits == _totalUnits;
+    if (_totalUnits <= 0 || _completedUnits != _totalUnits) return false;
+    if (!_reflectionCacheReady) return false;
+    final moduleEntries = _unitsByModule.entries.toList();
+    for (final entry in moduleEntries) {
+      if (!_allModuleLessonsApproved(entry.value)) return false;
+    }
+    return true;
   }
 
   int get _totalUnits => _units.length;
@@ -1243,7 +1519,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     if (!requiresVideo && !requiresMaterials) return true;
 
     if (requiresVideo && requiresMaterials) {
-      return progress.videoCompleted;
+      return progress.videoCompleted && progress.materialsCompleted;
     }
 
     if (requiresVideo) return progress.videoCompleted;
@@ -3107,13 +3383,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   String? _sessionLockMessage(int flatIndex) {
     if (flatIndex <= 0) return null;
+    if (!_arePreviousModulesCompleted(flatIndex)) {
+      return 'Complete all lessons with approved Learning Reflections in the previous module first.';
+    }
     final previous = _flatSessions[flatIndex - 1].session;
     if (!_isSessionCompleted(previous)) {
       return 'Complete "${_lessonTitle(previous)}" first.';
     }
     if (_reflectionCacheReady &&
         !_sessionsWithSubmittedReflections.contains(previous.id)) {
-      return 'Submit your reflection for "${_lessonTitle(previous)}" first.';
+      return 'Submit your Learning Reflection for "${_lessonTitle(previous)}" first.';
     }
     return null;
   }
@@ -3140,11 +3419,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     await showDialog<void>(
       context: context,
-      barrierDismissible: true,
       builder: (dialogContext) {
         return Dialog(
           elevation: 16,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 24,
+          ),
           backgroundColor: Colors.transparent,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
@@ -3170,9 +3451,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                 child: Stack(
                   children: [
                     Positioned(
-                      right: -28, top: -30,
+                      right: -28,
+                      top: -30,
                       child: Container(
-                        width: 116, height: 116,
+                        width: 116,
+                        height: 116,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
                           color: Color(0x17C27A12),
@@ -3185,13 +3468,20 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            width: 58, height: 58,
+                            width: 58,
+                            height: 58,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: color.withValues(alpha: 0.13),
-                              border: Border.all(color: color.withValues(alpha: 0.28)),
+                              border: Border.all(
+                                color: color.withValues(alpha: 0.28),
+                              ),
                             ),
-                            child: const Icon(Icons.lock_rounded, color: color, size: 29),
+                            child: const Icon(
+                              Icons.lock_rounded,
+                              color: color,
+                              size: 29,
+                            ),
                           ),
                           const SizedBox(height: 14),
                           Text(
@@ -3223,7 +3513,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.74),
                               borderRadius: BorderRadius.circular(18),
-                              border: Border.all(color: color.withValues(alpha: 0.14)),
+                              border: Border.all(
+                                color: color.withValues(alpha: 0.14),
+                              ),
                             ),
                             child: SingleChildScrollView(
                               child: Column(
@@ -3232,13 +3524,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   Text(
                                     description,
                                     style: TextStyle(
-                                      color: palette.text.withValues(alpha: 0.84),
+                                      color: palette.text.withValues(
+                                        alpha: 0.84,
+                                      ),
                                       fontWeight: FontWeight.w700,
                                       height: 1.42,
                                       fontSize: 14,
                                     ),
                                   ),
-                                  if (sections != null && sections.isNotEmpty) ...[
+                                  if (sections != null &&
+                                      sections.isNotEmpty) ...[
                                     const SizedBox(height: 10),
                                     ...sections,
                                   ],
@@ -3253,12 +3548,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                               style: FilledButton.styleFrom(
                                 backgroundColor: color,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 13,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                               ),
-                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(),
                               child: const Text(
                                 'حسنًا / OK',
                                 style: TextStyle(fontWeight: FontWeight.w900),
@@ -3432,7 +3730,11 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       message: reflectionTooltip ?? '',
                       child: Icon(
                         reflectionIcon,
-                        size: isNarrow ? 16 : isWide ? 24 : 18,
+                        size: isNarrow
+                            ? 16
+                            : isWide
+                            ? 24
+                            : 18,
                         color: reflectionColor,
                       ),
                     ),
@@ -3474,178 +3776,180 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                       ),
                     ),
                   ),
-              if (requiresVideo)
-                Padding(
-                  padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
-                  child: Tooltip(
-                    message: _openingVideoSessionId == session.id
-                        ? 'Opening…'
-                        : progress.videoCompleted
-                        ? 'Rewatch video'
-                        : 'Watch video',
-                    child: TextButton.icon(
-                      onPressed: _openingVideoSessionId == null
-                          ? () {
-                              if (isUnlocked) {
-                                _openVideoPlaceholder(session);
-                              } else {
-                                final msg =
-                                    _sessionLockMessage(flatIndex);
-                                if (msg != null) _showLockedPopup(msg);
+                if (requiresVideo)
+                  Padding(
+                    padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
+                    child: Tooltip(
+                      message: _openingVideoSessionId == session.id
+                          ? 'Opening…'
+                          : progress.videoCompleted
+                          ? 'Rewatch video'
+                          : 'Watch video',
+                      child: TextButton.icon(
+                        onPressed: _openingVideoSessionId == null
+                            ? () {
+                                if (isUnlocked) {
+                                  _openVideoPlaceholder(session);
+                                } else {
+                                  final msg = _sessionLockMessage(flatIndex);
+                                  if (msg != null) _showLockedPopup(msg);
+                                }
                               }
-                            }
-                          : null,
-                      icon: Icon(
-                        Icons.play_arrow_rounded,
-                        size: isNarrow
-                            ? 16
-                            : isWide
-                            ? 22
-                            : 18,
-                      ),
-                      label: Text(
-                        _openingVideoSessionId == session.id
-                            ? 'Opening…'
-                            : 'Watch',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: isNarrow
-                              ? 12
-                              : isWide
+                            : null,
+                        icon: Icon(
+                          Icons.play_arrow_rounded,
+                          size: isNarrow
                               ? 16
-                              : 13,
-                        ),
-                      ),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isNarrow
-                              ? 8
                               : isWide
-                              ? 18
-                              : 10,
-                          vertical: isWide ? 10 : 4,
+                              ? 22
+                              : 18,
                         ),
-                        foregroundColor: isUnlocked
-                            ? const Color(0xFF4F46E5)
-                            : const Color(0xFF94A3B8),
-                        backgroundColor: isUnlocked
-                            ? const Color(0xFFEEF2FF)
-                            : const Color(0xFFF1F5F9),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                        label: Text(
+                          isNarrow
+                              ? ''
+                              : _openingVideoSessionId == session.id
+                              ? 'Opening…'
+                              : 'Watch',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: isNarrow
+                                ? 12
+                                : isWide
+                                ? 16
+                                : 13,
+                          ),
                         ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isNarrow
+                                ? 8
+                                : isWide
+                                ? 18
+                                : 10,
+                            vertical: isWide ? 10 : 4,
+                          ),
+                          foregroundColor: isUnlocked
+                              ? const Color(0xFF4F46E5)
+                              : const Color(0xFF94A3B8),
+                          backgroundColor: isUnlocked
+                              ? const Color(0xFFEEF2FF)
+                              : const Color(0xFFF1F5F9),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              if (requiresMaterials)
-                Padding(
-                  padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
-                  child: Tooltip(
-                    message: _openingMaterialsSessionId == session.id
-                        ? 'Opening…'
-                        : progress.materialsCompleted
-                        ? 'Open reading again'
-                        : 'Open reading',
-                    child: TextButton.icon(
-                      onPressed: _openingMaterialsSessionId == null
-                          ? () {
-                              if (isUnlocked) {
-                                _openMaterials(session);
-                              } else {
-                                final msg =
-                                    _sessionLockMessage(flatIndex);
-                                if (msg != null) _showLockedPopup(msg);
+                if (requiresMaterials)
+                  Padding(
+                    padding: EdgeInsets.only(left: isNarrow ? 3 : 4),
+                    child: Tooltip(
+                      message: _openingMaterialsSessionId == session.id
+                          ? 'Opening…'
+                          : progress.materialsCompleted
+                          ? 'Open reading again'
+                          : 'Open reading',
+                      child: TextButton.icon(
+                        onPressed: _openingMaterialsSessionId == null
+                            ? () {
+                                if (isUnlocked) {
+                                  _openMaterials(session);
+                                } else {
+                                  final msg = _sessionLockMessage(flatIndex);
+                                  if (msg != null) _showLockedPopup(msg);
+                                }
                               }
-                            }
-                          : null,
-                      icon: Icon(
-                        Icons.menu_book_rounded,
-                        size: isNarrow
-                            ? 16
-                            : isWide
-                            ? 22
-                            : 18,
-                      ),
-                      label: Text(
-                        _openingMaterialsSessionId == session.id
-                            ? 'Opening…'
-                            : 'Read',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: isNarrow
-                              ? 12
-                              : isWide
+                            : null,
+                        icon: Icon(
+                          Icons.menu_book_rounded,
+                          size: isNarrow
                               ? 16
-                              : 13,
-                        ),
-                      ),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isNarrow
-                              ? 8
                               : isWide
-                              ? 18
-                              : 10,
-                          vertical: isWide ? 10 : 4,
+                              ? 22
+                              : 18,
                         ),
-                        foregroundColor: isUnlocked
-                            ? const Color(0xFFEA580C)
-                            : const Color(0xFF94A3B8),
-                        backgroundColor: isUnlocked
-                            ? const Color(0xFFFFF7ED)
-                            : const Color(0xFFF1F5F9),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                        label: Text(
+                          isNarrow
+                              ? ''
+                              : _openingMaterialsSessionId == session.id
+                              ? 'Opening…'
+                              : 'Read',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: isNarrow
+                                ? 12
+                                : isWide
+                                ? 16
+                                : 13,
+                          ),
                         ),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isNarrow
+                                ? 8
+                                : isWide
+                                ? 18
+                                : 10,
+                            vertical: isWide ? 10 : 4,
+                          ),
+                          foregroundColor: isUnlocked
+                              ? const Color(0xFFEA580C)
+                              : const Color(0xFF94A3B8),
+                          backgroundColor: isUnlocked
+                              ? const Color(0xFFFFF7ED)
+                              : const Color(0xFFF1F5F9),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              if (!kIsWeb && (requiresVideo || requiresMaterials))
-                _buildSessionDownloadButton(
-                  session: session,
-                  isNarrow: isNarrow,
-                ),
-            ],
-          ),
-          if (!isUnlocked)
-            Padding(
-              padding: EdgeInsets.only(top: isWide ? 10 : 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _sessionLockMessage(flatIndex) ?? 'Lesson locked',
-                  style: TextStyle(
-                    color: const Color(0xFF64748B),
-                    fontWeight: FontWeight.w700,
-                    fontSize: isWide ? 15 : 11.4,
+                if (!kIsWeb && (requiresVideo || requiresMaterials))
+                  _buildSessionDownloadButton(
+                    session: session,
+                    isNarrow: isNarrow,
+                  ),
+              ],
+            ),
+            if (!isUnlocked)
+              Padding(
+                padding: EdgeInsets.only(top: isWide ? 10 : 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _sessionLockMessage(flatIndex) ?? 'Lesson locked',
+                    style: TextStyle(
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w700,
+                      fontSize: isWide ? 15 : 11.4,
+                    ),
                   ),
                 ),
               ),
-            ),
-          if (showDetails && canExpandDetails)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  session.objective.trim(),
-                  style: const TextStyle(
-                    color: Color(0xFF475569),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    height: 1.25,
+            if (showDetails && canExpandDetails)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    session.objective.trim(),
+                    style: const TextStyle(
+                      color: Color(0xFF475569),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      height: 1.25,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
 
@@ -3861,8 +4165,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                       if (_reflectionCacheReady && i > 0) {
                                         final prevUnit = moduleUnits[i - 1];
                                         bool allDone = true;
-                                        for (final s
-                                            in prevUnit.sessions) {
+                                        for (final s in prevUnit.sessions) {
                                           if (!_sessionsWithSubmittedReflections
                                               .contains(s.id)) {
                                             allDone = false;
@@ -3870,15 +4173,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                           }
                                         }
                                         if (!allDone) {
-                                          final missingSessions =
-                                              prevUnit.sessions.where(
-                                            (s) =>
-                                                !_sessionsWithSubmittedReflections
-                                                    .contains(s.id),
-                                          );
-                                          final title = prevUnit.title
-                                                  .trim()
-                                                  .isEmpty
+                                          final missingSessions = prevUnit
+                                              .sessions
+                                              .where(
+                                                (s) =>
+                                                    !_sessionsWithSubmittedReflections
+                                                        .contains(s.id),
+                                              );
+                                          final title =
+                                              prevUnit.title.trim().isEmpty
                                               ? 'Unit $i'
                                               : prevUnit.title.trim();
                                           await _showUnitReflectionLockedPopup(

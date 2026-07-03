@@ -239,7 +239,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   DatabaseReference get _indexRef => _db.ref('mail_index');
   DatabaseReference get _stateRef => _db.ref('mail_state');
 
-  late final Stream<DatabaseEvent> _msgStream;
+  List<_MailMsg> _allMessages = [];
+  StreamSubscription<DatabaseEvent>? _childSub;
+  bool _initialLoadDone = false;
 
   String _subject = '';
   bool _sending = false;
@@ -253,7 +255,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
 
   final List<Map<String, String>> _attachments = [];
   final Set<String> _selectedMessageIds = <String>{};
-  List<_MailMsg> _visibleMessages = const <_MailMsg>[];
+  List<_MailMsg> get _visibleMessages => _allMessages;
   final Set<String> _readReceiptWriteInFlight = <String>{};
   StreamSubscription<DatabaseEvent>? _peerStateSub;
 
@@ -323,11 +325,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     RouteState.enterMailThread(widget.threadId);
     _messagesScrollC.addListener(_handleMessagesScroll);
 
-    _msgStream = _msgsRef
-        .orderByChild('createdAt')
-        .limitToLast(_messageWindowSize)
-        .onValue
-        .asBroadcastStream();
+    _setupMessageListener();
     _loadSubject();
     _markRead();
     _listenPeerState();
@@ -372,6 +370,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
     _audio.dispose();
 
     _recTicker?.cancel();
+    _childSub?.cancel();
     unawaited(_rec.dispose());
 
     super.dispose();
@@ -955,6 +954,259 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           : accent.withValues(alpha: 0.16),
       fallbackFg: mine ? const Color(0xFF0D3B66) : accent,
       borderColor: accent.withValues(alpha: 0.30),
+    );
+  }
+
+  void _setupMessageListener() {
+    _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(_messageWindowSize)
+        .once()
+        .then((event) {
+      if (!mounted) return;
+      final msgs = _parseMessages(event.snapshot.value);
+      setState(() {
+        _allMessages = msgs;
+        _initialLoadDone = true;
+      });
+      unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
+      unawaited(_markMessagesSeen(msgs));
+      _onMessagesChanged(msgs);
+    });
+
+    _childSub = _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(1)
+        .onChildAdded
+        .skip(1)
+        .listen((event) {
+      if (!mounted) return;
+      final id = event.snapshot.key!;
+      if (_allMessages.any((m) => m.id == id)) return;
+      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+      final msg = _MailMsg.fromMap(id, data);
+      if (msg.deletedFor.contains(_meUid)) return;
+      setState(() {
+        _allMessages.add(msg);
+        _allMessages.sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
+      });
+      unawaited(_warmSenderIdentities([msg.fromUid]));
+      unawaited(_markMessagesSeen([msg]));
+      _onMessagesChanged(_allMessages);
+    });
+  }
+
+  Widget _buildMessageList() {
+    if (!_initialLoadDone) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final msgs = _visibleMessages;
+
+    if (_allMessages.isEmpty) {
+      return const Center(child: Text('No messages yet.'));
+    }
+    if (msgs.isEmpty) {
+      return const Center(child: Text('No results in this thread.'));
+    }
+
+    final scheme = Theme.of(context).colorScheme;
+    const seenBlue = Color(0xFF34B7F1);
+
+    return ListView.builder(
+      controller: _messagesScrollC,
+      padding: const EdgeInsets.all(12),
+      itemCount: msgs.length,
+      itemBuilder: (_, i) {
+        final m = msgs[i];
+        final mine = m.fromUid == _meUid;
+        final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
+        final receiptLabel = mine ? _receiptLabel(m) : '';
+        final grouped = _isSameSenderNearby(msgs, i);
+        final showSeenStatusLine = _isLatestSeenOutgoing(msgs, i);
+        final thisDateLabel = _dateLabel(m.createdAtMs);
+        final prevDateLabel =
+            i > 0 ? _dateLabel(msgs[i - 1].createdAtMs) : null;
+        final showDate = i == 0 || prevDateLabel != thisDateLabel;
+
+        return Column(
+          children: [
+            if (showDate) _dateSeparator(thisDateLabel),
+            Padding(
+              padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
+              child: GestureDetector(
+                onLongPress: () => _toggleMessageSelection(m),
+                onTap: _selectionMode
+                    ? () => _toggleMessageSelection(m)
+                    : null,
+                child: Align(
+                  alignment: mine
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!mine && !grouped) ...[
+                        _buildSenderAvatar(
+                          uid: m.fromUid,
+                          mine: false,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Column(
+                        crossAxisAlignment: mine
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: _messageMaxWidth(),
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                border: _selectedMessageIds.contains(m.id)
+                                    ? Border.all(
+                                        color: Colors.orange,
+                                        width: 1.5,
+                                      )
+                                    : null,
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  10,
+                                  12,
+                                  10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: mine
+                                      ? const Color(0xFF1F4E79)
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: Colors.black.withValues(alpha: 0.08),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (m.body.trim().isNotEmpty)
+                                      MarkdownBody(
+                                        data: m.body,
+                                        selectable: false,
+                                        onTapLink: (_, href, __) {
+                                          if (href != null &&
+                                              href.isNotEmpty) {
+                                            _showLinkConfirmationDialog(href);
+                                          }
+                                        },
+                                        styleSheet: MarkdownStyleSheet(
+                                          p: TextStyle(
+                                            color: mine
+                                                ? Colors.white
+                                                : Colors.black87,
+                                            fontWeight: FontWeight.w600,
+                                            height: 1.28,
+                                          ),
+                                          strong: TextStyle(
+                                            color: mine
+                                                ? Colors.white
+                                                : Colors.black87,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                          a: TextStyle(
+                                            color:
+                                                const Color(0xFFEC740A),
+                                            fontWeight: FontWeight.w700,
+                                            decoration:
+                                                TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                    ..._buildLinkPreviews(
+                                      m.body,
+                                      mine: mine,
+                                    ),
+                                    if (m.attachments.isNotEmpty) ...[
+                                      if (m.body.trim().isNotEmpty)
+                                        const SizedBox(height: 8),
+                                      ...m.attachments.map(
+                                        (a) => _buildAttachmentWidget(
+                                          a: a,
+                                          mine: mine,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _fmtTime(m.createdAtMs),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                              if (mine) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  receiptLevel == 2
+                                      ? Icons.done_all_rounded
+                                      : (receiptLevel == 1
+                                          ? Icons.done_all_rounded
+                                          : Icons.done_rounded),
+                                  size: 15,
+                                  color: receiptLevel == 2
+                                      ? seenBlue
+                                      : scheme.onSurfaceVariant,
+                                ),
+                              ],
+                              PopupMenuButton<String>(
+                                tooltip: 'Message actions',
+                                onSelected: (v) async {
+                                  if (v == 'delete_for_me') {
+                                    await _deleteMessageForMe(m);
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'delete_for_me',
+                                    child: Text('Delete (for me)'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          if (mine &&
+                              showSeenStatusLine &&
+                              receiptLabel.startsWith('Seen '))
+                            Text(
+                              receiptLabel,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: seenBlue,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2228,7 +2480,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
   }
 
   Future<void> _send() async {
-    if (_sending || _fileUploading) return;
+    if (_sending || _fileUploading || _recUploading) return;
 
     final body = _bodyC.text.trim();
     if (body.isEmpty && _attachments.isEmpty) {
@@ -2507,8 +2759,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       body: adminWebBodyFrame(
         context: context,
         maxWidth: 1500,
-        child: SelectionArea(
-          child: Column(
+        child: Column(
             children: [
               if (_subject.trim().isNotEmpty)
                 Padding(
@@ -2556,266 +2807,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                   ),
                 ),
               Expanded(
-                child: StreamBuilder<DatabaseEvent>(
-                  stream: _msgStream,
-                  builder: (_, snap) {
-                    final msgs = _parseMessages(snap.data?.snapshot.value);
-                    unawaited(
-                      _warmSenderIdentities(msgs.map((m) => m.fromUid)),
-                    );
-                    unawaited(_markMessagesSeen(msgs));
-                    _onMessagesChanged(msgs);
-                    _visibleMessages = msgs;
-                    if (msgs.isEmpty) {
-                      return const Center(child: Text('No messages yet.'));
-                    }
-
-                    return ListView.builder(
-                      controller: _messagesScrollC,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: msgs.length,
-                      itemBuilder: (_, i) {
-                        final m = msgs[i];
-                        final mine = m.fromUid == _meUid;
-                        final scheme = Theme.of(context).colorScheme;
-                        final receiptLevel = mine ? _messageReceiptLevel(m) : 0;
-                        final receiptLabel = mine ? _receiptLabel(m) : '';
-                        final grouped = _isSameSenderNearby(msgs, i);
-                        final showSeenStatusLine = _isLatestSeenOutgoing(
-                          msgs,
-                          i,
-                        );
-                        final thisDateLabel = _dateLabel(m.createdAtMs);
-                        final prevDateLabel = i > 0
-                            ? _dateLabel(msgs[i - 1].createdAtMs)
-                            : null;
-                        final showDate =
-                            i == 0 || prevDateLabel != thisDateLabel;
-                        const seenBlue = Color(0xFF34B7F1);
-
-                        return Column(
-                          children: [
-                            if (showDate) _dateSeparator(thisDateLabel),
-                            Padding(
-                              padding: EdgeInsets.only(
-                                bottom: grouped ? 4 : 10,
-                              ),
-                              child: GestureDetector(
-                                onLongPress: () => _toggleMessageSelection(m),
-                                onTap: _selectionMode
-                                    ? () => _toggleMessageSelection(m)
-                                    : null,
-                                child: Align(
-                                  alignment: mine
-                                      ? Alignment.centerRight
-                                      : Alignment.centerLeft,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      if (!mine && !grouped) ...[
-                                        _buildSenderAvatar(
-                                          uid: m.fromUid,
-                                          mine: false,
-                                        ),
-                                        const SizedBox(width: 6),
-                                      ],
-                                      Column(
-                                        crossAxisAlignment: mine
-                                            ? CrossAxisAlignment.end
-                                            : CrossAxisAlignment.start,
-                                        children: [
-                                          ConstrainedBox(
-                                            constraints: BoxConstraints(
-                                              maxWidth: _messageMaxWidth(),
-                                            ),
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(16),
-                                                border:
-                                                    _selectedMessageIds
-                                                        .contains(m.id)
-                                                    ? Border.all(
-                                                        color: Colors.orange,
-                                                        width: 1.5,
-                                                      )
-                                                    : null,
-                                              ),
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.fromLTRB(
-                                                      12,
-                                                      10,
-                                                      12,
-                                                      10,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: mine
-                                                      ? const Color(0xFF1F4E79)
-                                                      : Colors.white,
-                                                  borderRadius:
-                                                      BorderRadius.circular(16),
-                                                  border: Border.all(
-                                                    color: Colors.black
-                                                        .withValues(
-                                                          alpha: 0.08,
-                                                        ),
-                                                  ),
-                                                ),
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    if (m.body
-                                                        .trim()
-                                                        .isNotEmpty)
-                                                      MarkdownBody(
-                                                        data: m.body,
-                                                        selectable: false,
-                                                        onTapLink: (_, href, __) {
-                                                          if (href != null &&
-                                                              href.isNotEmpty) {
-                                                            _showLinkConfirmationDialog(
-                                                              href,
-                                                            );
-                                                          }
-                                                        },
-                                                        styleSheet:
-                                                            MarkdownStyleSheet(
-                                                              p: TextStyle(
-                                                                color: mine
-                                                                    ? Colors
-                                                                        .white
-                                                                    : Colors
-                                                                        .black87,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                                height: 1.28,
-                                                              ),
-                                                              strong: TextStyle(
-                                                                color: mine
-                                                                    ? Colors
-                                                                        .white
-                                                                    : Colors
-                                                                        .black87,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w900,
-                                                              ),
-                                                              a: TextStyle(
-                                                                color: const Color(
-                                                                    0xFFEC740A),
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w700,
-                                                                decoration:
-                                                                    TextDecoration
-                                                                        .underline,
-                                                              ),
-                                                            ),
-                                                      ),
-                                                    ..._buildLinkPreviews(
-                                                      m.body,
-                                                      mine: mine,
-                                                    ),
-                                                    if (m
-                                                        .attachments
-                                                        .isNotEmpty) ...[
-                                                      if (m.body
-                                                          .trim()
-                                                          .isNotEmpty)
-                                                        const SizedBox(
-                                                          height: 8,
-                                                        ),
-                                                      ...m.attachments.map(
-                                                        (a) =>
-                                                            _buildAttachmentWidget(
-                                                              a: a,
-                                                              mine: mine,
-                                                            ),
-                                                      ),
-                                                    ],
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                _fmtTime(m.createdAtMs),
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                  color:
-                                                      scheme.onSurfaceVariant,
-                                                ),
-                                              ),
-                                              if (mine) ...[
-                                                const SizedBox(width: 4),
-                                                Icon(
-                                                  receiptLevel == 2
-                                                      ? Icons.done_all_rounded
-                                                      : (receiptLevel == 1
-                                                            ? Icons
-                                                                  .done_all_rounded
-                                                            : Icons
-                                                                  .done_rounded),
-                                                  size: 15,
-                                                  color: receiptLevel == 2
-                                                      ? seenBlue
-                                                      : scheme.onSurfaceVariant,
-                                                ),
-                                              ],
-                                              PopupMenuButton<String>(
-                                                tooltip: 'Message actions',
-                                                onSelected: (v) async {
-                                                  if (v == 'delete_for_me') {
-                                                    await _deleteMessageForMe(
-                                                      m,
-                                                    );
-                                                  }
-                                                },
-                                                itemBuilder: (_) => const [
-                                                  PopupMenuItem(
-                                                    value: 'delete_for_me',
-                                                    child: Text(
-                                                      'Delete (for me)',
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                          if (mine &&
-                                              showSeenStatusLine &&
-                                              receiptLabel.startsWith('Seen '))
-                                            Text(
-                                              receiptLabel,
-                                              style: const TextStyle(
-                                                fontSize: 10.5,
-                                                fontWeight: FontWeight.w700,
-                                                color: seenBlue,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                ),
+                child: _buildMessageList(),
               ),
 
               SafeArea(
@@ -2939,8 +2931,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                   ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );

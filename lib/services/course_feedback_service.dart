@@ -489,7 +489,8 @@ class CourseFeedbackService {
           final entryUid = (map['uid'] ?? '').toString().trim();
           if (entryUid != uid.trim()) continue;
           final entryStatus = normalizeLessonCommentStatus(map['status']);
-          if (entryStatus == statusNotApproved || entryStatus == statusPending) {
+          if (entryStatus == statusNotApproved ||
+              entryStatus == statusPending) {
             existingCommentId = entry.key.toString();
             break;
           }
@@ -504,11 +505,11 @@ class CourseFeedbackService {
           .child(lessonId)
           .child(existingCommentId)
           .update({
-        'text': text.trim(),
-        'type': type,
-        'status': statusPending,
-        'updatedAt': now,
-      });
+            'text': text.trim(),
+            'type': type,
+            'status': statusPending,
+            'updatedAt': now,
+          });
 
       try {
         await _notifyRecordedCommentImmediately(
@@ -1066,9 +1067,7 @@ class CourseFeedbackService {
       for (final courseEntry in userCourses.entries) {
         final courseKey = courseEntry.key;
         if (courseEntry.value is! Map) continue;
-        final courseData = Map<String, dynamic>.from(
-          courseEntry.value as Map,
-        );
+        final courseData = Map<String, dynamic>.from(courseEntry.value as Map);
 
         final progressRaw = courseData['recorded_progress'];
         if (progressRaw is! Map) continue;
@@ -1086,14 +1085,10 @@ class CourseFeedbackService {
         if (courseId.isEmpty) continue;
 
         // Fetch approved reflections for this course by this user
-        final commentsSnap = await _db
-            .child('lesson_comments/$courseId')
-            .get();
+        final commentsSnap = await _db.child('lesson_comments/$courseId').get();
         final approvedSessions = <String>{};
         if (commentsSnap.exists && commentsSnap.value is Map) {
-          final comments = Map<String, dynamic>.from(
-            commentsSnap.value as Map,
-          );
+          final comments = Map<String, dynamic>.from(commentsSnap.value as Map);
           for (final lessonEntry in comments.entries) {
             final lessonId = lessonEntry.key;
             if (lessonEntry.value is! Map) continue;
@@ -1107,8 +1102,7 @@ class CourseFeedbackService {
               );
               final commentUid = (comment['uid'] ?? '').toString().trim();
               if (commentUid != uid) continue;
-              final status =
-                  normalizeLessonCommentStatus(comment['status']);
+              final status = normalizeLessonCommentStatus(comment['status']);
               if (status == statusVisible) {
                 approvedSessions.add(lessonId);
               }
@@ -1141,19 +1135,15 @@ class CourseFeedbackService {
             ..sort((a, b) {
               final aVal = a.value;
               final bVal = b.value;
-              final aOrder = aVal is Map
-                  ? (aVal['order'] ?? 0)
-                  : 0;
-              final bOrder = bVal is Map
-                  ? (bVal['order'] ?? 0)
-                  : 0;
-              return (aOrder is int ? aOrder : 0)
-                  .compareTo(bOrder is int ? bOrder : 0);
+              final aOrder = aVal is Map ? (aVal['order'] ?? 0) : 0;
+              final bOrder = bVal is Map ? (bVal['order'] ?? 0) : 0;
+              return (aOrder is int ? aOrder : 0).compareTo(
+                bOrder is int ? bOrder : 0,
+              );
             });
           for (final unitEntry in unitList) {
             if (unitEntry.value is! Map) continue;
-            final sessions =
-                (unitEntry.value as Map)['sessions'];
+            final sessions = (unitEntry.value as Map)['sessions'];
             if (sessions is! List) continue;
             for (final sess in sessions) {
               if (sess is! Map) continue;
@@ -1175,15 +1165,12 @@ class CourseFeedbackService {
 
         // Clear progress for sessions after the last approved one
         final updates = <String, dynamic>{};
-        for (int i = lastApprovedIndex + 1;
-            i < orderedSessions.length;
-            i++) {
+        for (int i = lastApprovedIndex + 1; i < orderedSessions.length; i++) {
           final sid = orderedSessions[i];
           if (progressMap.containsKey(sid)) {
             final p = progressMap[sid];
             if (p is Map && p['videoCompleted'] == true) {
-              updates[
-                  'users/$uid/courses/$courseKey/recorded_progress/$sid/videoCompleted'] =
+              updates['users/$uid/courses/$courseKey/recorded_progress/$sid/videoCompleted'] =
                   false;
             }
           }
@@ -1201,6 +1188,113 @@ class CourseFeedbackService {
       'processedUsers': processedUsers,
       'processedCourses': processedCourses,
     });
+  }
+
+  /// Per-user legacy cleanup: clears [videoCompleted] for lessons after the
+  /// last user lesson with an approved reflection. Run once per user per course,
+  /// tracked via SharedPreferences in the caller.
+  static Future<Set<String>> cleanCurrentUserLegacyProgress({
+    required String uid,
+    required String courseId,
+    required String courseKey,
+  }) async {
+    final safeUid = uid.trim();
+    final safeCourseId = courseId.trim();
+    final safeCourseKey = courseKey.trim();
+    if (safeUid.isEmpty || safeCourseId.isEmpty || safeCourseKey.isEmpty) {
+      return const <String>{};
+    }
+
+    // Fetch approved reflections for this user in this course
+    final commentsSnap = await _db
+        .child('$lessonCommentsNode/$safeCourseId')
+        .get();
+    final approvedSessions = <String>{};
+    if (commentsSnap.exists && commentsSnap.value is Map) {
+      final lessons = Map<String, dynamic>.from(commentsSnap.value as Map);
+      for (final lessonEntry in lessons.entries) {
+        final lessonId = lessonEntry.key;
+        if (lessonEntry.value is! Map) continue;
+        final comments = Map<String, dynamic>.from(lessonEntry.value as Map);
+        for (final commentEntry in comments.entries) {
+          if (commentEntry.value is! Map) continue;
+          final comment = Map<String, dynamic>.from(commentEntry.value as Map);
+          if (_safe(comment['uid']) != safeUid) continue;
+          if (normalizeLessonCommentStatus(comment['status']) ==
+              statusVisible) {
+            approvedSessions.add(lessonId);
+          }
+        }
+      }
+    }
+
+    // Get ordered session list from syllabus
+    final syllabusSnap = await _db
+        .child('syllabi/$safeCourseId/recorded')
+        .get();
+    if (!syllabusSnap.exists) return const <String>{};
+    final orderedSessions = <String>[];
+    final syllabusVal = syllabusSnap.value;
+    if (syllabusVal is List) {
+      for (final rawUnit in syllabusVal) {
+        if (rawUnit is! Map) continue;
+        final sessions = rawUnit['sessions'];
+        if (sessions is! List) continue;
+        for (final sess in sessions) {
+          if (sess is! Map) continue;
+          final sid = (sess['id'] ?? '').toString().trim();
+          if (sid.isNotEmpty) orderedSessions.add(sid);
+        }
+      }
+    } else if (syllabusVal is Map) {
+      final rawUnits = Map<String, dynamic>.from(syllabusVal);
+      final unitList = rawUnits.entries.toList()
+        ..sort((a, b) {
+          final aVal = a.value;
+          final bVal = b.value;
+          final aOrder = aVal is Map ? (aVal['order'] ?? 0) : 0;
+          final bOrder = bVal is Map ? (bVal['order'] ?? 0) : 0;
+          return (aOrder is int ? aOrder : 0).compareTo(
+            bOrder is int ? bOrder : 0,
+          );
+        });
+      for (final unitEntry in unitList) {
+        if (unitEntry.value is! Map) continue;
+        final sessions = (unitEntry.value as Map)['sessions'];
+        if (sessions is! List) continue;
+        for (final sess in sessions) {
+          if (sess is! Map) continue;
+          final sid = (sess['id'] ?? '').toString().trim();
+          if (sid.isNotEmpty) orderedSessions.add(sid);
+        }
+      }
+    }
+
+    if (orderedSessions.isEmpty) return const <String>{};
+
+    // Find last session with an approved reflection
+    int lastApprovedIndex = -1;
+    for (int i = 0; i < orderedSessions.length; i++) {
+      if (approvedSessions.contains(orderedSessions[i])) {
+        lastApprovedIndex = i;
+      }
+    }
+
+    // Clear videoCompleted for sessions after the last approved one
+    final progressPath =
+        'users/$safeUid/courses/$safeCourseKey/recorded_progress';
+    final updates = <String, dynamic>{};
+    final clearedSessionIds = <String>{};
+    for (int i = lastApprovedIndex + 1; i < orderedSessions.length; i++) {
+      final sessionId = orderedSessions[i];
+      clearedSessionIds.add(sessionId);
+      updates['$progressPath/$sessionId/videoCompleted'] = false;
+    }
+
+    if (updates.isNotEmpty) {
+      await _db.update(updates);
+    }
+    return clearedSessionIds;
   }
 
   static Future<Map<String, int>> resetRecordedCourseForLearner({

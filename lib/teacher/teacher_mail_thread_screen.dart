@@ -103,9 +103,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       s = 'https://${s.substring('http://'.length)}';
     }
 
-    final u1 = Uri.tryParse(s);
-    if (u1 == null) return Uri.encodeFull(s);
-    return u1.toString();
+    return Uri.tryParse(s)?.toString() ?? Uri.encodeFull(s);
   }
 
   final _db = FirebaseDatabase.instance;
@@ -134,14 +132,17 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
   DatabaseReference get _indexRef => _db.ref('mail_index');
   DatabaseReference get _stateRef => _db.ref('mail_state');
 
-  late final Stream<DatabaseEvent> _msgStream;
+  List<_MailMsg> _allMessages = [];
+  StreamSubscription<DatabaseEvent>? _childSub;
+  bool _initialLoadDone = false;
 
   bool _sending = false;
 
   final List<Map<String, String>> _attachments = [];
   final Set<String> _selectedMessageIds = <String>{};
-  List<_MailMsg> _visibleMessages = const <_MailMsg>[];
+  List<_MailMsg> get _visibleMessages => _applyLocalSearch(_allMessages);
   final Set<String> _readReceiptWriteInFlight = <String>{};
+  Timer? _searchDebounce;
   final List<_ComposerUploadItem> _uploadingItems = [];
   final Map<String, ChatSenderIdentity> _senderByUid =
       <String, ChatSenderIdentity>{};
@@ -222,12 +223,8 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     super.initState();
     RouteState.enterMailThread(widget.threadId);
 
-    _msgStream = _msgsRef
-        .orderByChild('createdAt')
-        .limitToLast(_messageWindowSize)
-        .onValue
-        .asBroadcastStream();
-
+    _setupMessageListener();
+    _searchC.addListener(_onSearchChanged);
     _markRead();
     _listenPeerState();
     _loadNames();
@@ -275,18 +272,24 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     _audio.dispose();
 
     _recTicker?.cancel();
+    _searchDebounce?.cancel();
+    _childSub?.cancel();
     unawaited(_rec.dispose());
 
     super.dispose();
   }
 
   void _snack(String msg) {
-    if (!mounted) return;
-    AppToast.fromSnackBar(
-      context,
-      SnackBar(content: Text(humanizeUiMessage(msg))),
-    );
+    AppToast.show(context, msg);
   }
+
+  void _onSearchChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) setState(() {});
+    });
+  }
+
 
   Future<String> _fetchDisplayName(String uid) async {
     final snap = await _db.ref('users/$uid').get();
@@ -1105,6 +1108,149 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return msgs
         .where((m) => m.body.toLowerCase().contains(q) || attMatch(m))
         .toList();
+  }
+
+  void _setupMessageListener() {
+    _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(_messageWindowSize)
+        .once()
+        .then((event) {
+      if (!mounted) return;
+      final msgs = _parseMessages(event.snapshot.value);
+      setState(() {
+        _allMessages = msgs;
+        _initialLoadDone = true;
+      });
+      unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
+      unawaited(_markMessagesSeen(msgs));
+    });
+
+    _childSub = _msgsRef
+        .orderByChild('createdAt')
+        .limitToLast(1)
+        .onChildAdded
+        .skip(1)
+        .listen((event) {
+      if (!mounted) return;
+      final id = event.snapshot.key!;
+      if (_allMessages.any((m) => m.id == id)) return;
+      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+      final msg = _MailMsg.fromMap(id, data);
+      if (msg.deletedFor.contains(_meUid)) return;
+      setState(() {
+        _allMessages.add(msg);
+        _allMessages.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+      });
+      unawaited(_warmSenderIdentities([msg.fromUid]));
+      unawaited(_markMessagesSeen([msg]));
+    });
+  }
+
+  Widget _buildMessageList() {
+    if (!_initialLoadDone) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final msgs = _visibleMessages;
+
+    if (_allMessages.isEmpty) {
+      return const Center(child: Text('No mail yet.'));
+    }
+    if (msgs.isEmpty) {
+      return const Center(child: Text('No results in this thread.'));
+    }
+
+    return ListView.builder(
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      itemCount: msgs.length,
+      itemBuilder: (_, i) {
+        final m = msgs[i];
+        final mine = m.fromUid == _meUid;
+
+        final thisDateLabel = _dateLabel(m.createdAtMs);
+        String? nextDateLabel;
+        if (i + 1 < msgs.length) {
+          nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
+        }
+        final showDate =
+            (i == msgs.length - 1) || (nextDateLabel != thisDateLabel);
+
+        final grouped = _isSameSenderNearby(msgs, i);
+        final showSeenStatusLine = _isLatestSeenOutgoing(msgs, i);
+
+        return Column(
+          children: [
+            if (showDate) _dateSeparator(thisDateLabel),
+            Padding(
+              padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
+              child: Align(
+                alignment: mine
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: GestureDetector(
+                  onLongPress: () => _toggleMessageSelection(m),
+                  onTap: _selectionMode
+                      ? () => _toggleMessageSelection(m)
+                      : null,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!mine && !grouped) ...[
+                        _buildSenderAvatar(
+                          uid: m.fromUid,
+                          mine: false,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: mine
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: _selectedMessageIds.contains(m.id)
+                                  ? Border.all(
+                                      color: _orange,
+                                      width: 1.5,
+                                    )
+                                  : null,
+                            ),
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: _messageMaxWidth(m),
+                              ),
+                              child: _buildMessageBubble(m, mine: mine),
+                            ),
+                          ),
+                          if (m.reactions.isNotEmpty)
+                            _buildReactionsRow(m, mine: mine),
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: _messageMaxWidth(m),
+                            ),
+                            child: _buildMessageMeta(
+                              m,
+                              mine: mine,
+                              showSeenStatusLine: showSeenStatusLine,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   String _newUploadId() => DateTime.now().microsecondsSinceEpoch.toString();
@@ -4377,7 +4523,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   color: _navy,
                   fontWeight: FontWeight.w900,
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) {},
               )
             : GestureDetector(
                 child: Row(
@@ -4493,128 +4639,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           children: [
             _buildHomeworkEvaluationCard(),
             Expanded(
-              child: StreamBuilder<DatabaseEvent>(
-                stream: _msgStream,
-                builder: (_, snap) {
-                  final msgsAll = _parseMessages(snap.data?.snapshot.value);
-                  unawaited(
-                    _warmSenderIdentities(msgsAll.map((m) => m.fromUid)),
-                  );
-                  unawaited(_markMessagesSeen(msgsAll));
-                  final msgs = _applyLocalSearch(msgsAll);
-                  _visibleMessages = msgs;
-
-                  if (msgsAll.isEmpty) {
-                    return const Center(child: Text('No mail yet.'));
-                  }
-                  if (msgs.isEmpty) {
-                    return const Center(
-                      child: Text('No results in this thread.'),
-                    );
-                  }
-
-                  return ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                    itemCount: msgs.length,
-                    itemBuilder: (_, i) {
-                      final m = msgs[i];
-                      final mine = m.fromUid == _meUid;
-
-                      final thisDateLabel = _dateLabel(m.createdAtMs);
-                      String? nextDateLabel;
-                      if (i + 1 < msgs.length) {
-                        nextDateLabel = _dateLabel(msgs[i + 1].createdAtMs);
-                      }
-                      final showDate =
-                          (i == msgs.length - 1) ||
-                          (nextDateLabel != thisDateLabel);
-
-                      final grouped = _isSameSenderNearby(msgs, i);
-                      final showSeenStatusLine = _isLatestSeenOutgoing(msgs, i);
-
-                      return Column(
-                        children: [
-                          if (showDate) _dateSeparator(thisDateLabel),
-                          Padding(
-                            padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
-                            child: Align(
-                              alignment: mine
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: GestureDetector(
-                                onLongPress: () => _toggleMessageSelection(m),
-                                onTap: _selectionMode
-                                    ? () => _toggleMessageSelection(m)
-                                    : null,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (!mine && !grouped) ...[
-                                      _buildSenderAvatar(
-                                        uid: m.fromUid,
-                                        mine: false,
-                                      ),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment: mine
-                                          ? CrossAxisAlignment.end
-                                          : CrossAxisAlignment.start,
-                                      children: [
-                                        Container(
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            border:
-                                                _selectedMessageIds.contains(
-                                                  m.id,
-                                                )
-                                                ? Border.all(
-                                                    color: _orange,
-                                                    width: 1.5,
-                                                  )
-                                                : null,
-                                          ),
-                                          child: ConstrainedBox(
-                                            constraints: BoxConstraints(
-                                              maxWidth: _messageMaxWidth(m),
-                                            ),
-                                            child: _buildMessageBubble(
-                                              m,
-                                              mine: mine,
-                                            ),
-                                          ),
-                                        ),
-                                        if (m.reactions.isNotEmpty)
-                                          _buildReactionsRow(m, mine: mine),
-                                        ConstrainedBox(
-                                          constraints: BoxConstraints(
-                                            maxWidth: _messageMaxWidth(m),
-                                          ),
-                                          child: _buildMessageMeta(
-                                            m,
-                                            mine: mine,
-                                            showSeenStatusLine:
-                                                showSeenStatusLine,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
+              child: _buildMessageList(),
             ),
 
             SafeArea(

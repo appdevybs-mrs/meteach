@@ -21,7 +21,7 @@ class _HomeShellState extends State<HomeShell> {
   final PageController _heroPageController = PageController();
   Timer? _heroTimer;
   bool _isArabic = false;
-  _AppMode _appMode = _AppMode.gallery;
+  _AppMode _appMode = _AppMode.courses;
 
   String _tr(String en, String ar) => _isArabic ? ar : en;
 
