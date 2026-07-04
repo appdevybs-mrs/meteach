@@ -145,43 +145,92 @@ Widget buildMailFileActions({
   if (cleanUrl.isEmpty) return const SizedBox.shrink();
   final safeName = name.trim().isEmpty ? 'attachment' : name.trim();
 
-  final ButtonStyle style = TextButton.styleFrom(
-    visualDensity: compact
-        ? const VisualDensity(horizontal: -2, vertical: -2)
-        : VisualDensity.standard,
-    foregroundColor: foregroundColor,
-    padding: compact ? const EdgeInsets.symmetric(horizontal: 4) : null,
-    tapTargetSize: compact ? MaterialTapTargetSize.shrinkWrap : null,
-  );
+  Widget actionButton({
+    required String tooltip,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    final size = compact ? 32.0 : 38.0;
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onPressed,
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    color.withValues(alpha: 0.24),
+                    color.withValues(alpha: 0.10),
+                  ],
+                ),
+                border: Border.all(
+                  color: color.withValues(alpha: 0.36),
+                  width: 1.1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.16),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Icon(
+                icon,
+                size: compact ? 17 : 19,
+                color: Color.alphaBlend(
+                  foregroundColor.withValues(alpha: 0.18),
+                  color,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   return Padding(
-    padding: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.only(top: 2, bottom: 8),
     child: Wrap(
-      spacing: 8,
+      spacing: 7,
+      runSpacing: 7,
       children: [
-        TextButton.icon(
+        actionButton(
+          tooltip: 'Preview attachment',
+          icon: Icons.visibility_rounded,
+          color: const Color(0xFF6366F1),
           onPressed: () =>
               openMailFilePreview(context, url: cleanUrl, name: safeName),
-          icon: const Icon(Icons.visibility_rounded, size: 16),
-          label: const Text('Preview'),
-          style: style,
         ),
-        TextButton.icon(
+        actionButton(
+          tooltip: 'Open in browser',
+          icon: Icons.travel_explore_rounded,
+          color: const Color(0xFF0891B2),
           onPressed: () => openMailUrlInBrowser(context, cleanUrl),
-          icon: const Icon(Icons.open_in_new_rounded, size: 16),
-          label: const Text('Browser'),
-          style: style,
         ),
-        TextButton.icon(
+        actionButton(
+          tooltip: 'Download attachment',
+          icon: Icons.download_for_offline_rounded,
+          color: const Color(0xFFEC740A),
           onPressed: () => MediaDownload.downloadUrl(
             context,
             url: cleanUrl,
             suggestedName: safeName,
             askFolder: false,
           ),
-          icon: const Icon(Icons.download_rounded, size: 16),
-          label: const Text('Download'),
-          style: style,
         ),
       ],
     ),
