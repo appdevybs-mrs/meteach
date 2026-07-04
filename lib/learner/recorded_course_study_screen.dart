@@ -142,9 +142,9 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
       description:
           'Required lessons need a short reflection about what you learned. Reflections help you remember the lesson and are required before your certificate can be issued.',
       coachLine: 'A few honest lines are better than empty progress.',
-      arabicTitle: 'اكتب تأملاً تعليمياً',
+      arabicTitle: 'اكتب مكتسبات تعليمية',
       arabicDescription:
-          'الدروس المطلوبة تحتاج إلى تأمل قصير حول ما تعلمته. التأملات تساعدك على تذكر الدرس، وهي مطلوبة قبل إصدار الشهادة.',
+          'الدروس المطلوبة تحتاج إلى مكتسب قصير حول ما تعلمته. المكتسبات تساعدك على تذكر الدرس، وهي مطلوبة قبل إصدار الشهادة.',
       arabicCoachLine: 'بضع جمل صادقة أفضل من تقدم بلا فائدة.',
     ),
     _GuidelineData(
@@ -156,8 +156,8 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
       coachLine: 'Good reflections unlock the next stage with confidence.',
       arabicTitle: 'موافقة المعلم مهمة',
       arabicDescription:
-          'يقوم معلمك بمراجعة التأملات التي تكتبها. إذا لم يتم قبول أحدها، ستحتاج إلى إعادة كتابته. التأملات المقبولة تثبت أنك فهمت الدرس جيداً.',
-      arabicCoachLine: 'التأملات الجيدة تفتح المرحلة التالية بثقة.',
+          'يقوم معلمك بمراجعة المكتسبات التي تكتبها. إذا لم يتم قبول أحدها، ستحتاج إلى إعادة كتابته. المكتسبات المقبولة تثبت أنك فهمت الدرس جيداً.',
+      arabicCoachLine: 'المكتسبات الجيدة تفتح المرحلة التالية بثقة.',
     ),
     _GuidelineData(
       icon: Icons.replay_circle_filled_rounded,
@@ -1200,7 +1200,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     await _showLockedContentPopup(
       englishTitle: 'Unit Reflections Needed',
-      arabicTitle: 'التأملات مطلوبة',
+      arabicTitle: 'المكتسبات مطلوبة',
       description:
           'Complete reflections for all lessons in "$unitTitle" first.',
       sections: sections,
@@ -2709,6 +2709,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
       if (!mounted) return;
       await _refreshProgressFromSync();
+      await _refreshReflectionStatuses();
     } finally {
       if (mounted) setState(() => _openingVideoSessionId = null);
     }

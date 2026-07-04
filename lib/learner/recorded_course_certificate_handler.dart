@@ -374,8 +374,9 @@ class _CertificateHandler {
     final sb = StringBuffer();
     for (final ref in missing) {
       final unitTitle = ref.unit.displayTitle;
-      final lessonTitle =
-          ref.session.title.trim().isEmpty ? 'Untitled' : ref.session.title.trim();
+      final lessonTitle = ref.session.title.trim().isEmpty
+          ? 'Untitled'
+          : ref.session.title.trim();
       sb.writeln('• $unitTitle / $lessonTitle');
     }
     final lessonCount = missing.length;
@@ -386,7 +387,7 @@ class _CertificateHandler {
     await showLearnerNoticePopup(
       context,
       englishTitle: 'Learning Reflections Need Approval',
-      arabicTitle: 'التأملات التعليمية بحاجة إلى موافقة',
+      arabicTitle: 'المكتسبات التعليمية بحاجة إلى موافقة',
       message: message,
       tone: LearnerNoticeTone.warning,
     );
@@ -431,7 +432,9 @@ class _CertificateHandler {
     }
     if (!mounted) return;
     if (mounted) {
-      setState(() { _generatingCourseCertificate = true; });
+      setState(() {
+        _generatingCourseCertificate = true;
+      });
     } else {
       _generatingCourseCertificate = true;
     }
@@ -488,7 +491,9 @@ class _CertificateHandler {
       }
     } finally {
       if (mounted) {
-        setState(() { _generatingCourseCertificate = false; });
+        setState(() {
+          _generatingCourseCertificate = false;
+        });
       } else {
         _generatingCourseCertificate = false;
       }
