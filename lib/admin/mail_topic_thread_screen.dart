@@ -24,8 +24,8 @@ import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/chat_sender_identity.dart';
-import '../shared/media_download.dart';
 import '../shared/link_preview_widget.dart';
+import '../shared/mail_file_preview.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -963,16 +963,16 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         .limitToLast(_messageWindowSize)
         .once()
         .then((event) {
-      if (!mounted) return;
-      final msgs = _parseMessages(event.snapshot.value);
-      setState(() {
-        _allMessages = msgs;
-        _initialLoadDone = true;
-      });
-      unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
-      unawaited(_markMessagesSeen(msgs));
-      _onMessagesChanged(msgs);
-    });
+          if (!mounted) return;
+          final msgs = _parseMessages(event.snapshot.value);
+          setState(() {
+            _allMessages = msgs;
+            _initialLoadDone = true;
+          });
+          unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
+          unawaited(_markMessagesSeen(msgs));
+          _onMessagesChanged(msgs);
+        });
 
     _childSub = _msgsRef
         .orderByChild('createdAt')
@@ -980,20 +980,20 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         .onChildAdded
         .skip(1)
         .listen((event) {
-      if (!mounted) return;
-      final id = event.snapshot.key!;
-      if (_allMessages.any((m) => m.id == id)) return;
-      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
-      final msg = _MailMsg.fromMap(id, data);
-      if (msg.deletedFor.contains(_meUid)) return;
-      setState(() {
-        _allMessages.add(msg);
-        _allMessages.sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
-      });
-      unawaited(_warmSenderIdentities([msg.fromUid]));
-      unawaited(_markMessagesSeen([msg]));
-      _onMessagesChanged(_allMessages);
-    });
+          if (!mounted) return;
+          final id = event.snapshot.key!;
+          if (_allMessages.any((m) => m.id == id)) return;
+          final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+          final msg = _MailMsg.fromMap(id, data);
+          if (msg.deletedFor.contains(_meUid)) return;
+          setState(() {
+            _allMessages.add(msg);
+            _allMessages.sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
+          });
+          unawaited(_warmSenderIdentities([msg.fromUid]));
+          unawaited(_markMessagesSeen([msg]));
+          _onMessagesChanged(_allMessages);
+        });
   }
 
   Widget _buildMessageList() {
@@ -1025,8 +1025,9 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         final grouped = _isSameSenderNearby(msgs, i);
         final showSeenStatusLine = _isLatestSeenOutgoing(msgs, i);
         final thisDateLabel = _dateLabel(m.createdAtMs);
-        final prevDateLabel =
-            i > 0 ? _dateLabel(msgs[i - 1].createdAtMs) : null;
+        final prevDateLabel = i > 0
+            ? _dateLabel(msgs[i - 1].createdAtMs)
+            : null;
         final showDate = i == 0 || prevDateLabel != thisDateLabel;
 
         return Column(
@@ -1036,9 +1037,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
               child: GestureDetector(
                 onLongPress: () => _toggleMessageSelection(m),
-                onTap: _selectionMode
-                    ? () => _toggleMessageSelection(m)
-                    : null,
+                onTap: _selectionMode ? () => _toggleMessageSelection(m) : null,
                 child: Align(
                   alignment: mine
                       ? Alignment.centerRight
@@ -1048,10 +1047,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (!mine && !grouped) ...[
-                        _buildSenderAvatar(
-                          uid: m.fromUid,
-                          mine: false,
-                        ),
+                        _buildSenderAvatar(uid: m.fromUid, mine: false),
                         const SizedBox(width: 6),
                       ],
                       Column(
@@ -1097,8 +1093,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                         data: m.body,
                                         selectable: false,
                                         onTapLink: (_, href, __) {
-                                          if (href != null &&
-                                              href.isNotEmpty) {
+                                          if (href != null && href.isNotEmpty) {
                                             _showLinkConfirmationDialog(href);
                                           }
                                         },
@@ -1117,18 +1112,14 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                             fontWeight: FontWeight.w900,
                                           ),
                                           a: TextStyle(
-                                            color:
-                                                const Color(0xFFEC740A),
+                                            color: const Color(0xFFEC740A),
                                             fontWeight: FontWeight.w700,
                                             decoration:
                                                 TextDecoration.underline,
                                           ),
                                         ),
                                       ),
-                                    ..._buildLinkPreviews(
-                                      m.body,
-                                      mine: mine,
-                                    ),
+                                    ..._buildLinkPreviews(m.body, mine: mine),
                                     if (m.attachments.isNotEmpty) ...[
                                       if (m.body.trim().isNotEmpty)
                                         const SizedBox(height: 8),
@@ -1162,8 +1153,8 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                                   receiptLevel == 2
                                       ? Icons.done_all_rounded
                                       : (receiptLevel == 1
-                                          ? Icons.done_all_rounded
-                                          : Icons.done_rounded),
+                                            ? Icons.done_all_rounded
+                                            : Icons.done_rounded),
                                   size: 15,
                                   color: receiptLevel == 2
                                       ? seenBlue
@@ -1380,7 +1371,11 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
                   color: _dialogOrange.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.open_in_new_rounded, color: _dialogOrange, size: 40),
+                child: Icon(
+                  Icons.open_in_new_rounded,
+                  color: _dialogOrange,
+                  size: 40,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
@@ -1393,7 +1388,10 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
@@ -1435,9 +1433,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white70,
-                side: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.2),
-                ),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -2082,7 +2078,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
           key: ValueKey(u),
           url: safePreviewUrl(u),
           heroColor: _orange,
-          onTap: () => _showLinkConfirmationDialog(u),
+          onTap: () => openMailLinkPreview(context, url: safePreviewUrl(u)),
         ),
       ),
     ];
@@ -2104,27 +2100,11 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           child,
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: TextButton.icon(
-              onPressed: () => MediaDownload.downloadUrl(
-                context,
-                url: url,
-                suggestedName: name,
-                askFolder: false,
-              ),
-              icon: const Icon(Icons.download_rounded, size: 16),
-              label: const Text('Download'),
-              style: TextButton.styleFrom(
-                visualDensity: const VisualDensity(
-                  horizontal: -2,
-                  vertical: -2,
-                ),
-                foregroundColor: mine ? Colors.white : Colors.black87,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
+          buildMailFileActions(
+            context: context,
+            url: url,
+            name: name,
+            foregroundColor: mine ? Colors.white : Colors.black87,
           ),
         ],
       );
@@ -2209,7 +2189,7 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
       Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: InkWell(
-          onTap: () => _openUrlExternal(url),
+          onTap: () => openMailFilePreview(context, url: url, name: name),
           child: Text(
             '📎 $name',
             style: const TextStyle(
@@ -2760,177 +2740,173 @@ class _MailTopicThreadScreenState extends State<MailTopicThreadScreen> {
         context: context,
         maxWidth: 1500,
         child: Column(
-            children: [
-              if (_subject.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF2FB),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: const Color(0xFF1F4E79).withValues(alpha: 0.22),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.menu_book_rounded,
-                          size: 18,
-                          color: Color(0xFF1F4E79),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(text: peerTitle),
-                                const TextSpan(text: ' • '),
-                                TextSpan(text: _subject),
-                              ],
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF1A3958),
-                            ),
-                          ),
-                        ),
-                      ],
+          children: [
+            if (_subject.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2FB),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFF1F4E79).withValues(alpha: 0.22),
                     ),
                   ),
-                ),
-              Expanded(
-                child: _buildMessageList(),
-              ),
-
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                  child: Column(
+                  child: Row(
                     children: [
-                      _buildFileUploadingBar(),
-                      _buildRecordingBar(),
-                      if (_attachments.isNotEmpty)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _attachments.map((a) {
-                              return Chip(
-                                label: Text(a['name'] ?? 'file'),
-                                onDeleted: () =>
-                                    setState(() => _attachments.remove(a)),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      CallbackShortcuts(
-                        bindings: {
-                          const SingleActivator(
-                            LogicalKeyboardKey.enter,
-                            control: true,
-                          ): _send,
-                          const SingleActivator(
-                            LogicalKeyboardKey.enter,
-                            meta: true,
-                          ): _send,
-                        },
-                        child: Row(
-                          children: [
-                            IconButton(
-                              tooltip: 'Camera',
-                              style: IconButton.styleFrom(
-                                backgroundColor: const Color(0xFFEC740A),
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: _disableAttachActions
-                                  ? null
-                                  : _takePhotoAndAttach,
-                              icon: const Icon(Icons.photo_camera_rounded),
-                            ),
-                            IconButton(
-                              tooltip: 'Attach',
-                              style: IconButton.styleFrom(
-                                backgroundColor: const Color(0xFF1F4E79),
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: _disableAttachActions
-                                  ? null
-                                  : _pickAndUploadAttachment,
-                              icon: const Icon(Icons.attach_file),
-                            ),
-                            Expanded(
-                              child: TextField(
-                                controller: _bodyC,
-                                onChanged: (_) => setState(() {}),
-                                minLines: 1,
-                                maxLines: 4,
-                                enabled: !_disableTextInput,
-                                decoration: const InputDecoration(
-                                  hintText: 'Write… (Ctrl/Cmd+Enter to send)',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (_bodyC.text.trim().isNotEmpty ||
-                                _attachments.isNotEmpty)
-                              FilledButton(
-                                onPressed: _disableSendAction ? null : _send,
-                                child: Text(
-                                  _sending
-                                      ? 'Sending…'
-                                      : (_fileUploading
-                                            ? 'Uploading…'
-                                            : 'Send'),
-                                ),
-                              )
-                            else
-                              (_disableMicAction
-                                  ? _buildDisabledMicButton()
-                                  : _buildActiveMicButton()),
-                          ],
-                        ),
+                      const Icon(
+                        Icons.menu_book_rounded,
+                        size: 18,
+                        color: Color(0xFF1F4E79),
                       ),
-                      if ((_recRecording || _recStarting) &&
-                          !_recLocked &&
-                          !_recUploading)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Row(
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
                             children: [
-                              Icon(
-                                Icons.info_outline_rounded,
-                                size: 16,
-                                color: Colors.black.withValues(alpha: 0.55),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Hold to record • Swipe left to cancel • Slide up to lock',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                    color: Colors.black.withValues(alpha: 0.55),
-                                  ),
-                                ),
-                              ),
+                              TextSpan(text: peerTitle),
+                              const TextSpan(text: ' • '),
+                              TextSpan(text: _subject),
                             ],
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF1A3958),
+                          ),
                         ),
+                      ),
                     ],
                   ),
                 ),
               ),
+            Expanded(child: _buildMessageList()),
+
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Column(
+                  children: [
+                    _buildFileUploadingBar(),
+                    _buildRecordingBar(),
+                    if (_attachments.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _attachments.map((a) {
+                            return Chip(
+                              label: Text(a['name'] ?? 'file'),
+                              onDeleted: () =>
+                                  setState(() => _attachments.remove(a)),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    CallbackShortcuts(
+                      bindings: {
+                        const SingleActivator(
+                          LogicalKeyboardKey.enter,
+                          control: true,
+                        ): _send,
+                        const SingleActivator(
+                          LogicalKeyboardKey.enter,
+                          meta: true,
+                        ): _send,
+                      },
+                      child: Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Camera',
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFEC740A),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _disableAttachActions
+                                ? null
+                                : _takePhotoAndAttach,
+                            icon: const Icon(Icons.photo_camera_rounded),
+                          ),
+                          IconButton(
+                            tooltip: 'Attach',
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFF1F4E79),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _disableAttachActions
+                                ? null
+                                : _pickAndUploadAttachment,
+                            icon: const Icon(Icons.attach_file),
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _bodyC,
+                              onChanged: (_) => setState(() {}),
+                              minLines: 1,
+                              maxLines: 4,
+                              enabled: !_disableTextInput,
+                              decoration: const InputDecoration(
+                                hintText: 'Write… (Ctrl/Cmd+Enter to send)',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (_bodyC.text.trim().isNotEmpty ||
+                              _attachments.isNotEmpty)
+                            FilledButton(
+                              onPressed: _disableSendAction ? null : _send,
+                              child: Text(
+                                _sending
+                                    ? 'Sending…'
+                                    : (_fileUploading ? 'Uploading…' : 'Send'),
+                              ),
+                            )
+                          else
+                            (_disableMicAction
+                                ? _buildDisabledMicButton()
+                                : _buildActiveMicButton()),
+                        ],
+                      ),
+                    ),
+                    if ((_recRecording || _recStarting) &&
+                        !_recLocked &&
+                        !_recUploading)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 16,
+                              color: Colors.black.withValues(alpha: 0.55),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Hold to record • Swipe left to cancel • Slide up to lock',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -22,7 +22,9 @@ import '../shared/teacher_web_layout.dart';
 /// Also:
 /// - After READ/DONE, sends push notification to topic: "admins"
 class TeacherReminderScreen extends StatefulWidget {
-  const TeacherReminderScreen({super.key});
+  const TeacherReminderScreen({super.key, this.initialReminderId});
+
+  final String? initialReminderId;
 
   @override
   State<TeacherReminderScreen> createState() => _TeacherReminderScreenState();
@@ -49,6 +51,10 @@ class _TeacherReminderScreenState extends State<TeacherReminderScreen> {
     if (_uid != null) {
       _ref = _db.ref('reminders/$_uid');
       _stream = _ref.onValue.asBroadcastStream();
+      final initial = widget.initialReminderId?.trim();
+      if (initial != null && initial.isNotEmpty) {
+        _expanded.add(initial);
+      }
     }
   }
 

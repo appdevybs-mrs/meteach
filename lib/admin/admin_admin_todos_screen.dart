@@ -8,7 +8,9 @@ import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
 
 class AdminAdminTodosScreen extends StatefulWidget {
-  const AdminAdminTodosScreen({super.key});
+  const AdminAdminTodosScreen({super.key, this.initialTodoId});
+
+  final String? initialTodoId;
 
   @override
   State<AdminAdminTodosScreen> createState() => _AdminAdminTodosScreenState();
@@ -41,6 +43,10 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
       final uid = _myUid!.trim();
       _inboxTodosStream = _db.ref('admin_todos/$uid').onValue;
       _allTodosStream = _db.ref('admin_todos').onValue;
+      final initial = widget.initialTodoId?.trim();
+      if (initial != null && initial.isNotEmpty) {
+        _expanded.add(initial);
+      }
       _loadMyName();
       _backfillOutboxFromInboxes();
     }
@@ -748,7 +754,14 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
                           itemBuilder: (_, i) {
                             final row = filtered[i];
                             final t = row.todo;
-                            final isExpanded = _expanded.contains(row.id);
+                            final initialTodoId = widget.initialTodoId?.trim();
+                            final isInitialExpanded =
+                                initialTodoId != null &&
+                                initialTodoId.isNotEmpty &&
+                                (row.id == initialTodoId ||
+                                    row.id.endsWith('::$initialTodoId'));
+                            final isExpanded =
+                                _expanded.contains(row.id) || isInitialExpanded;
                             final isOverdue = _isOverdue(t, now);
                             final statusColor = _statusColor(
                               t.status,
@@ -777,6 +790,9 @@ class _AdminAdminTodosScreenState extends State<AdminAdminTodosScreen> {
                                     setState(() {
                                       if (isExpanded) {
                                         _expanded.remove(row.id);
+                                        if (initialTodoId != null) {
+                                          _expanded.remove(initialTodoId);
+                                        }
                                       } else {
                                         _expanded.add(row.id);
                                       }

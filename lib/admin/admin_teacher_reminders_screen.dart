@@ -17,10 +17,18 @@ import '../shared/admin_web_layout.dart';
 import '../shared/app_feedback.dart';
 
 class AdminTeacherRemindersScreen extends StatefulWidget {
-  const AdminTeacherRemindersScreen({super.key, this.teacherUid, this.teacher});
+  const AdminTeacherRemindersScreen({
+    super.key,
+    this.teacherUid,
+    this.teacher,
+    this.initialTeacherUid,
+    this.initialReminderId,
+  });
 
   final String? teacherUid;
   final dynamic teacher;
+  final String? initialTeacherUid;
+  final String? initialReminderId;
 
   @override
   State<AdminTeacherRemindersScreen> createState() =>
@@ -58,6 +66,13 @@ class _AdminTeacherRemindersScreenState
     if (_isSingleTeacherMode) {
       _singleTeacherRemindersStream = _singleTeacherRemindersRef.onValue
           .asBroadcastStream();
+    }
+
+    final teacherUid = (widget.initialTeacherUid ?? widget.teacherUid ?? '')
+        .trim();
+    final reminderId = (widget.initialReminderId ?? '').trim();
+    if (teacherUid.isNotEmpty && reminderId.isNotEmpty) {
+      _expanded.add('${teacherUid}_$reminderId');
     }
   }
 
@@ -311,7 +326,7 @@ class _AdminTeacherRemindersScreenState
           action: 'teacher_reminder_push',
         ),
         eventParts: ['teacher', teacherUid, ref.key ?? ''],
-        data: {'teacherUid': teacherUid},
+        data: {'teacherUid': teacherUid, 'reminderId': ref.key ?? ''},
         route: 'teacher_reminders',
       );
 
@@ -1735,7 +1750,9 @@ class ReminderUploadClient {
       ..fields['auth_token'] = token
       ..fields['auth_uid'] = user.uid
       ..fields['app_id'] = appId
-      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+      ..files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
 
     return _sendAndParse(req);
   }

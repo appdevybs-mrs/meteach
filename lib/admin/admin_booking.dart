@@ -8,7 +8,9 @@ import '../shared/app_feedback.dart';
 import '../shared/admin_web_layout.dart';
 
 class AdminBookingScreen extends StatefulWidget {
-  const AdminBookingScreen({super.key});
+  const AdminBookingScreen({super.key, this.initialCourseId});
+
+  final String? initialCourseId;
 
   @override
   State<AdminBookingScreen> createState() => _AdminBookingScreenState();
@@ -52,6 +54,10 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
   @override
   void initState() {
     super.initState();
+    final initialCourseId = widget.initialCourseId?.trim();
+    if (initialCourseId != null && initialCourseId.isNotEmpty) {
+      selectedCourseId = initialCourseId;
+    }
     _loadCourses();
     _listenToBookingReservations();
     _bookingRowsMain.addListener(() {

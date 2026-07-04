@@ -70,17 +70,23 @@ class RecordedCourseStudyScreen extends StatefulWidget {
 class _GuidelineData {
   const _GuidelineData({
     required this.icon,
+    required this.accentColor,
     required this.title,
     required this.description,
+    required this.coachLine,
     required this.arabicTitle,
     required this.arabicDescription,
+    required this.arabicCoachLine,
   });
 
   final IconData icon;
+  final Color accentColor;
   final String title;
   final String description;
+  final String coachLine;
   final String arabicTitle;
   final String arabicDescription;
+  final String arabicCoachLine;
 }
 
 class _GuidelineStepperDialog extends StatefulWidget {
@@ -94,58 +100,76 @@ class _GuidelineStepperDialog extends StatefulWidget {
 class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
   static const List<_GuidelineData> _guidelines = [
     _GuidelineData(
-      icon: Icons.play_circle_fill_rounded,
-      title: 'Watch Lessons Carefully',
+      icon: Icons.theaters_rounded,
+      accentColor: Color(0xFF2563EB),
+      title: 'Watch Like It Counts',
       description:
           'Each lesson must be watched from start to finish before it counts as completed. Your progress is tracked during every session, and only properly completed lessons move you toward your certificate.',
-      arabicTitle: 'شاهد الدروس بعناية',
+      coachLine: 'Your certificate progress starts with real watching.',
+      arabicTitle: 'شاهد وكأن الأمر مهم',
       arabicDescription:
           'يجب مشاهدة كل درس من البداية إلى النهاية حتى يُحتسب مكتملاً. يتم تتبع تقدمك أثناء كل جلسة، والدروس المكتملة بشكل صحيح فقط تقربك من الحصول على الشهادة.',
+      arabicCoachLine: 'تقدمك نحو الشهادة يبدأ بمشاهدة حقيقية.',
     ),
     _GuidelineData(
-      icon: Icons.block_rounded,
-      title: 'No Fast-Forwarding',
+      icon: Icons.lock_clock_rounded,
+      accentColor: Color(0xFFEA580C),
+      title: 'No Fast-Forwarding Yet',
       description:
           'Fast-forward and high playback speed are locked until you finish the lesson. This protects your learning time and helps make sure you do not miss important explanations.',
-      arabicTitle: 'لا للتقديم السريع',
+      coachLine: 'First learn it properly, then replay it your way.',
+      arabicTitle: 'لا للتقديم السريع الآن',
       arabicDescription:
           'يتم قفل التقديم السريع وسرعات التشغيل العالية حتى تنهي الدرس. هذا يحمي وقت التعلم الخاص بك ويساعد على عدم تفويت الشروحات المهمة.',
+      arabicCoachLine: 'تعلّم الدرس أولاً، ثم أعده بالطريقة التي تناسبك.',
     ),
     _GuidelineData(
-      icon: Icons.visibility_rounded,
+      icon: Icons.radar_rounded,
+      accentColor: Color(0xFF7C3AED),
       title: 'Stay With the Lesson',
       description:
           'Short attention checks may appear while the video is playing. Respond when they appear so the app knows you are still following the lesson actively.',
+      coachLine: 'A quick tap proves you are really there.',
       arabicTitle: 'ابقَ منتبهاً مع الدرس',
       arabicDescription:
           'قد تظهر اختبارات انتباه قصيرة أثناء تشغيل الفيديو. قم بالرد عند ظهورها حتى يعرف التطبيق أنك ما زلت تتابع الدرس بتركيز.',
+      arabicCoachLine: 'ضغطة سريعة تثبت أنك تتابع فعلاً.',
     ),
     _GuidelineData(
-      icon: Icons.edit_note_rounded,
-      title: 'Write a Learning Reflection',
+      icon: Icons.auto_stories_rounded,
+      accentColor: Color(0xFF0891B2),
+      title: 'Turn Watching Into Learning',
       description:
           'Required lessons need a short reflection about what you learned. Reflections help you remember the lesson and are required before your certificate can be issued.',
+      coachLine: 'A few honest lines are better than empty progress.',
       arabicTitle: 'اكتب تأملاً تعليمياً',
       arabicDescription:
           'الدروس المطلوبة تحتاج إلى تأمل قصير حول ما تعلمته. التأملات تساعدك على تذكر الدرس، وهي مطلوبة قبل إصدار الشهادة.',
+      arabicCoachLine: 'بضع جمل صادقة أفضل من تقدم بلا فائدة.',
     ),
     _GuidelineData(
-      icon: Icons.verified_rounded,
+      icon: Icons.workspace_premium_rounded,
+      accentColor: Color(0xFF16A34A),
       title: 'Teacher Approval Matters',
       description:
           'Your teacher reviews your reflections. If one is not accepted, you will need to rewrite it. Approved reflections show that you understood the lesson properly.',
+      coachLine: 'Good reflections unlock the next stage with confidence.',
       arabicTitle: 'موافقة المعلم مهمة',
       arabicDescription:
           'يقوم معلمك بمراجعة التأملات التي تكتبها. إذا لم يتم قبول أحدها، ستحتاج إلى إعادة كتابته. التأملات المقبولة تثبت أنك فهمت الدرس جيداً.',
+      arabicCoachLine: 'التأملات الجيدة تفتح المرحلة التالية بثقة.',
     ),
     _GuidelineData(
-      icon: Icons.fast_forward_rounded,
-      title: 'Replay Freely After Completion',
+      icon: Icons.replay_circle_filled_rounded,
+      accentColor: Color(0xFFDB2777),
+      title: 'Replay Freely Later',
       description:
           'After a lesson is completed, you can replay it, move through it more freely, and review difficult parts whenever you need extra practice.',
+      coachLine: 'Finish once, then review anytime you need.',
       arabicTitle: 'أعد المشاهدة بحرية بعد الإكمال',
       arabicDescription:
           'بعد إكمال الدرس، يمكنك إعادة مشاهدته والتنقل فيه بحرية أكبر ومراجعة الأجزاء الصعبة كلما احتجت إلى تدريب إضافي.',
+      arabicCoachLine: 'أكمل الدرس مرة، ثم راجعه متى احتجت.',
     ),
   ];
 
@@ -164,18 +188,27 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
     setState(() => _currentStep += 1);
   }
 
+  void _skip() => Navigator.of(context).pop(false);
+
   @override
   Widget build(BuildContext context) {
     final step = _guidelines[_currentStep];
     final direction = _isArabic ? TextDirection.rtl : TextDirection.ltr;
     final title = _isArabic ? step.arabicTitle : step.title;
     final description = _isArabic ? step.arabicDescription : step.description;
+    final coachLine = _isArabic ? step.arabicCoachLine : step.coachLine;
     final stepLabel = _isArabic
         ? 'القاعدة ${_currentStep + 1} من ${_guidelines.length}'
         : 'Guideline ${_currentStep + 1} of ${_guidelines.length}';
+    final introLabel = _isArabic
+        ? 'مهمة التعلم المسجل'
+        : 'Recorded Learning Mission';
     final actionLabel = _isArabic
         ? (_isLastStep ? 'حسناً، ابدأ التعلم' : 'أوافق')
         : (_isLastStep ? 'Done, Start Learning' : 'I Agree');
+    final skipLabel = _isArabic
+        ? 'تخطي الإرشادات والنصائح'
+        : 'Skip Guide and Tips';
 
     return Dialog(
       elevation: 0,
@@ -185,8 +218,13 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
         constraints: const BoxConstraints(maxWidth: 460),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.white,
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFFFFFFF), Color(0xFFFFF7ED)],
+            ),
             borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: const Color(0xFFFFEDD5)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.22),
@@ -212,11 +250,25 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
                       ),
                     ),
                   ),
+                  Positioned(
+                    left: -48,
+                    top: 175,
+                    child: Container(
+                      width: 124,
+                      height: 124,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: step.accentColor.withValues(alpha: 0.08),
+                      ),
+                    ),
+                  ),
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _GuidelineHeader(
                         icon: step.icon,
+                        accentColor: step.accentColor,
+                        introLabel: introLabel,
                         stepLabel: stepLabel,
                         currentStep: _currentStep,
                         totalSteps: _guidelines.length,
@@ -242,41 +294,101 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
                         },
                         child: Padding(
                           key: ValueKey('$_currentStep-$_isArabic'),
-                          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                          padding: const EdgeInsets.fromLTRB(24, 22, 24, 8),
                           child: Directionality(
                             textDirection: direction,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                Text(
-                                  title,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Color(0xFF0F172A),
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.18,
-                                  ),
-                                ),
-                                const SizedBox(height: 14),
                                 Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: const Color(0xFFE2E8F0),
-                                    ),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    16,
+                                    16,
+                                    14,
                                   ),
-                                  child: Text(
-                                    description,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      color: Color(0xFF475569),
-                                      fontSize: 14.2,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.52,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    borderRadius: BorderRadius.circular(24),
+                                    border: Border.all(
+                                      color: step.accentColor.withValues(
+                                        alpha: 0.18,
+                                      ),
                                     ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: step.accentColor.withValues(
+                                          alpha: 0.10,
+                                        ),
+                                        blurRadius: 18,
+                                        offset: const Offset(0, 8),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        title,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Color(0xFF0F172A),
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w900,
+                                          height: 1.18,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        description,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          color: Color(0xFF475569),
+                                          fontSize: 14.1,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 13,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: step.accentColor.withValues(
+                                            alpha: 0.10,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.lightbulb_rounded,
+                                              color: step.accentColor,
+                                              size: 18,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Flexible(
+                                              child: Text(
+                                                coachLine,
+                                                textAlign: TextAlign.center,
+                                                style: TextStyle(
+                                                  color: step.accentColor,
+                                                  fontSize: 12.8,
+                                                  fontWeight: FontWeight.w900,
+                                                  height: 1.25,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -286,29 +398,66 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
                       ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(22, 12, 22, 22),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: _agree,
-                            icon: Icon(
-                              _isLastStep
-                                  ? Icons.play_arrow_rounded
-                                  : Icons.check_circle_rounded,
-                            ),
-                            label: Text(actionLabel),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _kYbsDeepOrange,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(17),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _agree,
+                                icon: Icon(
+                                  _isLastStep
+                                      ? Icons.play_arrow_rounded
+                                      : Icons.check_circle_rounded,
+                                ),
+                                label: Text(actionLabel),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: step.accentColor,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 15,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(17),
+                                  ),
+                                  textStyle: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
                               ),
-                              textStyle: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
+                            ),
+                            const SizedBox(height: 9),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: _skip,
+                                icon: const Icon(Icons.close_rounded),
+                                label: Text(skipLabel),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _kYbsDeepBlue,
+                                  backgroundColor: Colors.white.withValues(
+                                    alpha: 0.78,
+                                  ),
+                                  side: BorderSide(
+                                    color: step.accentColor.withValues(
+                                      alpha: 0.18,
+                                    ),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 13,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  textStyle: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
                       ),
                     ],
@@ -326,6 +475,8 @@ class _GuidelineStepperDialogState extends State<_GuidelineStepperDialog> {
 class _GuidelineHeader extends StatelessWidget {
   const _GuidelineHeader({
     required this.icon,
+    required this.accentColor,
+    required this.introLabel,
     required this.stepLabel,
     required this.currentStep,
     required this.totalSteps,
@@ -334,6 +485,8 @@ class _GuidelineHeader extends StatelessWidget {
   });
 
   final IconData icon;
+  final Color accentColor;
+  final String introLabel;
   final String stepLabel;
   final int currentStep;
   final int totalSteps;
@@ -345,9 +498,9 @@ class _GuidelineHeader extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [_kYbsDeepBlue, Color(0xFF2563EB)],
+          colors: [_kYbsDeepBlue, accentColor],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -420,28 +573,98 @@ class _GuidelineHeader extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
-            child: Container(
-              key: ValueKey(icon),
-              width: 78,
-              height: 78,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 16,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Icon(icon, color: _kYbsDeepBlue, size: 38),
+          const SizedBox(height: 18),
+          Text(
+            introLabel,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              height: 1.15,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 106,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 118,
+                  height: 86,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.17),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.20),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 118,
+                  top: 2,
+                  child: Container(
+                    width: 62,
+                    height: 62,
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.16),
+                          blurRadius: 16,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Image.asset('assets/images/ybs_logo.png'),
+                  ),
+                ),
+                Image.asset(
+                  'assets/images/character.png',
+                  height: 104,
+                  fit: BoxFit.contain,
+                ),
+                Positioned(
+                  right: 118,
+                  bottom: 5,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 260),
+                    child: Container(
+                      key: ValueKey(icon),
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Icon(icon, color: accentColor, size: 31),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 8,
+              value: (currentStep + 1) / totalSteps,
+              backgroundColor: Colors.white.withValues(alpha: 0.28),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(totalSteps, (index) {
@@ -450,8 +673,8 @@ class _GuidelineHeader extends StatelessWidget {
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutCubic,
                 margin: const EdgeInsets.symmetric(horizontal: 4),
-                width: active ? 24 : 8,
-                height: 8,
+                width: active ? 22 : 7,
+                height: 7,
                 decoration: BoxDecoration(
                   color: active
                       ? Colors.white
@@ -599,18 +822,13 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   Future<void> _showRecordedCourseIntroIfNeeded() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    if (uid.trim().isEmpty || !mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    final key = 'learner.recorded_course_intro.v1.$uid';
-    if (prefs.getBool(key) == true || !mounted) return;
+    if (!mounted) return;
 
-    final agreed = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => const _GuidelineStepperDialog(),
     );
-    if (agreed == true && mounted) await prefs.setBool(key, true);
   }
 
   DatabaseReference get _usersRef => _db.ref(_usersNode);
@@ -761,7 +979,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           ..addAll(progressById);
         _units = units;
         _usingOfflineCourseCache = false;
-        _ensureExpandedModules();
         _ensureSelectedUnits();
         _busy = false;
         _hasLoaded = true;
@@ -869,10 +1086,12 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
             ..clear()
             ..addAll(rejected);
           _reflectionCacheReady = true;
+          _ensureExpandedModules();
+          _ensureSelectedUnits();
         });
       }
     } catch (_) {
-      // Cache stays unready — old gating applies, no false blocks
+      // Cache stays unready, so later modules stay safely locked.
     }
   }
 
@@ -886,61 +1105,58 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
     final moduleNumber = moduleIndex;
     final sections = <Widget>[];
-    sections.add(
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(
-          'Module $moduleNumber: $prevModuleLabel',
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            color: _kYbsDeepOrange,
-            fontSize: 16,
-          ),
-        ),
-      ),
-    );
 
-    for (final unit in prevUnits) {
-      final missingLessons = <String>[];
-      for (final session in unit.sessions) {
+    for (int unitIndex = 0; unitIndex < prevUnits.length; unitIndex++) {
+      final unit = prevUnits[unitIndex];
+      final missingLessons = <Widget>[];
+      for (
+        int sessionIndex = 0;
+        sessionIndex < unit.sessions.length;
+        sessionIndex++
+      ) {
+        final session = unit.sessions[sessionIndex];
         if (!_sessionsWithApprovedReflections.contains(session.id)) {
           final title = session.title.trim().isEmpty
               ? 'Untitled'
               : session.title.trim();
-          missingLessons.add(title);
+          final lessonNumber = session.sessionNumber > 0
+              ? session.sessionNumber
+              : session.order > 0
+              ? session.order
+              : sessionIndex + 1;
+          missingLessons.add(
+            _reflectionRequirementLine(
+              label: 'Lesson $lessonNumber:',
+              value: title,
+              indent: 22,
+              top: 7,
+            ),
+          );
         }
       }
       if (missingLessons.isEmpty) continue;
 
       sections.add(
         Padding(
-          padding: const EdgeInsets.only(left: 10, top: 4),
-          child: Text(
-            unit.displayTitle,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _kYbsDeepBlue,
-              fontSize: 13,
-            ),
+          padding: EdgeInsets.only(top: sections.isEmpty ? 0 : 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _reflectionRequirementLine(
+                label: 'Module $moduleNumber:',
+                value: prevModuleLabel,
+              ),
+              const SizedBox(height: 12),
+              _reflectionRequirementLine(
+                label: 'Unit ${unit.order > 0 ? unit.order : unitIndex + 1}:',
+                value: unit.displayTitle,
+                indent: 10,
+              ),
+              ...missingLessons,
+            ],
           ),
         ),
       );
-
-      for (final lesson in missingLessons) {
-        sections.add(
-          Padding(
-            padding: const EdgeInsets.only(left: 22),
-            child: Text(
-              '• $lesson',
-              style: TextStyle(
-                color: Colors.grey[700],
-                fontSize: 12.5,
-                height: 1.5,
-              ),
-            ),
-          ),
-        );
-      }
     }
 
     if (sections.isEmpty) return;
@@ -959,22 +1175,24 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     Iterable<_RecordedSession> missingSessions,
   ) async {
     if (!mounted) return;
-    final sections = missingSessions.map((s) {
-      final title = s.title.trim().isEmpty ? 'Untitled' : s.title.trim();
-      return Padding(
-        padding: const EdgeInsets.only(left: 10),
-        child: Text(
-          '• $title',
-          style: TextStyle(
-            color: Colors.grey[700],
-            fontSize: 12.5,
-            height: 1.5,
-          ),
-        ),
-      );
-    }).toList();
-
-    if (sections.isEmpty) return;
+    final sections = <Widget>[
+      _reflectionRequirementLine(label: 'Unit:', value: unitTitle),
+      const SizedBox(height: 10),
+      ...missingSessions.map((s) {
+        final title = s.title.trim().isEmpty ? 'Untitled' : s.title.trim();
+        final lessonNumber = s.sessionNumber > 0
+            ? s.sessionNumber
+            : s.order > 0
+            ? s.order
+            : null;
+        return _reflectionRequirementLine(
+          label: lessonNumber == null ? 'Lesson:' : 'Lesson $lessonNumber:',
+          value: title,
+          indent: 12,
+          top: 7,
+        );
+      }),
+    ];
 
     await _showLockedContentPopup(
       englishTitle: 'Unit Reflections Needed',
@@ -982,6 +1200,41 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       description:
           'Complete reflections for all lessons in "$unitTitle" first.',
       sections: sections,
+    );
+  }
+
+  Widget _reflectionRequirementLine({
+    required String label,
+    required String value,
+    double indent = 0,
+    double top = 0,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(left: indent, top: top),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(
+            color: Color(0xFF334155),
+            fontSize: 13.5,
+            height: 1.42,
+          ),
+          children: [
+            TextSpan(
+              text: '$label ',
+              style: const TextStyle(
+                color: _kYbsDeepBlue,
+                fontWeight: FontWeight.w900,
+                decoration: TextDecoration.underline,
+                decorationThickness: 1.4,
+              ),
+            ),
+            TextSpan(
+              text: value,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1345,7 +1598,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }
 
   bool _allModuleLessonsApproved(List<_RecordedUnit> moduleUnits) {
-    if (!_reflectionCacheReady) return true;
+    if (!_reflectionCacheReady) return false;
     for (final unit in moduleUnits) {
       for (final session in unit.sessions) {
         if (!_sessionsWithApprovedReflections.contains(session.id)) {
@@ -3414,12 +3667,16 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   }) async {
     if (!mounted) return;
     final palette = appThemeController.palette;
-    const color = Color(0xFFC27A12);
-    const softColor = Color(0xFFFFF7E8);
+    const accentColor = _kYbsDeepBlue;
+    const actionColor = Color(0xFF2563EB);
+    const softColor = Color(0xFFF8FAFC);
+    const warmAccent = Color(0xFFF59E0B);
 
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
+        final media = MediaQuery.of(dialogContext);
+        final contentMaxHeight = (media.size.height * 0.58).clamp(320.0, 520.0);
         return Dialog(
           elevation: 16,
           insetPadding: const EdgeInsets.symmetric(
@@ -3437,7 +3694,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   end: Alignment.bottomRight,
                   colors: [palette.cardBg, softColor],
                 ),
-                border: Border.all(color: color.withValues(alpha: 0.22)),
+                border: Border.all(color: accentColor.withValues(alpha: 0.12)),
                 boxShadow: const [
                   BoxShadow(
                     color: Color(0x2E000000),
@@ -3458,12 +3715,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                         height: 116,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0x17C27A12),
+                          color: Color(0x142563EB),
                         ),
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+                      padding: EdgeInsets.fromLTRB(
+                        22,
+                        22,
+                        22,
+                        18 + media.viewPadding.bottom,
+                      ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -3472,14 +3734,14 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             height: 58,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: color.withValues(alpha: 0.13),
+                              color: actionColor.withValues(alpha: 0.1),
                               border: Border.all(
-                                color: color.withValues(alpha: 0.28),
+                                color: actionColor.withValues(alpha: 0.24),
                               ),
                             ),
                             child: const Icon(
                               Icons.lock_rounded,
-                              color: color,
+                              color: actionColor,
                               size: 29,
                             ),
                           ),
@@ -3500,7 +3762,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             englishTitle,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              color: color,
+                              color: accentColor,
                               fontSize: 16,
                               fontWeight: FontWeight.w900,
                             ),
@@ -3508,13 +3770,15 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                           const SizedBox(height: 14),
                           Container(
                             width: double.infinity,
-                            constraints: const BoxConstraints(maxHeight: 260),
-                            padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
+                            constraints: BoxConstraints(
+                              maxHeight: contentMaxHeight,
+                            ),
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 15),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.74),
+                              color: Colors.white.withValues(alpha: 0.9),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                color: color.withValues(alpha: 0.14),
+                                color: accentColor.withValues(alpha: 0.1),
                               ),
                             ),
                             child: SingleChildScrollView(
@@ -3534,7 +3798,45 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                                   ),
                                   if (sections != null &&
                                       sections.isNotEmpty) ...[
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 16),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: warmAccent.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: warmAccent.withValues(
+                                            alpha: 0.18,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        children: [
+                                          Icon(
+                                            Icons.edit_note_rounded,
+                                            color: warmAccent,
+                                            size: 20,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              'Learning Reflection Form',
+                                              style: TextStyle(
+                                                color: accentColor,
+                                                fontWeight: FontWeight.w900,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
                                     ...sections,
                                   ],
                                 ],
@@ -3546,7 +3848,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                             width: double.infinity,
                             child: FilledButton(
                               style: FilledButton.styleFrom(
-                                backgroundColor: color,
+                                backgroundColor: actionColor,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 13,

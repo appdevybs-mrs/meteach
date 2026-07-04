@@ -2,11 +2,10 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../services/topic_service.dart';
+import '../services/fcm_service.dart';
 import '../shared/app_feedback.dart';
 import '../shared/app_theme.dart';
 import '../shared/material_webview_screen.dart';
@@ -127,6 +126,7 @@ class _InternationalTeacherHomeScreenState
       context,
       () async {
         await SessionManager.stopListening();
+        await FCMService.clearDeviceOnLogout(uid);
       },
       message: 'Logging out...',
       isLogout: true,
@@ -135,20 +135,6 @@ class _InternationalTeacherHomeScreenState
     await FirebaseAuth.instance.signOut();
 
     unawaited(() async {
-      try {
-        await FirebaseMessaging.instance.deleteToken();
-      } catch (_) {}
-
-      if (uid.isNotEmpty) {
-        try {
-          await TopicService.clearForUser(uid);
-        } catch (_) {}
-
-        try {
-          await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
-        } catch (_) {}
-      }
-
       try {
         await appThemeController.resetToDefault();
       } catch (_) {}

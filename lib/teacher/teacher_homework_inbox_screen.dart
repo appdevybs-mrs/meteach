@@ -47,6 +47,7 @@ class _TeacherHomeworkInboxScreenState
   String _searchQuery = '';
   bool _backgroundRefreshing = false;
   Timer? _searchDebounce;
+  String? _expandedPendingClassKey;
 
   final Map<String, String> _courseTitleCache = <String, String>{};
   final Map<String, String> _classTitleCache = <String, String>{};
@@ -468,10 +469,9 @@ class _TeacherHomeworkInboxScreenState
           grade = (hw['reviewGrade'] ?? '').toString().trim();
           needsRedo = hw['needsRedo'] == true || reviewStatus == 'redo';
           reviewed = reviewedAt > 0 || reviewStatus.isNotEmpty;
-          homeworkText =
-              (hw['text'] ?? hw['homeworkText'] ?? hw['note'] ?? '')
-                  .toString()
-                  .trim();
+          homeworkText = (hw['text'] ?? hw['homeworkText'] ?? hw['note'] ?? '')
+              .toString()
+              .trim();
           homeworkDueDate = (hw['dueDate'] ?? '').toString().trim();
         }
 
@@ -494,7 +494,8 @@ class _TeacherHomeworkInboxScreenState
           }
         }
 
-        final needsCourseTitle = courseTitle.isEmpty ||
+        final needsCourseTitle =
+            courseTitle.isEmpty ||
             courseTitle == courseKey ||
             courseTitle == 'Course not set';
 
@@ -510,8 +511,7 @@ class _TeacherHomeworkInboxScreenState
                 .child('users/${row.peerUid}/courses/$courseKey')
                 .get();
             if (cSnap.exists && cSnap.value is Map) {
-              final c =
-                  (cSnap.value as Map).map((k, v) => MapEntry('$k', v));
+              final c = (cSnap.value as Map).map((k, v) => MapEntry('$k', v));
               final title = (c['title'] ?? c['course_title'] ?? '')
                   .toString()
                   .trim();
@@ -521,11 +521,13 @@ class _TeacherHomeworkInboxScreenState
               }
 
               if (classId.isEmpty && c['class'] is Map) {
-                final cls = (c['class'] as Map)
-                    .map((k, v) => MapEntry('$k', v));
+                final cls = (c['class'] as Map).map(
+                  (k, v) => MapEntry('$k', v),
+                );
                 classId = (cls['class_id'] ?? '').toString().trim();
-                final classTitle =
-                    (cls['course_title'] ?? '').toString().trim();
+                final classTitle = (cls['course_title'] ?? '')
+                    .toString()
+                    .trim();
                 if (courseTitle.isEmpty && classTitle.isNotEmpty) {
                   courseTitle = classTitle;
                 }
@@ -542,8 +544,7 @@ class _TeacherHomeworkInboxScreenState
           } else {
             final clsSnap = await _db.child('classes/$classId').get();
             if (clsSnap.exists && clsSnap.value is Map) {
-              final c =
-                  (clsSnap.value as Map).map((k, v) => MapEntry('$k', v));
+              final c = (clsSnap.value as Map).map((k, v) => MapEntry('$k', v));
               final classCourseTitle =
                   (c['course_title'] ?? c['courseTitle'] ?? '')
                       .toString()
@@ -564,10 +565,12 @@ class _TeacherHomeworkInboxScreenState
           } else {
             final courseSnap = await _db.child('courses/$courseKey').get();
             if (courseSnap.exists && courseSnap.value is Map) {
-              final c = (courseSnap.value as Map)
-                  .map((k, v) => MapEntry('$k', v));
-              final t =
-                  (c['title'] ?? c['course_title'] ?? '').toString().trim();
+              final c = (courseSnap.value as Map).map(
+                (k, v) => MapEntry('$k', v),
+              );
+              final t = (c['title'] ?? c['course_title'] ?? '')
+                  .toString()
+                  .trim();
               if (t.isNotEmpty) {
                 courseTitle = t;
                 _courseTitleCache[courseKey] = t;
@@ -1030,9 +1033,7 @@ class _TeacherHomeworkInboxScreenState
     List<_HomeworkThreadView> byTab;
     switch (_filter) {
       case _HomeworkFilter.notReviewed:
-        byTab = views
-            .where((v) => v.source == _HomeworkSource.inbox && !v.reviewed)
-            .toList();
+        byTab = views.where(_isPendingReviewView).toList();
         break;
       case _HomeworkFilter.reviewed:
         byTab = views
@@ -1060,6 +1061,77 @@ class _TeacherHomeworkInboxScreenState
       ].join(' ').toLowerCase();
       return bag.contains(q);
     }).toList();
+  }
+
+  bool _isPendingReviewView(_HomeworkThreadView v) {
+    return v.source == _HomeworkSource.inbox &&
+        v.homeworkRefPath.trim().isNotEmpty &&
+        v.submittedAtMs > 0 &&
+        !v.reviewed;
+  }
+
+  String _pendingClassKey(_HomeworkThreadView v) {
+    final classId = v.classId.trim();
+    if (classId.isNotEmpty) return classId;
+    final courseKey = v.courseKey.trim();
+    if (courseKey.isNotEmpty) return 'course:$courseKey';
+    final courseTitle = v.courseTitle.trim();
+    if (courseTitle.isNotEmpty) return 'title:$courseTitle';
+    return 'unknown';
+  }
+
+  String _pendingClassTitle(_HomeworkThreadView v) {
+    final title = v.courseTitle.trim();
+    if (title.isNotEmpty && title != 'Course not set') return title;
+    final classId = v.classId.trim();
+    if (classId.isNotEmpty) return 'Class $classId';
+    return 'Class not set';
+  }
+
+  Map<String, List<_HomeworkThreadView>> _groupPendingByClass(
+    List<_HomeworkThreadView> views,
+  ) {
+    final grouped = <String, List<_HomeworkThreadView>>{};
+    for (final v in views) {
+      final key = _pendingClassKey(v);
+      grouped.putIfAbsent(key, () => <_HomeworkThreadView>[]).add(v);
+    }
+    return grouped;
+  }
+
+  void _openHomeworkView(_HomeworkThreadView v, bool desktopWorkspace) {
+    if (desktopWorkspace) {
+      setState(() => _desktopSelectedKey = _desktopViewKey(v));
+      return;
+    }
+    if (_bulkMode) {
+      final tid = v.row.threadId.trim();
+      if (tid.isNotEmpty) _toggleBulkSelection(tid);
+      return;
+    }
+    if (v.row.threadId.isNotEmpty) {
+      unawaited(
+        OfflineActionGuard.runExclusive(
+          context,
+          'teacher.homework_inbox.open.${v.row.threadId}',
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TeacherMailThreadScreen(
+                  threadId: v.row.threadId,
+                  peerUid: v.row.peerUid,
+                  peerName: v.row.peerName,
+                  subject: v.row.subject,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+      return;
+    }
+    _showDetails(v);
   }
 
   Widget _buildSearchBox() {
@@ -1374,9 +1446,7 @@ class _TeacherHomeworkInboxScreenState
     final reviewedCount = all
         .where((v) => v.source == _HomeworkSource.inbox && v.reviewed)
         .length;
-    final notReviewedCount = all
-        .where((v) => v.source == _HomeworkSource.inbox && !v.reviewed)
-        .length;
+    final notReviewedCount = all.where(_isPendingReviewView).length;
     final sentCount = all.where((v) => v.source == _HomeworkSource.sent).length;
 
     const tabs = <_HomeworkFilter>[
@@ -1646,6 +1716,212 @@ class _TeacherHomeworkInboxScreenState
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPendingClassList(
+    List<_HomeworkThreadView> pendingViews,
+    List<_HomeworkThreadView> activeViews,
+    bool desktopWorkspace,
+  ) {
+    final grouped = _groupPendingByClass(pendingViews);
+    final groups = grouped.entries.toList()
+      ..sort((a, b) {
+        final aTitle = _pendingClassTitle(a.value.first).toLowerCase();
+        final bTitle = _pendingClassTitle(b.value.first).toLowerCase();
+        return aTitle.compareTo(bTitle);
+      });
+
+    return RefreshIndicator(
+      onRefresh: _refreshInbox,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+        itemCount: groups.length + 1,
+        itemBuilder: (context, i) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSearchBox(),
+                  const SizedBox(height: 10),
+                  _buildFilterBar(activeViews),
+                  if (_backgroundRefreshing) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Updating...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Text(
+                    'Pending review grouped by class',
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final entry = groups[i - 1];
+          final items = entry.value;
+          final first = items.first;
+          final expanded = _expandedPendingClassKey == entry.key;
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            color: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.orange.withValues(alpha: 0.18)),
+            ),
+            child: Column(
+              children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    setState(() {
+                      _expandedPendingClassKey = expanded ? null : entry.key;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF3D6),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(
+                            Icons.groups_2_rounded,
+                            color: Color(0xFFD97706),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _pendingClassTitle(first),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15.5,
+                                ),
+                              ),
+                              if (first.classId.trim().isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Class ${first.classId.trim()}',
+                                  style: TextStyle(
+                                    color: Colors.black.withValues(alpha: 0.55),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${items.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          expanded
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          color: const Color(0xFFD97706),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (expanded) ...[
+                  Divider(
+                    height: 1,
+                    color: Colors.black.withValues(alpha: 0.08),
+                  ),
+                  ...items.map(
+                    (v) => ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 4,
+                      ),
+                      leading: CircleAvatar(
+                        backgroundColor: _avatarTint(v.row.peerName),
+                        child: Text(
+                          _initialsOf(v.row.peerName),
+                          style: TextStyle(
+                            color: Colors.black.withValues(alpha: 0.65),
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        v.row.peerName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      subtitle: Text(
+                        v.taughtTitle.trim().isNotEmpty
+                            ? v.taughtTitle.trim()
+                            : 'Submitted ${_fmtTime(v.submittedAtMs)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => _openHomeworkView(v, desktopWorkspace),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1949,44 +2225,7 @@ class _TeacherHomeworkInboxScreenState
                                     ? null
                                     : () => _deleteForMe(v),
                                 onTap: () {
-                                  if (desktopWorkspace) {
-                                    setState(
-                                      () => _desktopSelectedKey =
-                                          _desktopViewKey(v),
-                                    );
-                                    return;
-                                  }
-                                  if (_bulkMode) {
-                                    final tid = v.row.threadId.trim();
-                                    if (tid.isNotEmpty) {
-                                      _toggleBulkSelection(tid);
-                                    }
-                                    return;
-                                  }
-                                  if (v.row.threadId.isNotEmpty) {
-                                    unawaited(
-                                      OfflineActionGuard.runExclusive(
-                                        context,
-                                        'teacher.homework_inbox.open.${v.row.threadId}',
-                                        () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  TeacherMailThreadScreen(
-                                                    threadId: v.row.threadId,
-                                                    peerUid: v.row.peerUid,
-                                                    peerName: v.row.peerName,
-                                                    subject: v.row.subject,
-                                                  ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  _showDetails(v);
+                                  _openHomeworkView(v, desktopWorkspace);
                                 },
                                 child: Padding(
                                   padding: const EdgeInsets.all(12),
@@ -2427,12 +2666,21 @@ class _TeacherHomeworkInboxScreenState
                         ),
                       );
 
-                      if (!desktopWorkspace) return inboxList;
+                      final bodyList =
+                          _filter == _HomeworkFilter.notReviewed && !_bulkMode
+                          ? _buildPendingClassList(
+                              views,
+                              activeViews,
+                              desktopWorkspace,
+                            )
+                          : inboxList;
+
+                      if (!desktopWorkspace) return bodyList;
 
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(flex: 5, child: inboxList),
+                          Expanded(flex: 5, child: bodyList),
                           Container(
                             width: 1,
                             color: Colors.black.withValues(alpha: 0.08),

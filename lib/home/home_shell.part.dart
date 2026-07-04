@@ -23,7 +23,7 @@ class _HomeShellState extends State<HomeShell> {
   bool _isArabic = false;
   _AppMode _appMode = _AppMode.courses;
 
-  String _tr(String en, String ar) => _isArabic ? ar : en;
+  String _tr(String en, String ar) => en;
 
   Future<void> _openLogin(BuildContext context) async {
     await Navigator.of(
@@ -216,19 +216,6 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ),
               const Spacer(),
-              IconButton(
-                icon: Text(
-                  _isArabic ? 'EN' : 'AR',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
-                    color: Brand.primaryBlue,
-                  ),
-                ),
-                tooltip: _isArabic ? 'English' : 'العربية',
-                onPressed: () => setState(() => _isArabic = !_isArabic),
-              ),
-              const SizedBox(width: 4),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: Brand.actionOrange,
@@ -247,9 +234,9 @@ class _HomeShellState extends State<HomeShell> {
                 ),
                 onPressed: () => _openLogin(context),
                 icon: const Icon(Icons.login_rounded, size: 18),
-                label: Text(
-                  _tr('Login', 'تسجيل الدخول'),
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                label: const Text(
+                  'Login',
+                  style: TextStyle(fontWeight: FontWeight.w900),
                 ),
               ),
             ],
@@ -1038,7 +1025,7 @@ class _FooterBrand extends StatelessWidget {
             side: BorderSide(color: Colors.white.withValues(alpha: 0.36)),
           ),
           icon: const Icon(Icons.login_rounded),
-          label: Text(_tr('Login', 'تسجيل الدخول')),
+          label: const Text('Login'),
         ),
       ],
     );

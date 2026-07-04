@@ -203,29 +203,6 @@
       white-space: nowrap;
     }
 
-    /* Lang toggle */
-    .lang-toggle {
-      margin-top: 20px;
-      display: flex;
-      gap: 6px;
-    }
-    .lang-toggle button {
-      background: transparent;
-      border: 2px solid #D0D7DE;
-      border-radius: 8px;
-      padding: 4px 12px;
-      font-size: 12px;
-      font-weight: 800;
-      color: #1A2B48;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .lang-toggle button.active {
-      border-color: #1A2B48;
-      background: #1A2B48;
-      color: white;
-    }
-
     /* Stuck fallback */
     .stuck {
       margin-top: 18px;
@@ -282,77 +259,56 @@
       <button id="refresh-btn" onclick="location.reload()">Refresh</button>
     </div>
 
-    <div class="lang-toggle">
-      <button id="lang-en" class="active" onclick="setLang('en')">EN</button>
-      <button id="lang-ar" onclick="setLang('ar')">AR</button>
-    </div>
   </div>
 
   <script>
     // ── Message pool ──
     const messages = [
-      { en: 'Warming up the servers... 🔥', ar: 'يتم تسخين الخوادم... 🔥' },
-      { en: 'Feeding the class hamsters... 🐹', ar: 'إطعام هامستر الفصل... 🐹' },
-      { en: 'Polishing the virtual whiteboards... ✨', ar: 'تلميع السبورات الافتراضية... ✨' },
-      { en: 'Tuning the audio waves... 🎵', ar: 'ضبط الموجات الصوتية... 🎵' },
-      { en: 'Brewing virtual coffee... ☕', ar: 'تحضير القهوة الافتراضية... ☕' },
-      { en: 'Untangling headphone wires... 🎧', ar: 'فك أسلاك السماعات... 🎧' },
-      { en: 'Charging your certificates... 📜', ar: 'شحن الشهادات... 📜' },
-      { en: 'Chatting with the teachers... 👨‍🏫', ar: 'محادثة مع المعلمين... 👨‍🏫' },
-      { en: 'Organizing the library shelves... 📚', ar: 'ترتيب رفوف المكتبة... 📚' },
-      { en: 'Counting practice questions... 🔢', ar: 'عد أسئلة التدريب... 🔢' },
-      { en: '📱 Get the native app for a smoother experience!', ar: '📱 حمّل التطبيق الأصلي لتجربة أفضل!' },
-      { en: 'Setting up your virtual desk... 🪑', ar: 'تجهيز مكتبك الافتراضي... 🪑' },
-      { en: 'Reviewing today\'s grammar... 📝', ar: 'مراجعة قواعد اليوم... 📝' },
-      { en: 'Preparing interactive games... 🎮', ar: 'تحضير الألعاب التفاعلية... 🎮' },
-      { en: 'Loading motivational quotes... 💪', ar: 'تحميل اقتباسات تحفيزية... 💪' },
-      { en: 'Not for the certificate, for the skill.', ar: 'ليس من أجل الشهادة، بل من أجل المهارة.' },
-      { en: 'Arranging the gallery photos... 🖼️', ar: 'ترتيب صور المعرض... 🖼️' },
-      { en: 'Polishing the graduation caps... 🎓', ar: 'تلميع قبعات التخرج... 🎓' },
-      { en: 'Warming up the English muscles... 💪', ar: 'إحماء عضلات الإنجليزية... 💪' },
-      { en: 'Almost there, just a few more seconds... ⏳', ar: 'اقتربنا، بضع ثوانٍ فقط... ⏳' },
+      'Warming up the servers... 🔥',
+      'Feeding the class hamsters... 🐹',
+      'Polishing the virtual whiteboards... ✨',
+      'Tuning the audio waves... 🎵',
+      'Brewing virtual coffee... ☕',
+      'Untangling headphone wires... 🎧',
+      'Charging your certificates... 📜',
+      'Chatting with the teachers... 👨‍🏫',
+      'Organizing the library shelves... 📚',
+      'Counting practice questions... 🔢',
+      '📱 Get the native app for a smoother experience!',
+      'Setting up your virtual desk... 🪑',
+      'Reviewing today\'s grammar... 📝',
+      'Preparing interactive games... 🎮',
+      'Loading motivational quotes... 💪',
+      'Not for the certificate, for the skill.',
+      'Arranging the gallery photos... 🖼️',
+      'Polishing the graduation caps... 🎓',
+      'Warming up the English muscles... 💪',
+      'Almost there, just a few more seconds... ⏳',
     ];
     const nativeAppUrl = 'https://play.google.com/store/apps/details?id=com.yourbridgeschool.app';
 
-    let currentLang = 'en';
     let msgInterval = null;
     let shownIndices = [];
 
-    function randomMsg(lang) {
+    function randomMsg() {
       let idx;
       do { idx = Math.floor(Math.random() * messages.length); }
       while (shownIndices.length < messages.length && shownIndices.includes(idx));
       shownIndices.push(idx);
       if (shownIndices.length >= messages.length) shownIndices = [];
-      return messages[idx][lang];
+      return messages[idx];
     }
 
     function updateMessage() {
       const el = document.getElementById('msg-0');
       const current = el.textContent;
       let next;
-      do { next = randomMsg(currentLang); } while (next === current);
+      do { next = randomMsg(); } while (next === current);
       el.classList.remove('show');
       setTimeout(() => {
         el.textContent = next;
         el.classList.add('show');
       }, 400);
-    }
-
-    function setLang(lang) {
-      currentLang = lang;
-      document.getElementById('lang-en').classList.toggle('active', lang === 'en');
-      document.getElementById('lang-ar').classList.toggle('active', lang === 'ar');
-      document.getElementById('load-sub').textContent =
-        lang === 'en' ? 'Not for the certificate, for the skill.' : 'ليس من أجل الشهادة، بل من أجل المهارة.';
-      document.getElementById('app-text').textContent =
-        lang === 'en' ? 'Try the native app for a smoother experience!' : 'جرّب التطبيق الأصلي لتجربة أفضل!';
-      document.getElementById('stuck-text').textContent =
-        lang === 'en' ? 'Taking longer than expected?' : 'يستغرق وقتاً أطول من المتوقع؟';
-      document.getElementById('app-link').textContent = lang === 'en' ? 'Get it' : 'تحميل';
-      const el = document.getElementById('msg-0');
-      el.textContent = randomMsg(lang);
-      el.classList.add('show');
     }
 
     // ── Progress bar ──
@@ -370,11 +326,10 @@
     // ── Stage timings ──
     function initLoader() {
       advanceProgress();
-      setLang('en');
 
       // First message after 1s
       setTimeout(() => {
-        document.getElementById('msg-0').textContent = randomMsg('en');
+        document.getElementById('msg-0').textContent = randomMsg();
         document.getElementById('msg-0').classList.add('show');
       }, 1000);
 

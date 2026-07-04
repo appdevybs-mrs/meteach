@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -117,6 +119,9 @@ class _RecordedLessonDetail {
     required this.title,
     required this.unitTitle,
     required this.moduleTitle,
+    required this.moduleOrder,
+    required this.unitOrder,
+    required this.lessonOrder,
     required this.hasVideo,
     required this.hasMaterials,
     required this.videoDone,
@@ -130,6 +135,9 @@ class _RecordedLessonDetail {
   final String title;
   final String unitTitle;
   final String moduleTitle;
+  final int moduleOrder;
+  final int unitOrder;
+  final int lessonOrder;
   final bool hasVideo;
   final bool hasMaterials;
   final bool videoDone;
@@ -139,7 +147,7 @@ class _RecordedLessonDetail {
   final String? commentId;
 
   bool get isDone {
-    if (hasVideo && hasMaterials) return videoDone;
+    if (hasVideo && hasMaterials) return videoDone && materialsDone;
     if (hasVideo) return videoDone;
     if (hasMaterials) return materialsDone;
     return false;
@@ -846,6 +854,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     return s == 'true' || s == '1';
   }
 
+  int _asInt(dynamic v) => CourseFeedbackService.asInt(v);
+
   Future<_RecordedLearnerDetails> _loadRecordedLearnerDetails(
     _LearnerRecordedProgressItem item,
   ) async {
@@ -899,7 +909,6 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
               m['status'],
             );
             if (status == CourseFeedbackService.statusRemoved ||
-                status == CourseFeedbackService.statusNotApproved ||
                 status == 'hidden') {
               continue;
             }
@@ -922,6 +931,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       if (rawModules.isNotEmpty) {
         for (int mi = 0; mi < rawModules.length; mi++) {
           final module = rawModules[mi];
+          final moduleOrder = _asInt(module['order']) > 0
+              ? _asInt(module['order'])
+              : (mi + 1);
           final moduleLabel =
               (module['otherTitle'] ?? '').toString().trim().isNotEmpty
               ? (module['otherTitle'] ?? '').toString().trim()
@@ -929,13 +941,23 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                     ? (module['title'] ?? '').toString().trim()
                     : 'M${mi + 1}');
           final rawUnits = _asListOfMaps(module['units']);
-          for (final unit in rawUnits) {
+          for (int ui = 0; ui < rawUnits.length; ui++) {
+            final unit = rawUnits[ui];
+            final unitOrder = _asInt(unit['order']) > 0
+                ? _asInt(unit['order'])
+                : (ui + 1);
             final unitTitle = (unit['title'] ?? '').toString().trim();
             final rawLessons = _asListOfMaps(unit['lessons']);
-            for (final lesson in rawLessons) {
+            for (int li = 0; li < rawLessons.length; li++) {
+              final lesson = rawLessons[li];
               sessionItems.add({
                 'moduleTitle': moduleLabel,
+                'moduleOrder': moduleOrder,
                 'unitTitle': unitTitle,
+                'unitOrder': unitOrder,
+                'lessonOrder': _asInt(lesson['order']) > 0
+                    ? _asInt(lesson['order'])
+                    : (li + 1),
                 ...lesson,
               });
             }
@@ -943,13 +965,23 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         }
       } else {
         final rawUnits = _asListOfMaps(root['units']);
-        for (final unit in rawUnits) {
+        for (int ui = 0; ui < rawUnits.length; ui++) {
+          final unit = rawUnits[ui];
+          final unitOrder = _asInt(unit['order']) > 0
+              ? _asInt(unit['order'])
+              : (ui + 1);
           final unitTitle = (unit['title'] ?? '').toString().trim();
           final rawSessions = _asListOfMaps(unit['sessions']);
-          for (final session in rawSessions) {
+          for (int si = 0; si < rawSessions.length; si++) {
+            final session = rawSessions[si];
             sessionItems.add({
               'moduleTitle': '',
+              'moduleOrder': 1,
               'unitTitle': unitTitle,
+              'unitOrder': unitOrder,
+              'lessonOrder': _asInt(session['order']) > 0
+                  ? _asInt(session['order'])
+                  : (si + 1),
               ...session,
             });
           }
@@ -963,7 +995,19 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       return int.tryParse((s['order'] ?? '').toString()) ?? 0;
     }
 
-    sessionItems.sort((a, b) => orderOf(a).compareTo(orderOf(b)));
+    sessionItems.sort((a, b) {
+      final moduleCmp = _asInt(
+        a['moduleOrder'],
+      ).compareTo(_asInt(b['moduleOrder']));
+      if (moduleCmp != 0) return moduleCmp;
+      final unitCmp = _asInt(a['unitOrder']).compareTo(_asInt(b['unitOrder']));
+      if (unitCmp != 0) return unitCmp;
+      final lessonCmp = _asInt(
+        a['lessonOrder'],
+      ).compareTo(_asInt(b['lessonOrder']));
+      if (lessonCmp != 0) return lessonCmp;
+      return orderOf(a).compareTo(orderOf(b));
+    });
 
     final studied = <_RecordedLessonDetail>[];
     final left = <_RecordedLessonDetail>[];
@@ -995,6 +1039,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         title: title,
         unitTitle: unitTitle,
         moduleTitle: moduleTitle,
+        moduleOrder: _asInt(session['moduleOrder']),
+        unitOrder: _asInt(session['unitOrder']),
+        lessonOrder: _asInt(session['lessonOrder']),
         hasVideo: hasVideo,
         hasMaterials: hasMaterials,
         videoDone: videoDone,
@@ -2095,7 +2142,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     _LearnerRecordedProgressItem item,
   ) async {
     final rowKey = _recordedRowKey(item);
-    final future = _recordedDetailsFutureByRow[rowKey] ??=
+    var future = _recordedDetailsFutureByRow[rowKey] ??=
         _loadRecordedLearnerDetails(item);
 
     await showModalBottomSheet<void>(
@@ -2106,28 +2153,43 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       backgroundColor: const Color(0xFFF8FAFC),
       builder: (ctx) {
         final media = MediaQuery.of(ctx);
-        return SizedBox(
-          height: media.size.height * 0.88,
-          child: FutureBuilder<_RecordedLearnerDetails>(
-            future: future,
-            builder: (context, snap) {
-              if (snap.hasError) {
-                return const Center(
-                  child: Text(
-                    'Could not load lesson details.',
-                    style: TextStyle(
-                      color: Color(0xFFB91C1C),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                );
-              }
-              if (!snap.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return _buildLearnerProgressPopup(item, snap.data!);
-            },
-          ),
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            Future<void> refreshDetails() async {
+              final fresh = _loadRecordedLearnerDetails(item);
+              _recordedDetailsFutureByRow[rowKey] = fresh;
+              setModalState(() => future = fresh);
+              await fresh;
+            }
+
+            return SizedBox(
+              height: media.size.height * 0.88,
+              child: FutureBuilder<_RecordedLearnerDetails>(
+                future: future,
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return const Center(
+                      child: Text(
+                        'Could not load lesson details.',
+                        style: TextStyle(
+                          color: Color(0xFFB91C1C),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    );
+                  }
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  return _buildLearnerProgressPopup(
+                    item,
+                    snap.data!,
+                    onDetailsChanged: refreshDetails,
+                  );
+                },
+              ),
+            );
+          },
         );
       },
     );
@@ -2135,12 +2197,17 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
 
   Widget _buildLearnerProgressPopup(
     _LearnerRecordedProgressItem learner,
-    _RecordedLearnerDetails details,
-  ) {
-    final lessons = <_RecordedLessonDetail>[
-      ...details.left,
-      ...details.studied,
-    ];
+    _RecordedLearnerDetails details, {
+    required Future<void> Function() onDetailsChanged,
+  }) {
+    final lessons = <_RecordedLessonDetail>[...details.left, ...details.studied]
+      ..sort((a, b) {
+        final moduleCmp = a.moduleOrder.compareTo(b.moduleOrder);
+        if (moduleCmp != 0) return moduleCmp;
+        final unitCmp = a.unitOrder.compareTo(b.unitOrder);
+        if (unitCmp != 0) return unitCmp;
+        return a.lessonOrder.compareTo(b.lessonOrder);
+      });
     final byModule = <String, Map<String, List<_RecordedLessonDetail>>>{};
     for (final lesson in lessons) {
       final module = lesson.moduleTitle.trim().isEmpty
@@ -2304,6 +2371,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                                   Expanded(
                                     child: Text(
                                       moduleTitle,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w900,
                                         fontSize: 15,
@@ -2323,7 +2392,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                               ),
                               const SizedBox(height: 10),
                               SizedBox(
-                                height: 42,
+                                height: 56,
                                 child: ListView.separated(
                                   scrollDirection: Axis.horizontal,
                                   itemCount: units.length,
@@ -2353,7 +2422,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                                         ),
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 10,
-                                          vertical: 7,
+                                          vertical: 8,
                                         ),
                                         decoration: BoxDecoration(
                                           color: isSelected
@@ -2409,7 +2478,11 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                               ),
                               const SizedBox(height: 10),
                               for (final lesson in unitLessons)
-                                _popupLessonRow(lesson, learner),
+                                _popupLessonRow(
+                                  lesson,
+                                  learner,
+                                  onDetailsChanged,
+                                ),
                             ],
                           ),
                         );
@@ -2425,6 +2498,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   Widget _popupLessonRow(
     _RecordedLessonDetail lesson,
     _LearnerRecordedProgressItem learner,
+    Future<void> Function() onDetailsChanged,
   ) {
     final done = lesson.isDone;
     return Container(
@@ -2478,7 +2552,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
               ],
             ),
           ),
-          _commentStatusIcon(lesson, learner),
+          _commentStatusIcon(lesson, learner, onDetailsChanged),
         ],
       ),
     );
@@ -2487,6 +2561,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   Widget _commentStatusIcon(
     _RecordedLessonDetail item,
     _LearnerRecordedProgressItem learnerItem,
+    Future<void> Function() onDetailsChanged,
   ) {
     final status = _normalizedReflectionStatus(item.commentStatus);
     IconData icon;
@@ -2504,6 +2579,11 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       color = const Color(0xFF2563EB);
       bgColor = const Color(0xFFDBEAFE);
       tooltip = 'Reflection approved';
+    } else if (status == CourseFeedbackService.statusNotApproved) {
+      icon = Icons.cancel_rounded;
+      color = const Color(0xFFDC2626);
+      bgColor = const Color(0xFFFEE2E2);
+      tooltip = 'Reflection not approved';
     } else {
       icon = Icons.hourglass_bottom_rounded;
       color = const Color(0xFFD97706);
@@ -2519,7 +2599,11 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           color: bgColor,
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
-            onTap: () => _showCommentModerationSheet(item, learnerItem),
+            onTap: () => _showCommentModerationSheet(
+              item,
+              learnerItem,
+              onDetailsChanged,
+            ),
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               padding: const EdgeInsets.all(6),
@@ -2537,9 +2621,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final status = CourseFeedbackService.normalizeLessonCommentStatus(
       rawStatus,
     );
-    if (status == CourseFeedbackService.statusRemoved ||
-        status == CourseFeedbackService.statusNotApproved ||
-        status == 'hidden') {
+    if (status == CourseFeedbackService.statusRemoved || status == 'hidden') {
       return null;
     }
     return status;
@@ -2634,7 +2716,8 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
           _commentCacheByCourse[learner.courseId]?[cacheKey]?['status'] =
               CourseFeedbackService.statusVisible;
         } else {
-          _commentCacheByCourse[learner.courseId]?.remove(cacheKey);
+          _commentCacheByCourse[learner.courseId]?[cacheKey]?['status'] =
+              CourseFeedbackService.statusNotApproved;
         }
         _all = _all
             .map((item) {
@@ -2668,9 +2751,65 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     }
   }
 
+  Future<void> _moderateCommentWithProgress({
+    required _RecordedLessonDetail lesson,
+    required _LearnerRecordedProgressItem learner,
+    required bool approve,
+    required Future<void> Function() onDetailsChanged,
+  }) async {
+    if (!mounted) return;
+    final message = approve
+        ? 'Approving reflection...'
+        : 'Marking reflection for revision...';
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await _moderateComment(
+        lesson: lesson,
+        learner: learner,
+        approve: approve,
+      );
+      await onDetailsChanged();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update reflection: $e')),
+        );
+      }
+    } finally {
+      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+  }
+
   void _showCommentModerationSheet(
     _RecordedLessonDetail lesson,
     _LearnerRecordedProgressItem learner,
+    Future<void> Function() onDetailsChanged,
   ) {
     final status = _normalizedReflectionStatus(lesson.commentStatus);
     final hasComment = status != null;
@@ -2813,12 +2952,13 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                           Expanded(
                             child: FilledButton.icon(
                               onPressed: () async {
-                                await _moderateComment(
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                await _moderateCommentWithProgress(
                                   lesson: lesson,
                                   learner: learner,
                                   approve: true,
+                                  onDetailsChanged: onDetailsChanged,
                                 );
-                                if (ctx.mounted) Navigator.pop(ctx);
                               },
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFF2563EB),
@@ -2849,12 +2989,13 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () async {
-                                await _moderateComment(
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                await _moderateCommentWithProgress(
                                   lesson: lesson,
                                   learner: learner,
                                   approve: false,
+                                  onDetailsChanged: onDetailsChanged,
                                 );
-                                if (ctx.mounted) Navigator.pop(ctx);
                               },
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: const Color(0xFFDC2626),

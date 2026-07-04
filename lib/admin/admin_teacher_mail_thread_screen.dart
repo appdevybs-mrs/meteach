@@ -27,8 +27,8 @@ import '../shared/admin_web_layout.dart';
 import '../shared/human_error.dart';
 import '../shared/app_feedback.dart';
 import '../shared/chat_sender_identity.dart';
-import '../shared/media_download.dart';
 import '../shared/link_preview_widget.dart';
+import '../shared/mail_file_preview.dart';
 
 /// ----------------------------
 /// Upload client (same as reminders)
@@ -309,12 +309,20 @@ class _AdminTeacherMailThreadScreenState
   static const double _lockDeadzoneDx = 45;
 
   bool get _composerBusy =>
-      _sending || _recStarting || _recRecording || _recUploading || _fileUploading;
+      _sending ||
+      _recStarting ||
+      _recRecording ||
+      _recUploading ||
+      _fileUploading;
 
   bool get _disableTextInput => _recStarting || _recRecording || _recUploading;
   bool get _disableAttachActions => _composerBusy;
   bool get _disableSendAction =>
-      _sending || _recStarting || _recRecording || _recUploading || _fileUploading;
+      _sending ||
+      _recStarting ||
+      _recRecording ||
+      _recUploading ||
+      _fileUploading;
   bool get _disableMicAction => _composerBusy;
 
   @override
@@ -736,16 +744,16 @@ class _AdminTeacherMailThreadScreenState
         .limitToLast(_messageWindowSize)
         .once()
         .then((event) {
-      if (!mounted) return;
-      final msgs = _parseMessages(event.snapshot.value);
-      setState(() {
-        _allMessages = msgs;
-        _initialLoadDone = true;
-      });
-      unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
-      unawaited(_markMessagesSeen(msgs));
-      _onMessagesChanged(msgs);
-    });
+          if (!mounted) return;
+          final msgs = _parseMessages(event.snapshot.value);
+          setState(() {
+            _allMessages = msgs;
+            _initialLoadDone = true;
+          });
+          unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
+          unawaited(_markMessagesSeen(msgs));
+          _onMessagesChanged(msgs);
+        });
 
     _childSub = _msgsRef
         .orderByChild('createdAt')
@@ -753,20 +761,20 @@ class _AdminTeacherMailThreadScreenState
         .onChildAdded
         .skip(1)
         .listen((event) {
-      if (!mounted) return;
-      final id = event.snapshot.key!;
-      if (_allMessages.any((m) => m.id == id)) return;
-      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
-      final msg = _MailMsg.fromMap(id, data);
-      if (msg.deletedFor.contains(_meUid)) return;
-      setState(() {
-        _allMessages.add(msg);
-        _allMessages.sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
-      });
-      unawaited(_warmSenderIdentities([msg.fromUid]));
-      unawaited(_markMessagesSeen([msg]));
-      _onMessagesChanged(_allMessages);
-    });
+          if (!mounted) return;
+          final id = event.snapshot.key!;
+          if (_allMessages.any((m) => m.id == id)) return;
+          final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+          final msg = _MailMsg.fromMap(id, data);
+          if (msg.deletedFor.contains(_meUid)) return;
+          setState(() {
+            _allMessages.add(msg);
+            _allMessages.sort((a, b) => a.createdAtMs.compareTo(b.createdAtMs));
+          });
+          unawaited(_warmSenderIdentities([msg.fromUid]));
+          unawaited(_markMessagesSeen([msg]));
+          _onMessagesChanged(_allMessages);
+        });
   }
 
   Widget _buildMessageList() {
@@ -796,8 +804,9 @@ class _AdminTeacherMailThreadScreenState
         final receiptLabel = mine ? _receiptLabel(m) : '';
         final showSeenStatusLine = _isLatestSeenOutgoing(msgs, i);
         final thisDateLabel = _dateLabel(m.createdAtMs);
-        final prevDateLabel =
-            i > 0 ? _dateLabel(msgs[i - 1].createdAtMs) : null;
+        final prevDateLabel = i > 0
+            ? _dateLabel(msgs[i - 1].createdAtMs)
+            : null;
         final showDate = i == 0 || prevDateLabel != thisDateLabel;
 
         return Column(
@@ -805,38 +814,22 @@ class _AdminTeacherMailThreadScreenState
             if (showDate) _dateSeparator(thisDateLabel),
             GestureDetector(
               onLongPress: () => _toggleMessageSelection(m),
-              onTap: _selectionMode
-                  ? () => _toggleMessageSelection(m)
-                  : null,
+              onTap: _selectionMode ? () => _toggleMessageSelection(m) : null,
               child: Align(
-                alignment: mine
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
+                alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: _messageMaxWidth(),
-                  ),
+                  constraints: BoxConstraints(maxWidth: _messageMaxWidth()),
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
                       border: _selectedMessageIds.contains(m.id)
-                          ? Border.all(
-                              color: Colors.orange,
-                              width: 1.5,
-                            )
+                          ? Border.all(color: Colors.orange, width: 1.5)
                           : null,
                     ),
                     child: Container(
-                      padding: const EdgeInsets.fromLTRB(
-                        12,
-                        10,
-                        12,
-                        10,
-                      ),
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                       decoration: BoxDecoration(
-                        color: mine
-                            ? const Color(0xFF1F4E79)
-                            : Colors.white,
+                        color: mine ? const Color(0xFF1F4E79) : Colors.white,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: Colors.black.withValues(alpha: 0.08),
@@ -847,29 +840,23 @@ class _AdminTeacherMailThreadScreenState
                         children: [
                           Row(
                             mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Flexible(
                                 child: Wrap(
                                   spacing: 8,
                                   runSpacing: 4,
-                                  crossAxisAlignment:
-                                      WrapCrossAlignment.center,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Text(
                                       _displayNameForUid(m.fromUid),
                                       maxLines: 1,
-                                      overflow:
-                                          TextOverflow.ellipsis,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontWeight:
-                                            FontWeight.w800,
+                                        fontWeight: FontWeight.w800,
                                         color: mine
                                             ? _personNameColor
-                                            : senderAccentColor(
-                                                m.fromUid,
-                                              ),
+                                            : senderAccentColor(m.fromUid),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -877,8 +864,9 @@ class _AdminTeacherMailThreadScreenState
                                       _fmtTime(m.createdAtMs),
                                       style: TextStyle(
                                         fontSize: 11,
-                                        color: Colors.black
-                                            .withValues(alpha: 0.55),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.55,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -894,17 +882,13 @@ class _AdminTeacherMailThreadScreenState
                                     tooltip: 'Message actions',
                                     onSelected: (v) async {
                                       if (v == 'delete_for_me') {
-                                        await _deleteMessageForMe(
-                                          m,
-                                        );
+                                        await _deleteMessageForMe(m);
                                       }
                                     },
                                     itemBuilder: (_) => const [
                                       PopupMenuItem(
                                         value: 'delete_for_me',
-                                        child: Text(
-                                          'Delete (for me)',
-                                        ),
+                                        child: Text('Delete (for me)'),
                                       ),
                                     ],
                                   ),
@@ -918,46 +902,32 @@ class _AdminTeacherMailThreadScreenState
                               data: m.body,
                               selectable: false,
                               onTapLink: (_, href, __) {
-                                if (href != null &&
-                                    href.isNotEmpty) {
-                                  _showLinkConfirmationDialog(
-                                    href,
-                                  );
+                                if (href != null && href.isNotEmpty) {
+                                  _showLinkConfirmationDialog(href);
                                 }
                               },
                               styleSheet: MarkdownStyleSheet(
                                 p: TextStyle(
-                                  color: mine
-                                      ? Colors.white
-                                      : Colors.black87,
+                                  color: mine ? Colors.white : Colors.black87,
                                   fontWeight: FontWeight.w600,
                                 ),
                                 strong: TextStyle(
-                                  color: mine
-                                      ? Colors.white
-                                      : Colors.black87,
+                                  color: mine ? Colors.white : Colors.black87,
                                   fontWeight: FontWeight.w900,
                                 ),
                                 a: TextStyle(
                                   color: const Color(0xFFEC740A),
                                   fontWeight: FontWeight.w700,
-                                  decoration:
-                                      TextDecoration.underline,
+                                  decoration: TextDecoration.underline,
                                 ),
                               ),
                             ),
                           ],
-                          ..._buildLinkPreviews(
-                            m.body,
-                            mine: mine,
-                          ),
+                          ..._buildLinkPreviews(m.body, mine: mine),
                           if (m.attachments.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             ...m.attachments.map(
-                              (a) => _buildAttachmentWidget(
-                                a: a,
-                                mine: mine,
-                              ),
+                              (a) => _buildAttachmentWidget(a: a, mine: mine),
                             ),
                           ],
                           const SizedBox(height: 4),
@@ -969,9 +939,7 @@ class _AdminTeacherMailThreadScreenState
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: mine
-                                      ? Colors.white70
-                                      : Colors.black54,
+                                  color: mine ? Colors.white70 : Colors.black54,
                                 ),
                               ),
                               if (mine) ...[
@@ -980,8 +948,8 @@ class _AdminTeacherMailThreadScreenState
                                   receiptLevel == 2
                                       ? Icons.done_all_rounded
                                       : (receiptLevel == 1
-                                          ? Icons.done_all_rounded
-                                          : Icons.done_rounded),
+                                            ? Icons.done_all_rounded
+                                            : Icons.done_rounded),
                                   size: 15,
                                   color: receiptLevel == 2
                                       ? seenBlue
@@ -997,9 +965,7 @@ class _AdminTeacherMailThreadScreenState
                 ),
               ),
             ),
-            if (mine &&
-                showSeenStatusLine &&
-                receiptLabel.startsWith('Seen '))
+            if (mine && showSeenStatusLine && receiptLabel.startsWith('Seen '))
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
@@ -1059,7 +1025,9 @@ class _AdminTeacherMailThreadScreenState
         final bytes = f.bytes;
         if (bytes == null) throw Exception('Could not read file bytes.');
         if (bytes.length > MailUploadClient.maxUploadBytes) {
-          throw Exception('This file is too large. Maximum allowed size is 250 MB.');
+          throw Exception(
+            'This file is too large. Maximum allowed size is 250 MB.',
+          );
         }
         url = await client.uploadBytes(bytes: bytes, filename: f.name);
       } else {
@@ -1070,7 +1038,9 @@ class _AdminTeacherMailThreadScreenState
         final file = File(path);
         final size = await file.length();
         if (size > MailUploadClient.maxUploadBytes) {
-          throw Exception('This file is too large. Maximum allowed size is 250 MB.');
+          throw Exception(
+            'This file is too large. Maximum allowed size is 250 MB.',
+          );
         }
         url = await client.uploadFile(file: file);
       }
@@ -1754,7 +1724,11 @@ class _AdminTeacherMailThreadScreenState
                   color: _dialogOrange.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.open_in_new_rounded, color: _dialogOrange, size: 40),
+                child: Icon(
+                  Icons.open_in_new_rounded,
+                  color: _dialogOrange,
+                  size: 40,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
@@ -1767,7 +1741,10 @@ class _AdminTeacherMailThreadScreenState
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
@@ -1809,9 +1786,7 @@ class _AdminTeacherMailThreadScreenState
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white70,
-                side: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.2),
-                ),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -2121,7 +2096,9 @@ class _AdminTeacherMailThreadScreenState
                             fontSize: 11,
                             color: mine
                                 ? Colors.white.withValues(alpha: 0.82)
-                                : const Color(0xFF243B5A).withValues(alpha: 0.70),
+                                : const Color(
+                                    0xFF243B5A,
+                                  ).withValues(alpha: 0.70),
                           ),
                         ),
                         const Spacer(),
@@ -2132,7 +2109,9 @@ class _AdminTeacherMailThreadScreenState
                             fontSize: 11,
                             color: mine
                                 ? Colors.white.withValues(alpha: 0.82)
-                                : const Color(0xFF243B5A).withValues(alpha: 0.70),
+                                : const Color(
+                                    0xFF243B5A,
+                                  ).withValues(alpha: 0.70),
                           ),
                         ),
                       ],
@@ -2184,7 +2163,7 @@ class _AdminTeacherMailThreadScreenState
           key: ValueKey(u),
           url: safePreviewUrl(u),
           heroColor: _orange,
-          onTap: () => _showLinkConfirmationDialog(u),
+          onTap: () => openMailLinkPreview(context, url: safePreviewUrl(u)),
         ),
       ),
     ];
@@ -2206,27 +2185,11 @@ class _AdminTeacherMailThreadScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           child,
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: TextButton.icon(
-              onPressed: () => MediaDownload.downloadUrl(
-                context,
-                url: url,
-                suggestedName: name,
-                askFolder: false,
-              ),
-              icon: const Icon(Icons.download_rounded, size: 16),
-              label: const Text('Download'),
-              style: TextButton.styleFrom(
-                visualDensity: const VisualDensity(
-                  horizontal: -2,
-                  vertical: -2,
-                ),
-                foregroundColor: mine ? Colors.white : Colors.black87,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
+          buildMailFileActions(
+            context: context,
+            url: url,
+            name: name,
+            foregroundColor: mine ? Colors.white : Colors.black87,
           ),
         ],
       );
@@ -2235,65 +2198,70 @@ class _AdminTeacherMailThreadScreenState
     if (isImg && url.isNotEmpty) {
       return withDownloadAction(
         Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: InkWell(
-          onTap: () => _showImageViewer(url, title: name),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 220, maxHeight: 150),
-              child: Image.network(url, fit: BoxFit.cover),
+          padding: const EdgeInsets.only(bottom: 6),
+          child: InkWell(
+            onTap: () => _showImageViewer(url, title: name),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 220,
+                  maxHeight: 150,
+                ),
+                child: Image.network(url, fit: BoxFit.cover),
+              ),
             ),
           ),
         ),
-      ));
+      );
     }
 
     if (isVid && url.isNotEmpty) {
       return withDownloadAction(
         Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: InkWell(
-          onTap: () => _showVideoViewer(url, title: name),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: 220,
-            height: 130,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: mine
-                  ? Colors.blue.withValues(alpha: 0.22)
-                  : Colors.black.withValues(alpha: 0.15),
-            ),
-            child: Stack(
-              children: [
-                const Center(
-                  child: Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: Colors.white,
-                    size: 48,
-                  ),
-                ),
-                Positioned(
-                  left: 10,
-                  right: 10,
-                  bottom: 8,
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: InkWell(
+            onTap: () => _showVideoViewer(url, title: name),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 220,
+              height: 130,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: mine
+                    ? Colors.blue.withValues(alpha: 0.22)
+                    : Colors.black.withValues(alpha: 0.15),
+              ),
+              child: Stack(
+                children: [
+                  const Center(
+                    child: Icon(
+                      Icons.play_circle_fill_rounded,
                       color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                      size: 48,
                     ),
                   ),
-                ),
-              ],
+                  Positioned(
+                    left: 10,
+                    right: 10,
+                    bottom: 8,
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ));
+      );
     }
 
     if (isAud && url.isNotEmpty) {
@@ -2302,19 +2270,21 @@ class _AdminTeacherMailThreadScreenState
       );
     }
 
-    return withDownloadAction(Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: InkWell(
-        onTap: () => _openUrlExternal(url),
-        child: Text(
-          '📎 $name',
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            decoration: TextDecoration.underline,
+    return withDownloadAction(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: InkWell(
+          onTap: () => openMailFilePreview(context, url: url, name: name),
+          child: Text(
+            '📎 $name',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              decoration: TextDecoration.underline,
+            ),
           ),
         ),
       ),
-    ));
+    );
   }
 
   Widget _buildFileUploadingBar() {
@@ -2532,173 +2502,169 @@ class _AdminTeacherMailThreadScreenState
         context: context,
         maxWidth: 1500,
         child: Column(
-            children: [
-              if (_subject.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF2FB),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: const Color(0xFF1F4E79).withValues(alpha: 0.22),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.menu_book_rounded,
-                          size: 18,
-                          color: Color(0xFF1F4E79),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _subject,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF1A3958),
-                            ),
-                          ),
-                        ),
-                      ],
+          children: [
+            if (_subject.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2FB),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFF1F4E79).withValues(alpha: 0.22),
                     ),
                   ),
-                ),
-              Expanded(
-                child: _buildMessageList(),
-              ),
-
-              // composer
-              SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                  child: Column(
+                  child: Row(
                     children: [
-                      _buildFileUploadingBar(),
-                      _buildRecordingBar(),
-                      if (_attachments.isNotEmpty)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _attachments.map((a) {
-                              return Chip(
-                                label: Text(a['name'] ?? 'file'),
-                                onDeleted: () {
-                                  setState(() => _attachments.remove(a));
-                                },
-                              );
-                            }).toList(),
+                      const Icon(
+                        Icons.menu_book_rounded,
+                        size: 18,
+                        color: Color(0xFF1F4E79),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _subject,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF1A3958),
                           ),
-                        ),
-                      CallbackShortcuts(
-                        bindings: {
-                          const SingleActivator(
-                            LogicalKeyboardKey.enter,
-                            control: true,
-                          ): _send,
-                          const SingleActivator(
-                            LogicalKeyboardKey.enter,
-                            meta: true,
-                          ): _send,
-                        },
-                        child: Row(
-                          children: [
-                            IconButton(
-                              tooltip: 'Camera',
-                              style: IconButton.styleFrom(
-                                backgroundColor: const Color(0xFFEC740A),
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: _disableAttachActions
-                                  ? null
-                                  : _takePhotoAndAttach,
-                              icon: const Icon(Icons.photo_camera_rounded),
-                            ),
-                            IconButton(
-                              tooltip: 'Attach',
-                              style: IconButton.styleFrom(
-                                backgroundColor: const Color(0xFF1F4E79),
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: _disableAttachActions
-                                  ? null
-                                  : _pickAndUploadAttachment,
-                              icon: const Icon(Icons.attach_file),
-                            ),
-                            Expanded(
-                              child: TextField(
-                                controller: _bodyC,
-                                minLines: 1,
-                                maxLines: 4,
-                                enabled: !_disableTextInput,
-                                decoration: const InputDecoration(
-                                  hintText:
-                                      'Write mail… (Ctrl/Cmd+Enter to send)',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (_bodyC.text.trim().isNotEmpty ||
-                                _attachments.isNotEmpty)
-                              FilledButton(
-                                onPressed: _disableSendAction
-                                    ? null
-                                    : _send,
-                                child: Text(
-                                  _sending
-                                      ? 'Sending…'
-                                      : (_fileUploading ? 'Uploading…' : 'Send'),
-                                ),
-                              )
-                            else
-                              (_disableMicAction
-                                  ? _buildDisabledMicButton()
-                                  : _buildActiveMicButton()),
-                          ],
                         ),
                       ),
-                      if ((_recRecording || _recStarting) &&
-                          !_recLocked &&
-                          !_recUploading)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline_rounded,
-                                size: 16,
-                                color: Colors.black.withValues(alpha: 0.55),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Hold to record • Swipe left to cancel • Slide up to lock',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12,
-                                    color: Colors.black.withValues(alpha: 0.55),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                     ],
                   ),
                 ),
               ),
+            Expanded(child: _buildMessageList()),
+
+            // composer
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Column(
+                  children: [
+                    _buildFileUploadingBar(),
+                    _buildRecordingBar(),
+                    if (_attachments.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _attachments.map((a) {
+                            return Chip(
+                              label: Text(a['name'] ?? 'file'),
+                              onDeleted: () {
+                                setState(() => _attachments.remove(a));
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    CallbackShortcuts(
+                      bindings: {
+                        const SingleActivator(
+                          LogicalKeyboardKey.enter,
+                          control: true,
+                        ): _send,
+                        const SingleActivator(
+                          LogicalKeyboardKey.enter,
+                          meta: true,
+                        ): _send,
+                      },
+                      child: Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Camera',
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFEC740A),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _disableAttachActions
+                                ? null
+                                : _takePhotoAndAttach,
+                            icon: const Icon(Icons.photo_camera_rounded),
+                          ),
+                          IconButton(
+                            tooltip: 'Attach',
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFF1F4E79),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: _disableAttachActions
+                                ? null
+                                : _pickAndUploadAttachment,
+                            icon: const Icon(Icons.attach_file),
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _bodyC,
+                              minLines: 1,
+                              maxLines: 4,
+                              enabled: !_disableTextInput,
+                              decoration: const InputDecoration(
+                                hintText:
+                                    'Write mail… (Ctrl/Cmd+Enter to send)',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (_bodyC.text.trim().isNotEmpty ||
+                              _attachments.isNotEmpty)
+                            FilledButton(
+                              onPressed: _disableSendAction ? null : _send,
+                              child: Text(
+                                _sending
+                                    ? 'Sending…'
+                                    : (_fileUploading ? 'Uploading…' : 'Send'),
+                              ),
+                            )
+                          else
+                            (_disableMicAction
+                                ? _buildDisabledMicButton()
+                                : _buildActiveMicButton()),
+                        ],
+                      ),
+                    ),
+                    if ((_recRecording || _recStarting) &&
+                        !_recLocked &&
+                        !_recUploading)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 16,
+                              color: Colors.black.withValues(alpha: 0.55),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Hold to record • Swipe left to cancel • Slide up to lock',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),

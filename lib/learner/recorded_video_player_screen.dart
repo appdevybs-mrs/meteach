@@ -108,6 +108,23 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
   List<LessonCommentItem> _comments = const [];
   List<_LessonNoteItem> _lessonNotes = const [];
 
+  LessonCommentItem? get _ownActiveReflection {
+    final uid = widget.uid.trim();
+    if (uid.isEmpty) return null;
+    for (final item in _comments) {
+      if (item.uid.trim() != uid) continue;
+      final status = CourseFeedbackService.normalizeLessonCommentStatus(
+        item.status,
+      );
+      if (status == CourseFeedbackService.statusPending ||
+          status == CourseFeedbackService.statusNotApproved ||
+          status == CourseFeedbackService.statusVisible) {
+        return item;
+      }
+    }
+    return null;
+  }
+
   void _debug(String message) {
     // no-op in production build
   }
@@ -1633,10 +1650,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 5,
-                  vertical: 3,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(999),
@@ -2103,6 +2117,7 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
     final visible = _comments.take(2).toList();
     final accent = const Color(0xFFF97316);
     final commentsOffline = AppConnectivity.instance.isOffline;
+    final ownActive = _ownActiveReflection;
 
     return Container(
       width: double.infinity,
@@ -2300,8 +2315,27 @@ class _RecordedVideoPlayerScreenState extends State<RecordedVideoPlayerScreen>
                         _buildPreviewCommentCard(item),
                         const SizedBox(height: 8),
                       ],
-                      if (!commentsOffline) ...[
+                      if (!commentsOffline && ownActive == null) ...[
                         _buildInlineCommentComposer(accent),
+                        const SizedBox(height: 8),
+                      ] else if (!commentsOffline && ownActive != null) ...[
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _openCommentsScreen,
+                            icon: const Icon(Icons.edit_note_rounded, size: 18),
+                            label: const Text('Edit existing reflection'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: accent,
+                              side: BorderSide(
+                                color: accent.withValues(alpha: 0.35),
+                              ),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 8),
                       ],
                       Align(

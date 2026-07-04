@@ -73,7 +73,7 @@ class _AuthGateState extends State<AuthGate> {
           SessionManager.stopListening(); // stop session listener when signed out
           unawaited(TeacherScheduleWidgetService.instance.clearSnapshot());
           if (previousUid != null && previousUid.isNotEmpty) {
-            unawaited(TopicService.clearForUser(previousUid));
+            unawaited(FCMService.clearDeviceOnLogout(previousUid));
           }
           if (!_signedOutCleanupQueued) {
             _signedOutCleanupQueued = true;

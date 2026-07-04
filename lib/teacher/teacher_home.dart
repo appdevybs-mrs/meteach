@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,6 +37,7 @@ import 'teacher_my_platform_screen.dart';
 import 'take_attendance_screen.dart';
 import 'teacher_schedule_data_service.dart';
 import '../services/notification_service.dart';
+import '../services/fcm_service.dart';
 import '../services/notification_counter_service.dart';
 import '../services/homework_review_sync_service.dart';
 import '../services/teacher_schedule_widget_service.dart';
@@ -494,6 +494,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       context,
       () async {
         await SessionManager.stopListening();
+        await FCMService.clearDeviceOnLogout(userId);
       },
       message: 'Logging out...',
       isLogout: true,
@@ -502,16 +503,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     await FirebaseAuth.instance.signOut();
 
     unawaited(() async {
-      try {
-        await FirebaseMessaging.instance.deleteToken();
-      } catch (_) {}
-
-      if (userId != null && userId.isNotEmpty) {
-        try {
-          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
-        } catch (_) {}
-      }
-
       try {
         await appThemeController.resetToDefault();
       } catch (_) {}
@@ -1004,13 +995,26 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         final tSnap = await _db.child('mail_threads/$threadId').get();
         if (!tSnap.exists || tSnap.value is! Map) return 0;
         final t = (tSnap.value as Map).map((k, v) => MapEntry('$k', v));
-        final hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
-        if (hwRefPath.isEmpty) return 1;
+        var hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+        if (hwRefPath.isEmpty) {
+          final learnerUid = (t['learnerUid'] ?? '').toString().trim();
+          final courseKey = (t['courseKey'] ?? '').toString().trim();
+          final sessionId = (t['sessionId'] ?? '').toString().trim();
+          if (learnerUid.isNotEmpty &&
+              courseKey.isNotEmpty &&
+              sessionId.isNotEmpty) {
+            hwRefPath =
+                'users/$learnerUid/courses/$courseKey/attendance/$sessionId/homework';
+          }
+        }
+        if (hwRefPath.isEmpty) return 0;
 
         final hwSnap = await _db.child(hwRefPath).get();
-        if (!hwSnap.exists || hwSnap.value is! Map) return 1;
+        if (!hwSnap.exists || hwSnap.value is! Map) return 0;
 
         final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
+        if (_toInt(hw['submittedAt']) <= 0) return 0;
+
         final reviewedAt = _toInt(hw['reviewedAt']);
         final reviewStatus = HomeworkReviewSyncService.normalizeStatus(
           hw['reviewStatus'],
@@ -1029,7 +1033,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         }
         return reviewed ? 0 : 1;
       } catch (_) {
-        return 1;
+        return 0;
       }
     }).toList();
 
@@ -1672,7 +1676,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                               );
                             },
                           ),
-
                         ],
                       ),
                     ),
@@ -3315,7 +3318,9 @@ class _NextComingClassCard extends StatelessWidget {
                                   color: Colors.purple.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(999),
                                   border: Border.all(
-                                    color: Colors.purple.withValues(alpha: 0.28),
+                                    color: Colors.purple.withValues(
+                                      alpha: 0.28,
+                                    ),
                                   ),
                                 ),
                                 child: Text(
@@ -3710,5 +3715,3 @@ class _MiniStatCard extends StatelessWidget {
     );
   }
 }
-
-

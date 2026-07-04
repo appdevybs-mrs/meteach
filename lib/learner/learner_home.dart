@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'learner_gallery_screen.dart';
@@ -39,6 +38,7 @@ import '../shared/payment_status.dart';
 import '../shared/learner_notice_popup.dart';
 import '../shared/window_access_dialogs.dart';
 import '../services/notification_counter_service.dart';
+import '../services/fcm_service.dart';
 import '../services/learner_notification_settings_service.dart';
 import '../services/notification_service.dart';
 import '../services/learner_join_signal_service.dart';
@@ -971,6 +971,7 @@ class _LearnerHomeState extends State<LearnerHome> {
       context,
       () async {
         await SessionManager.stopListening();
+        await FCMService.clearDeviceOnLogout(uid);
       },
       message: 'Logging out...',
       isLogout: true,
@@ -979,16 +980,6 @@ class _LearnerHomeState extends State<LearnerHome> {
     await FirebaseAuth.instance.signOut();
 
     unawaited(() async {
-      try {
-        await FirebaseMessaging.instance.deleteToken();
-      } catch (_) {}
-
-      if (uid != null && uid.isNotEmpty) {
-        try {
-          await FirebaseDatabase.instance.ref('fcm_tokens/$uid').remove();
-        } catch (_) {}
-      }
-
       try {
         await appThemeController.resetToDefault();
       } catch (_) {}

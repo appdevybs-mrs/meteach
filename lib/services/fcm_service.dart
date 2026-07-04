@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../admin/admin_classes.dart';
+import '../admin/admin_booking.dart';
 import '../admin/admin_mail_inbox_screen.dart';
 import '../admin/admin_payments.dart';
 import '../admin/admin_priority_alerts_screen.dart';
@@ -22,6 +23,7 @@ import '../admin/admin_job_applications_screen.dart';
 import '../learner/learner_booking_screen.dart';
 import '../learner/learner_home.dart';
 import '../learner/learner_mail_screen.dart';
+import '../learner/learner_reminder_details_screen.dart';
 import '../learner/learner_reminders_list_screen.dart';
 import '../learner/learner_mail_thread_screen.dart';
 import '../shared/app_globals.dart';
@@ -36,6 +38,7 @@ import 'audit_log_service.dart';
 import 'mail_thread_by_id_screen.dart'; // safe fallback only
 import 'push_dispatch_service.dart';
 import 'route_state.dart';
+import 'topic_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -99,6 +102,41 @@ class FCMService {
       _lastSavedUid = uid;
       _lastSavedToken = token;
     }
+  }
+
+  static Future<void> clearDeviceOnLogout(String? uid) async {
+    final safeUid = (uid ?? FirebaseAuth.instance.currentUser?.uid ?? '')
+        .trim();
+
+    if (safeUid.isNotEmpty) {
+      try {
+        await TopicService.clearForUser(safeUid);
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+      }
+
+      try {
+        await FirebaseDatabase.instance.ref('fcm_tokens/$safeUid').remove();
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+      }
+    }
+
+    try {
+      await FCMService.I._ensureLocalInit();
+      await FCMService.I._local.cancelAll();
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
+
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (e) {
+      FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+    }
+
+    _lastSavedUid = null;
+    _lastSavedToken = null;
   }
 
   /// Call once in main()
@@ -231,6 +269,9 @@ class FCMService {
       return true;
     }
     if (action == 'job_application') {
+      return true;
+    }
+    if (action == 'admin_classes') {
       return true;
     }
     if (action == 'booking' || action == 'payment' || action == 'reminder') {
@@ -531,8 +572,22 @@ class FCMService {
 
   Future<void> _openMailNotificationByRole(Map<String, dynamic> data) async {
     final threadId = (data['threadId'] ?? '').toString().trim();
-    final peerUid = (data['peerUid'] ?? '').toString().trim();
+    var peerUid = (data['peerUid'] ?? '').toString().trim();
     final seededPeerName = (data['peerName'] ?? '').toString().trim();
+
+    if (threadId.isNotEmpty && peerUid.isEmpty) {
+      try {
+        final myUid = (FirebaseAuth.instance.currentUser?.uid ?? '').trim();
+        if (myUid.isNotEmpty) {
+          final snap = await FirebaseDatabase.instance
+              .ref('mail_index/$myUid/$threadId/peerUid')
+              .get();
+          peerUid = (snap.value ?? '').toString().trim();
+        }
+      } catch (e) {
+        FirebaseCrashlytics.instance.recordError(e, StackTrace.current);
+      }
+    }
 
     if (threadId.isEmpty || peerUid.isEmpty) {
       await _openMessageCenterByRole();
@@ -634,26 +689,60 @@ class FCMService {
   Future<void> _openReminderByRole(Map<String, dynamic> data) async {
     final role = await _fetchCurrentUserRole();
     final route = (data['route'] ?? '').toString().trim().toLowerCase();
+    final reminderId = (data['reminderId'] ?? '').toString().trim();
+    final teacherUid = (data['teacherUid'] ?? '').toString().trim();
     final nav = await _waitForNavigator();
     if (nav == null) return;
 
-    if (role == 'teacher' || route == 'teacher_reminders') {
+    if (role == 'admin') {
       nav.push(
-        MaterialPageRoute(builder: (_) => const TeacherReminderScreen()),
+        MaterialPageRoute(
+          builder: (_) => AdminTeacherRemindersScreen(
+            initialTeacherUid: teacherUid.isEmpty ? null : teacherUid,
+            initialReminderId: reminderId.isEmpty ? null : reminderId,
+          ),
+        ),
       );
       return;
     }
 
-    if (role == 'learner' || route == 'learner') {
+    if (role == 'teacher') {
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) => TeacherReminderScreen(
+            initialReminderId: reminderId.isEmpty ? null : reminderId,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (role == 'learner') {
+      if (reminderId.isNotEmpty) {
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) =>
+                LearnerReminderDetailsScreen(reminderId: reminderId),
+          ),
+        );
+        return;
+      }
       nav.push(
         MaterialPageRoute(builder: (_) => const LearnerRemindersListScreen()),
       );
       return;
     }
 
-    if (role == 'admin') {
+    if (route == 'teacher_reminders') {
       nav.push(
-        MaterialPageRoute(builder: (_) => const AdminTeacherRemindersScreen()),
+        MaterialPageRoute(builder: (_) => const TeacherReminderScreen()),
+      );
+      return;
+    }
+
+    if (route == 'learner') {
+      nav.push(
+        MaterialPageRoute(builder: (_) => const LearnerRemindersListScreen()),
       );
     }
   }
@@ -664,7 +753,14 @@ class FCMService {
     if (nav == null) return;
     if (role != 'admin') return;
 
-    nav.push(MaterialPageRoute(builder: (_) => const AdminAdminTodosScreen()));
+    final todoId = (data['todoId'] ?? '').toString().trim();
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => AdminAdminTodosScreen(
+          initialTodoId: todoId.isEmpty ? null : todoId,
+        ),
+      ),
+    );
   }
 
   Future<void> _openBookingByRole(Map<String, dynamic> data) async {
@@ -672,18 +768,30 @@ class FCMService {
     final targetRole = _normalizeRole(data['targetRole']);
     final nav = await _waitForNavigator();
     if (nav == null) return;
+    final courseId = (data['courseId'] ?? '').toString().trim();
+    final dayKey = (data['dayKey'] ?? '').toString().trim();
 
     if (role == 'admin' || targetRole == 'admin') {
-      nav.push(MaterialPageRoute(builder: (_) => const AdminClassesScreen()));
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) => AdminBookingScreen(
+            initialCourseId: courseId.isEmpty ? null : courseId,
+          ),
+        ),
+      );
       return;
     }
 
     if (role == 'teacher' || targetRole == 'teacher') {
-      nav.push(MaterialPageRoute(builder: (_) => const TeacherSchedule()));
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) =>
+              TeacherSchedule(initialDayKey: dayKey.isEmpty ? null : dayKey),
+        ),
+      );
       return;
     }
 
-    final courseId = (data['courseId'] ?? '').toString().trim();
     nav.push(
       MaterialPageRoute(
         builder: (_) =>
@@ -733,6 +841,20 @@ class FCMService {
     );
   }
 
+  Future<void> _openAdminClassesByRole(Map<String, dynamic> data) async {
+    final role = await _fetchCurrentUserRole();
+    if (role != 'admin') return;
+    final nav = await _waitForNavigator();
+    if (nav == null) return;
+    final classId = (data['classId'] ?? '').toString().trim();
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) =>
+            AdminClassesScreen(openClassId: classId.isEmpty ? null : classId),
+      ),
+    );
+  }
+
   String _payloadAction(Map<String, dynamic> data) {
     final route = (data['route'] ?? '').toString().trim().toLowerCase();
     final type = _canonicalType(data['type']);
@@ -742,6 +864,9 @@ class FCMService {
     }
     if (route == 'teacher_reminders' || type == 'reminder') {
       return 'reminder';
+    }
+    if (route == 'admin_classes') {
+      return 'admin_classes';
     }
     if (route == 'admin_todos' || type == 'admin_todo') {
       return 'admin_todo';
@@ -920,6 +1045,10 @@ class FCMService {
         }
         if (action == 'job_application') {
           await _openJobApplicationsByRole();
+          return;
+        }
+        if (action == 'admin_classes') {
+          await _openAdminClassesByRole(data);
           return;
         }
         if (action == 'flash_message') {

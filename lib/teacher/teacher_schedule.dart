@@ -33,7 +33,9 @@ import 'teacher_schedule_data_service.dart';
 import 'take_attendance_screen.dart';
 
 class TeacherSchedule extends StatefulWidget {
-  const TeacherSchedule({super.key});
+  const TeacherSchedule({super.key, this.initialDayKey});
+
+  final String? initialDayKey;
 
   @override
   State<TeacherSchedule> createState() => _TeacherScheduleState();
@@ -97,8 +99,25 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
   @override
   void initState() {
     super.initState();
+    final initialDay = _parseDayKey(widget.initialDayKey);
+    if (initialDay != null) {
+      _focusedDay = initialDay;
+      _selectedDay = initialDay;
+    }
     appThemeController.addListener(_onThemeChanged);
     _boot();
+  }
+
+  DateTime? _parseDayKey(String? raw) {
+    final s = raw?.trim() ?? '';
+    if (s.isEmpty) return null;
+    final parts = s.split('-');
+    if (parts.length != 3) return null;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
   }
 
   @override
@@ -612,14 +631,15 @@ class _TeacherScheduleState extends State<TeacherSchedule> {
 
   Future<Map<String, String>> _loadLearnerMini(String uid) async {
     final k = uid.trim();
-    if (k.isEmpty) return const {'full': '', 'profilePhoto': '', 'examMode': ''};
+    if (k.isEmpty)
+      return const {'full': '', 'profilePhoto': '', 'examMode': ''};
     if (_learnerMiniCache.containsKey(k)) return _learnerMiniCache[k]!;
     try {
       final snap = await _db.child('users').child(k).get();
       if (snap.exists && snap.value is Map) {
         final m = Map<String, dynamic>.from(snap.value as Map);
-        final examMode = m['examMode'] == true ||
-            m['examMode']?.toString() == 'true';
+        final examMode =
+            m['examMode'] == true || m['examMode']?.toString() == 'true';
         final out = {
           'full': '${_safeStr(m['first_name'])} ${_safeStr(m['last_name'])}'
               .trim(),
@@ -2364,8 +2384,8 @@ class _SessionCardState extends State<_SessionCard> {
                                                     .trim();
                                             final isExam =
                                                 (snap.data?['examMode'] ?? '')
-                                                        .toString() ==
-                                                    'true';
+                                                    .toString() ==
+                                                'true';
 
                                             return Container(
                                               margin: const EdgeInsets.only(
@@ -2374,18 +2394,22 @@ class _SessionCardState extends State<_SessionCard> {
                                               padding: const EdgeInsets.all(8),
                                               decoration: BoxDecoration(
                                                 color: isExam
-                                                    ? Colors.purple
-                                                        .withValues(alpha: 0.03)
+                                                    ? Colors.purple.withValues(
+                                                        alpha: 0.03,
+                                                      )
                                                     : palette.cardBg,
                                                 borderRadius:
                                                     BorderRadius.circular(10),
                                                 border: Border.all(
                                                   color: isExam
                                                       ? Colors.purple
-                                                          .withValues(alpha: 0.3)
+                                                            .withValues(
+                                                              alpha: 0.3,
+                                                            )
                                                       : palette.border
-                                                          .withValues(
-                                                              alpha: 0.82),
+                                                            .withValues(
+                                                              alpha: 0.82,
+                                                            ),
                                                 ),
                                               ),
                                               child: Column(
@@ -2418,21 +2442,19 @@ class _SessionCardState extends State<_SessionCard> {
                                                       if (isExam)
                                                         Container(
                                                           padding:
-                                                              const EdgeInsets
-                                                                  .symmetric(
-                                                            horizontal: 6,
-                                                            vertical: 2,
-                                                          ),
-                                                          decoration:
-                                                              BoxDecoration(
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 6,
+                                                                vertical: 2,
+                                                              ),
+                                                          decoration: BoxDecoration(
                                                             color: Colors.purple
                                                                 .withValues(
-                                                                    alpha:
-                                                                        0.1),
+                                                                  alpha: 0.1,
+                                                                ),
                                                             borderRadius:
-                                                                BorderRadius
-                                                                    .circular(
-                                                                        6),
+                                                                BorderRadius.circular(
+                                                                  6,
+                                                                ),
                                                           ),
                                                           child: const Text(
                                                             'Exam',

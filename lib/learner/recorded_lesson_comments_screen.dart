@@ -51,6 +51,7 @@ class _RecordedLessonCommentsScreenState
   final Map<String, int> _replyCountByComment = {};
   int _replyCountRequestId = 0;
   final Map<String, int?> _nextBeforeByCourse = {};
+  String? _composerCommentId;
   static const int _pageSize = 18;
 
   void _notice(String message, {LearnerNoticeTone? tone}) {
@@ -112,6 +113,47 @@ class _RecordedLessonCommentsScreenState
         return const Color(0xFF059669);
       default:
         return const Color(0xFF64748B);
+    }
+  }
+
+  LessonCommentItem? get _ownActiveComment {
+    final uid = widget.uid.trim();
+    if (uid.isEmpty) return null;
+    for (final item in _comments) {
+      if (item.uid.trim() != uid) continue;
+      final status = _normalizedStatus(item.status);
+      if (status == CourseFeedbackService.statusPending ||
+          status == CourseFeedbackService.statusNotApproved ||
+          status == CourseFeedbackService.statusVisible) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  void _syncComposerWithOwnActiveComment(List<LessonCommentItem> comments) {
+    final uid = widget.uid.trim();
+    LessonCommentItem? own;
+    for (final item in comments) {
+      if (item.uid.trim() != uid) continue;
+      final status = _normalizedStatus(item.status);
+      if (status == CourseFeedbackService.statusPending ||
+          status == CourseFeedbackService.statusNotApproved ||
+          status == CourseFeedbackService.statusVisible) {
+        own = item;
+        break;
+      }
+    }
+    if (own == null) {
+      _composerCommentId = null;
+      return;
+    }
+    if (_composerCommentId != own.id) {
+      _composerCommentId = own.id;
+      _commentC.text = own.text.trim();
+      _commentC.selection = TextSelection.collapsed(
+        offset: _commentC.text.length,
+      );
     }
   }
 
@@ -219,6 +261,7 @@ class _RecordedLessonCommentsScreenState
       if (!mounted) return;
       setState(() {
         _comments = comments;
+        _syncComposerWithOwnActiveComment(comments);
         _busy = false;
         _hasMore = hasMore;
       });
@@ -418,17 +461,32 @@ class _RecordedLessonCommentsScreenState
 
     setState(() => _posting = true);
     try {
-      await CourseFeedbackService.addLessonComment(
-        courseId: widget.primaryCourseId,
-        lessonId: widget.lessonId,
-        uid: widget.uid,
-        text: text,
-        type: 'comment',
-      );
-      _commentC.clear();
+      final active = _ownActiveComment;
+      if (active != null) {
+        await CourseFeedbackService.updateOwnLessonCommentText(
+          courseId: active.courseId.trim().isEmpty
+              ? widget.primaryCourseId
+              : active.courseId,
+          lessonId: widget.lessonId,
+          commentId: active.id,
+          uid: widget.uid,
+          text: text,
+        );
+      } else {
+        await CourseFeedbackService.addLessonComment(
+          courseId: widget.primaryCourseId,
+          lessonId: widget.lessonId,
+          uid: widget.uid,
+          text: text,
+          type: 'comment',
+        );
+      }
       await _loadComments(reset: true);
       if (!mounted) return;
-      _notice('Reflection posted.', tone: LearnerNoticeTone.success);
+      _notice(
+        active == null ? 'Reflection posted.' : 'Reflection updated.',
+        tone: LearnerNoticeTone.success,
+      );
       FocusScope.of(context).requestFocus(_commentFocus);
     } catch (e) {
       if (!mounted) return;
@@ -733,6 +791,11 @@ class _RecordedLessonCommentsScreenState
 
   Widget _buildComposer() {
     final offline = AppConnectivity.instance.isOffline;
+    final active = _ownActiveComment;
+    final editingExisting = active != null;
+    final statusColor = active == null
+        ? const Color(0xFF4F46E5)
+        : _statusColor(active.status);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
@@ -742,7 +805,46 @@ class _RecordedLessonCommentsScreenState
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (editingExisting) ...[
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _statusLabel(active.status),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Edit your existing Learning Reflection',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Color(0xFF475569),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           TextField(
             controller: _commentC,
             focusNode: _commentFocus,
@@ -754,6 +856,8 @@ class _RecordedLessonCommentsScreenState
               counterText: '',
               hintText: offline
                   ? 'Reflections need internet. Use notes offline.'
+                  : editingExisting
+                  ? 'Update your Learning Reflection...'
                   : 'What did you learn?',
               border: OutlineInputBorder(),
             ),
@@ -765,7 +869,9 @@ class _RecordedLessonCommentsScreenState
                 child: FilledButton.icon(
                   onPressed: _posting || offline ? null : _postComment,
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF4F46E5),
+                    backgroundColor: editingExisting
+                        ? statusColor
+                        : const Color(0xFF4F46E5),
                     foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(48),
                     shape: RoundedRectangleBorder(
@@ -773,12 +879,20 @@ class _RecordedLessonCommentsScreenState
                     ),
                     textStyle: const TextStyle(fontWeight: FontWeight.w900),
                   ),
-                  icon: const Icon(Icons.send_rounded),
+                  icon: Icon(
+                    editingExisting
+                        ? Icons.edit_note_rounded
+                        : Icons.send_rounded,
+                  ),
                   label: Text(
                     offline
                         ? 'Offline'
                         : _posting
-                        ? 'Posting...'
+                        ? editingExisting
+                              ? 'Saving...'
+                              : 'Posting...'
+                        : editingExisting
+                        ? 'Save update'
                         : 'Post reflection',
                   ),
                 ),

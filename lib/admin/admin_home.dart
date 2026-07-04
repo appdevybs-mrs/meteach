@@ -45,6 +45,7 @@ import '../shared/admin_web_layout.dart';
 import '../shared/web_page_frame.dart';
 import '../services/website_mirror_backfill_service.dart';
 import '../services/notification_counter_service.dart';
+import '../services/fcm_service.dart';
 import '../services/reminder_consistency_service.dart';
 import 'admin_certificates.dart';
 import 'admin_admin_todos_screen.dart';
@@ -365,6 +366,7 @@ class _AdminHomeState extends State<AdminHome> {
       context,
       () async {
         await SessionManager.stopListening();
+        await FCMService.clearDeviceOnLogout(userId);
       },
       message: 'Logging out...',
       isLogout: true,
@@ -373,12 +375,6 @@ class _AdminHomeState extends State<AdminHome> {
     await FirebaseAuth.instance.signOut();
 
     unawaited(() async {
-      if (userId != null && userId.isNotEmpty) {
-        try {
-          await FirebaseDatabase.instance.ref('fcm_tokens/$userId').remove();
-        } catch (_) {}
-      }
-
       try {
         await appThemeController.resetToDefault();
       } catch (_) {}

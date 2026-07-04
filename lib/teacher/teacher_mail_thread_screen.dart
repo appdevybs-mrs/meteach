@@ -30,8 +30,8 @@ import '../shared/app_feedback.dart';
 import '../shared/teacher_web_layout.dart';
 import '../shared/profile_avatar.dart';
 import '../shared/chat_sender_identity.dart';
-import '../shared/media_download.dart';
 import '../shared/link_preview_widget.dart';
+import '../shared/mail_file_preview.dart';
 
 class TeacherMailThreadScreen extends StatefulWidget {
   const TeacherMailThreadScreen({
@@ -289,7 +289,6 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
       if (mounted) setState(() {});
     });
   }
-
 
   Future<String> _fetchDisplayName(String uid) async {
     final snap = await _db.ref('users/$uid').get();
@@ -1116,15 +1115,15 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         .limitToLast(_messageWindowSize)
         .once()
         .then((event) {
-      if (!mounted) return;
-      final msgs = _parseMessages(event.snapshot.value);
-      setState(() {
-        _allMessages = msgs;
-        _initialLoadDone = true;
-      });
-      unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
-      unawaited(_markMessagesSeen(msgs));
-    });
+          if (!mounted) return;
+          final msgs = _parseMessages(event.snapshot.value);
+          setState(() {
+            _allMessages = msgs;
+            _initialLoadDone = true;
+          });
+          unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
+          unawaited(_markMessagesSeen(msgs));
+        });
 
     _childSub = _msgsRef
         .orderByChild('createdAt')
@@ -1132,19 +1131,19 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         .onChildAdded
         .skip(1)
         .listen((event) {
-      if (!mounted) return;
-      final id = event.snapshot.key!;
-      if (_allMessages.any((m) => m.id == id)) return;
-      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
-      final msg = _MailMsg.fromMap(id, data);
-      if (msg.deletedFor.contains(_meUid)) return;
-      setState(() {
-        _allMessages.add(msg);
-        _allMessages.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
-      });
-      unawaited(_warmSenderIdentities([msg.fromUid]));
-      unawaited(_markMessagesSeen([msg]));
-    });
+          if (!mounted) return;
+          final id = event.snapshot.key!;
+          if (_allMessages.any((m) => m.id == id)) return;
+          final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+          final msg = _MailMsg.fromMap(id, data);
+          if (msg.deletedFor.contains(_meUid)) return;
+          setState(() {
+            _allMessages.add(msg);
+            _allMessages.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+          });
+          unawaited(_warmSenderIdentities([msg.fromUid]));
+          unawaited(_markMessagesSeen([msg]));
+        });
   }
 
   Widget _buildMessageList() {
@@ -1186,9 +1185,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             Padding(
               padding: EdgeInsets.only(bottom: grouped ? 4 : 10),
               child: Align(
-                alignment: mine
-                    ? Alignment.centerRight
-                    : Alignment.centerLeft,
+                alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                 child: GestureDetector(
                   onLongPress: () => _toggleMessageSelection(m),
                   onTap: _selectionMode
@@ -1199,10 +1196,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (!mine && !grouped) ...[
-                        _buildSenderAvatar(
-                          uid: m.fromUid,
-                          mine: false,
-                        ),
+                        _buildSenderAvatar(uid: m.fromUid, mine: false),
                         const SizedBox(width: 6),
                       ],
                       Column(
@@ -1215,10 +1209,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(14),
                               border: _selectedMessageIds.contains(m.id)
-                                  ? Border.all(
-                                      color: _orange,
-                                      width: 1.5,
-                                    )
+                                  ? Border.all(color: _orange, width: 1.5)
                                   : null,
                             ),
                             child: ConstrainedBox(
@@ -1460,7 +1451,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
                   color: _orange.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.open_in_new_rounded, color: _orange, size: 40),
+                child: Icon(
+                  Icons.open_in_new_rounded,
+                  color: _orange,
+                  size: 40,
+                ),
               ),
               const SizedBox(height: 20),
               Text(
@@ -1473,7 +1468,10 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
@@ -1515,9 +1513,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white70,
-                side: BorderSide(
-                  color: Colors.white.withValues(alpha: 0.2),
-                ),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -2623,7 +2619,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: InkWell(
-        onTap: () => _openUrlExternal(url),
+        onTap: () => openMailFilePreview(context, url: url, name: name),
         borderRadius: BorderRadius.circular(14),
         child: Container(
           constraints: const BoxConstraints(maxWidth: 230),
@@ -2693,27 +2689,11 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           child,
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: TextButton.icon(
-              onPressed: () => MediaDownload.downloadUrl(
-                context,
-                url: url,
-                suggestedName: name,
-                askFolder: false,
-              ),
-              icon: const Icon(Icons.download_rounded, size: 16),
-              label: const Text('Download'),
-              style: TextButton.styleFrom(
-                visualDensity: const VisualDensity(
-                  horizontal: -2,
-                  vertical: -2,
-                ),
-                foregroundColor: mine ? Colors.white : _navy,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
+          buildMailFileActions(
+            context: context,
+            url: url,
+            name: name,
+            foregroundColor: mine ? Colors.white : _navy,
           ),
         ],
       );
@@ -3159,7 +3139,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
           key: ValueKey(u),
           url: safePreviewUrl(u),
           heroColor: _orange,
-          onTap: () => _showLinkConfirmationDialog(u),
+          onTap: () => openMailLinkPreview(context, url: safePreviewUrl(u)),
         ),
       ),
     ];
@@ -4638,9 +4618,7 @@ class _TeacherMailThreadScreenState extends State<TeacherMailThreadScreen> {
         child: Column(
           children: [
             _buildHomeworkEvaluationCard(),
-            Expanded(
-              child: _buildMessageList(),
-            ),
+            Expanded(child: _buildMessageList()),
 
             SafeArea(
               top: false,
@@ -5413,11 +5391,13 @@ class _ReportCardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final skills = (data['skills'] as Map?)
-            ?.map((k, v) => MapEntry(k.toString(), (v as num).toInt())) ??
+    final skills =
+        (data['skills'] as Map?)?.map(
+          (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+        ) ??
         <String, int>{};
-    final stats = (data['stats'] as Map?)
-            ?.map((k, v) => MapEntry(k.toString(), v)) ??
+    final stats =
+        (data['stats'] as Map?)?.map((k, v) => MapEntry(k.toString(), v)) ??
         <String, dynamic>{};
     final note = (data['note'] as String?)?.trim() ?? '';
     final month = (data['month'] as String?) ?? '';
@@ -5471,7 +5451,10 @@ class _ReportCardContent extends StatelessWidget {
                 const SizedBox(height: 8),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: navy.withAlpha(10),
                     borderRadius: BorderRadius.circular(8),
@@ -5529,13 +5512,9 @@ class _ReportCardContent extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: _skillColumn(skills, 0, 4),
-                      ),
+                      Expanded(child: _skillColumn(skills, 0, 4)),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: _skillColumn(skills, 4, 8),
-                      ),
+                      Expanded(child: _skillColumn(skills, 4, 8)),
                     ],
                   )
                 else
@@ -5559,10 +5538,7 @@ class _ReportCardContent extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 10),
                   decoration: const BoxDecoration(
                     border: Border(
-                      left: BorderSide(
-                        color: Color(0xFF1F4E79),
-                        width: 3,
-                      ),
+                      left: BorderSide(color: Color(0xFF1F4E79), width: 3),
                     ),
                   ),
                   child: Text(
