@@ -190,6 +190,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   final Map<String, StreamSubscription<DatabaseEvent>>
   _lessonCommentSubscriptions = <String, StreamSubscription<DatabaseEvent>>{};
   Timer? _debounceLoadTimer;
+  bool _subscriptionsReady = false;
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -240,7 +241,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         _busy = false;
         _learnersBusy = false;
       });
-      _setupLessonCommentSubscriptions(assigned);
+      _ensureSubscriptionsOnce(assigned);
       _silentLegacyCleanup();
     } catch (e) {
       if (!mounted) return;
@@ -253,19 +254,19 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     }
   }
 
-  void _setupLessonCommentSubscriptions(Set<String> courseIds) {
-    for (final sub in _lessonCommentSubscriptions.values) {
-      sub.cancel();
-    }
-    _lessonCommentSubscriptions.clear();
+  void _ensureSubscriptionsOnce(Set<String> courseIds) {
+    if (_subscriptionsReady) return;
+    _subscriptionsReady = true;
     for (final courseId in courseIds) {
       if (courseId.trim().isEmpty) continue;
-      final sub = _db.child('lesson_comments').child(courseId).onValue.listen((
-        _,
-      ) {
-        _debouncedLoad();
-      });
-      _lessonCommentSubscriptions[courseId] = sub;
+      _lessonCommentSubscriptions[courseId] = _db
+          .child('lesson_comments')
+          .child(courseId)
+          .onValue
+          .skip(1)
+          .listen((_) {
+            _debouncedLoad();
+          });
     }
   }
 
