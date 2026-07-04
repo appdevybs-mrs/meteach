@@ -191,6 +191,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   _lessonCommentSubscriptions = <String, StreamSubscription<DatabaseEvent>>{};
   Timer? _debounceLoadTimer;
   bool _subscriptionsReady = false;
+  final Map<String, String> _popupSelectedUnitByModule = <String, String>{};
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -2198,6 +2199,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final rowKey = _recordedRowKey(item);
     var future = _recordedDetailsFutureByRow[rowKey] ??=
         _loadRecordedLearnerDetails(item);
+    _popupSelectedUnitByModule.clear();
 
     await showModalBottomSheet<void>(
       context: context,
@@ -2239,6 +2241,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
                     item,
                     snap.data!,
                     onDetailsChanged: refreshDetails,
+                    selectedUnitByModule: _popupSelectedUnitByModule,
                   );
                 },
               ),
@@ -2253,6 +2256,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     _LearnerRecordedProgressItem learner,
     _RecordedLearnerDetails details, {
     required Future<void> Function() onDetailsChanged,
+    required Map<String, String> selectedUnitByModule,
   }) {
     final lessons = <_RecordedLessonDetail>[...details.left, ...details.studied]
       ..sort((a, b) {
@@ -2279,10 +2283,13 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     final progress = learner.totalSessions > 0
         ? learner.completedSessions / learner.totalSessions
         : 0.0;
-    final selectedUnitByModule = <String, String>{
-      for (final entry in byModule.entries)
-        if (entry.value.isNotEmpty) entry.key: entry.value.keys.first,
-    };
+    if (selectedUnitByModule.isEmpty) {
+      for (final entry in byModule.entries) {
+        if (entry.value.isNotEmpty) {
+          selectedUnitByModule[entry.key] = entry.value.keys.first;
+        }
+      }
+    }
 
     return StatefulBuilder(
       builder: (context, setSheetState) {
@@ -2760,49 +2767,51 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         );
       }
     }
+  }
 
-    // Refresh the learner details so the icon updates
-    final rowKey = _recordedRowKey(learner);
-    if (mounted) {
-      setState(() {
-        final cacheKey = '${lesson.lessonId}__${learner.learnerUid}';
-        if (approve) {
-          _commentCacheByCourse[learner.courseId]?[cacheKey]?['status'] =
-              CourseFeedbackService.statusVisible;
-        } else {
-          _commentCacheByCourse[learner.courseId]?[cacheKey]?['status'] =
-              CourseFeedbackService.statusNotApproved;
-        }
-        _all = _all
-            .map((item) {
-              if (item.courseId != learner.courseId ||
-                  item.lessonId != lesson.lessonId ||
-                  item.entryId != commentId) {
-                return item;
-              }
-              if (!approve) return null;
-              return _MyPlatformItem(
-                courseId: item.courseId,
-                lessonId: item.lessonId,
-                entryId: item.entryId,
-                uid: item.uid,
-                firstName: item.firstName,
-                displayName: item.displayName,
-                photoUrl: item.photoUrl,
-                abbr: item.abbr,
-                text: item.text,
-                status: CourseFeedbackService.statusVisible,
-                reportCount: item.reportCount,
-                createdAt: item.createdAt,
-              );
-            })
-            .whereType<_MyPlatformItem>()
-            .toList();
-        _recordedDetailsFutureByRow[rowKey] = _loadRecordedLearnerDetails(
-          learner,
-        );
-      });
-    }
+  void _applyLocalModeration({
+    required _RecordedLessonDetail lesson,
+    required _LearnerRecordedProgressItem learner,
+    required bool approve,
+    required String commentId,
+  }) {
+    setState(() {
+      final cacheKey = '${lesson.lessonId}__${learner.learnerUid}';
+      if (approve) {
+        _commentCacheByCourse[learner.courseId]?[cacheKey]?['status'] =
+            CourseFeedbackService.statusVisible;
+      } else {
+        _commentCacheByCourse[learner.courseId]?[cacheKey]?['status'] =
+            CourseFeedbackService.statusNotApproved;
+      }
+      _all = _all
+          .map((item) {
+            if (item.courseId != learner.courseId ||
+                item.lessonId != lesson.lessonId ||
+                item.entryId != commentId) {
+              return item;
+            }
+            if (!approve) return null;
+            return _MyPlatformItem(
+              courseId: item.courseId,
+              lessonId: item.lessonId,
+              entryId: item.entryId,
+              uid: item.uid,
+              firstName: item.firstName,
+              displayName: item.displayName,
+              photoUrl: item.photoUrl,
+              abbr: item.abbr,
+              text: item.text,
+              status: CourseFeedbackService.statusVisible,
+              reportCount: item.reportCount,
+              createdAt: item.createdAt,
+            );
+          })
+          .whereType<_MyPlatformItem>()
+          .toList();
+      _recordedDetailsFutureByRow[_recordedRowKey(learner)] =
+          _loadRecordedLearnerDetails(learner);
+    });
   }
 
   Future<void> _moderateCommentWithProgress({
@@ -2841,6 +2850,15 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
     );
 
     try {
+      final commentId = lesson.commentId;
+      if (commentId != null && commentId.isNotEmpty) {
+        _applyLocalModeration(
+          lesson: lesson,
+          learner: learner,
+          approve: approve,
+          commentId: commentId,
+        );
+      }
       await _moderateComment(
         lesson: lesson,
         learner: learner,
@@ -2848,6 +2866,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       );
       await onDetailsChanged();
     } catch (e) {
+      setState(() {
+        _commentCacheByCourse.remove(learner.courseId);
+        _recordedDetailsFutureByRow.remove(_recordedRowKey(learner));
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not update reflection: $e')),
