@@ -586,6 +586,7 @@ class _GuidelineHeader extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           SizedBox(
+            width: double.infinity,
             height: 106,
             child: Stack(
               alignment: Alignment.center,
