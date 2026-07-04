@@ -996,8 +996,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         if (!tSnap.exists || tSnap.value is! Map) return 0;
         final t = (tSnap.value as Map).map((k, v) => MapEntry('$k', v));
         var hwRefPath = (t['homeworkRef'] ?? '').toString().trim();
+        final learnerUid = (t['learnerUid'] ?? '').toString().trim();
         if (hwRefPath.isEmpty) {
-          final learnerUid = (t['learnerUid'] ?? '').toString().trim();
           final courseKey = (t['courseKey'] ?? '').toString().trim();
           final sessionId = (t['sessionId'] ?? '').toString().trim();
           if (learnerUid.isNotEmpty &&
@@ -1013,7 +1013,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         if (!hwSnap.exists || hwSnap.value is! Map) return 0;
 
         final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
-        if (_toInt(hw['submittedAt']) <= 0) return 0;
+        final submittedAt = _toInt(hw['submittedAt']);
+        if (submittedAt <= 0) return 0;
+        final hasRealSubmission =
+            await HomeworkReviewSyncService.hasRealLearnerSubmission(
+              db: FirebaseDatabase.instance,
+              threadId: threadId,
+              learnerUid: learnerUid,
+              submittedAt: submittedAt,
+              homeworkRefPath: hwRefPath,
+              autoMailMsgKey: (hw['autoMailMsgKey'] ?? '').toString(),
+            );
+        if (!hasRealSubmission) return 0;
 
         final reviewedAt = _toInt(hw['reviewedAt']);
         final reviewStatus = HomeworkReviewSyncService.normalizeStatus(

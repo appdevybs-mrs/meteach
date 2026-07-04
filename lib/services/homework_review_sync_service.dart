@@ -20,6 +20,66 @@ class HomeworkReviewSyncService {
     return reviewedAt > 0 || reviewStatus.isNotEmpty;
   }
 
+  static bool _hasAttachments(dynamic raw) {
+    if (raw is Map) return raw.isNotEmpty;
+    if (raw is List) return raw.isNotEmpty;
+    return false;
+  }
+
+  static Future<bool> hasRealLearnerSubmission({
+    required FirebaseDatabase db,
+    required String threadId,
+    required String learnerUid,
+    required int submittedAt,
+    String homeworkRefPath = '',
+    String autoMailMsgKey = '',
+  }) async {
+    if (submittedAt <= 0) return false;
+
+    var autoKey = autoMailMsgKey.trim();
+    final hwRef = homeworkRefPath.trim();
+    if (autoKey.isEmpty && hwRef.isNotEmpty) {
+      try {
+        final hwSnap = await db.ref(hwRef).get();
+        if (hwSnap.exists && hwSnap.value is Map) {
+          final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
+          autoKey = (hw['autoMailMsgKey'] ?? '').toString().trim();
+        }
+      } catch (_) {}
+    }
+
+    // Older homework records may not have an auto message key. Keep their
+    // existing submittedAt behavior instead of hiding valid legacy work.
+    if (autoKey.isEmpty) return true;
+
+    final tid = threadId.trim();
+    if (tid.isEmpty) return false;
+
+    try {
+      final snap = await db.ref('mail_messages/$tid').get();
+      if (!snap.exists || snap.value is! Map) return false;
+
+      final messages = (snap.value as Map).map((k, v) => MapEntry('$k', v));
+      final cleanLearnerUid = learnerUid.trim();
+      for (final entry in messages.entries) {
+        if (entry.key == autoKey || entry.value is! Map) continue;
+
+        final row = (entry.value as Map).map((k, v) => MapEntry('$k', v));
+        if (cleanLearnerUid.isNotEmpty &&
+            (row['fromUid'] ?? '').toString().trim() != cleanLearnerUid) {
+          continue;
+        }
+
+        if (_hasAttachments(row['attachments'])) return true;
+        if ((row['body'] ?? '').toString().trim().isNotEmpty) return true;
+      }
+    } catch (_) {
+      return false;
+    }
+
+    return false;
+  }
+
   static HomeworkReviewPatch? parseEvaluationText(
     String raw, {
     int fallbackReviewedAt = 0,

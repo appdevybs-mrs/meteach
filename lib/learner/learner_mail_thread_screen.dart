@@ -511,7 +511,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
       final hwPath = (m['homeworkRef'] ?? '').toString().trim();
       if (hwPath.isEmpty) return;
 
-      await _db.ref(hwPath).update({'submittedAt': ServerValue.timestamp});
+      await _db.ref(hwPath).update({
+        'doneAt': ServerValue.timestamp,
+        'submittedAt': ServerValue.timestamp,
+      });
     } catch (_) {}
   }
 

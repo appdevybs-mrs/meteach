@@ -92,6 +92,17 @@ class AdminHome extends StatefulWidget {
   State<AdminHome> createState() => _AdminHomeState();
 }
 
+Route<T> _fastAdminRoute<T>(Widget screen) {
+  return PageRouteBuilder<T>(
+    pageBuilder: (_, _, _) => screen,
+    transitionDuration: const Duration(milliseconds: 80),
+    reverseTransitionDuration: const Duration(milliseconds: 80),
+    transitionsBuilder: (_, animation, _, child) {
+      return FadeTransition(opacity: animation, child: child);
+    },
+  );
+}
+
 class _AdminHomeState extends State<AdminHome> {
   static const _prefsRoleKey = 'admin_home_role_mode_is_admin';
   static const _adminModePassword = '0808';
@@ -396,6 +407,10 @@ class _AdminHomeState extends State<AdminHome> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      return const SizedBox.shrink();
+    }
 
     final width = MediaQuery.of(context).size.width;
     final isMobileDashboard = width < 760;
@@ -472,9 +487,9 @@ class _AdminHomeState extends State<AdminHome> {
             isReceptionistStyle: !_isAdminMode,
             onTap: () => _openAdminWindow(
               AppWindowKeys.adminLearners,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-              ),
+              () => Navigator.of(
+                context,
+              ).push(_fastAdminRoute(const AdminLearnersScreen())),
             ),
           ),
         ),
@@ -486,9 +501,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminClasses,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminClassesScreen())),
           ),
         ),
       ),
@@ -501,9 +516,9 @@ class _AdminHomeState extends State<AdminHome> {
             isReceptionistStyle: !_isAdminMode,
             onTap: () => _openAdminWindow(
               AppWindowKeys.adminPayments,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-              ),
+              () => Navigator.of(
+                context,
+              ).push(_fastAdminRoute(const AdminPaymentsScreen())),
             ),
           ),
         ),
@@ -518,9 +533,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminFinance,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminFinanceScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminFinanceScreen())),
           ),
         ),
       ),
@@ -534,9 +549,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminSchedule,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminTimetableScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminTimetableScreen())),
           ),
         ),
       ),
@@ -550,11 +565,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminAttendance,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminAttendanceOverviewScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminAttendanceOverviewScreen())),
           ),
         ),
       ),
@@ -568,9 +581,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminCourses,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminCoursesScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminCoursesScreen())),
           ),
         ),
       ),
@@ -584,11 +597,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminVocabLists,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminVocabWordsListsScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminVocabWordsListsScreen())),
           ),
         ),
       ),
@@ -599,11 +610,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminCourseReviews,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminCourseReviewsScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminCourseReviewsScreen())),
           ),
         ),
       ),
@@ -622,11 +631,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminTeacherSessionCount,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminTeacherSessionCountScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminTeacherSessionCountScreen())),
           ),
         ),
       ),
@@ -637,11 +644,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminReminders,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminTeacherRemindersScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminTeacherRemindersScreen())),
           ),
         ),
       ),
@@ -652,11 +657,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminPriorityAlerts,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminPriorityAlertsScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminPriorityAlertsScreen())),
           ),
         ),
       ),
@@ -670,11 +673,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminActivityCenter,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminActivityCenterScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminActivityCenterScreen())),
           ),
         ),
       ),
@@ -688,11 +689,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminNotificationAudit,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminNotificationAuditScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminNotificationAuditScreen())),
           ),
         ),
       ),
@@ -705,7 +704,7 @@ class _AdminHomeState extends State<AdminHome> {
             AppWindowKeys.adminStaff,
             () => Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const AdminStaffScreen())),
+            ).push(_fastAdminRoute(const AdminStaffScreen())),
           ),
         ),
       ),
@@ -716,11 +715,9 @@ class _AdminHomeState extends State<AdminHome> {
           icon: Icons.language_rounded,
           color: AdminHome.accentCyan,
           isReceptionistStyle: !_isAdminMode,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminInternationalTeachersScreen(),
-            ),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(_fastAdminRoute(const AdminInternationalTeachersScreen())),
         ),
       ),
       card(
@@ -730,9 +727,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminMail,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminMailInboxScreen())),
           ),
         ),
       ),
@@ -745,7 +742,7 @@ class _AdminHomeState extends State<AdminHome> {
             AppWindowKeys.adminWages,
             () => Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const AdminWagesScreen())),
+            ).push(_fastAdminRoute(const AdminWagesScreen())),
           ),
         ),
       ),
@@ -757,9 +754,7 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminTeacherAvailability,
             () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => AdminTeacherAvailabilityOverviewScreen(),
-              ),
+              _fastAdminRoute(const AdminTeacherAvailabilityOverviewScreen()),
             ),
           ),
         ),
@@ -786,7 +781,7 @@ class _AdminHomeState extends State<AdminHome> {
             AppWindowKeys.adminFileManager,
             () => Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const AdminFileManager())),
+            ).push(_fastAdminRoute(const AdminFileManager())),
           ),
         ),
       ),
@@ -800,11 +795,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminInstructions,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminInstructionsScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminInstructionsScreen())),
           ),
         ),
       ),
@@ -823,11 +816,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminPublicGallery,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminPublicGalleryScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminPublicGalleryScreen())),
           ),
         ),
       ),
@@ -849,9 +840,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminGallery,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminGalleryScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminGalleryScreen())),
           ),
         ),
       ),
@@ -865,9 +856,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminSplashScreen,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminSplashScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminSplashScreen())),
           ),
         ),
       ),
@@ -881,11 +872,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminGraduatesMap,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminGraduatesMapScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminGraduatesMapScreen())),
           ),
         ),
       ),
@@ -896,9 +885,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminContract,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminContractScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminContractScreen())),
           ),
         ),
       ),
@@ -909,11 +898,9 @@ class _AdminHomeState extends State<AdminHome> {
           isReceptionistStyle: !_isAdminMode,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminSettings,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const AdminForceUpdateAllScreen(),
-              ),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminForceUpdateAllScreen())),
           ),
         ),
       ),
@@ -928,11 +915,9 @@ class _AdminHomeState extends State<AdminHome> {
           onTap: () {
             unawaited(
               OfflineActionGuard.run(context, () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const AdminWindowAccessScreen(),
-                  ),
-                );
+                await Navigator.of(
+                  context,
+                ).push(_fastAdminRoute(const AdminWindowAccessScreen()));
               }),
             );
           },
@@ -955,7 +940,7 @@ class _AdminHomeState extends State<AdminHome> {
             AppWindowKeys.adminDiary,
             () => Navigator.of(
               context,
-            ).push(MaterialPageRoute(builder: (_) => const AdminDiaryScreen())),
+            ).push(_fastAdminRoute(const AdminDiaryScreen())),
           ),
         ),
       ),
@@ -1041,11 +1026,9 @@ class _AdminHomeState extends State<AdminHome> {
               onTap: () {
                 unawaited(
                   OfflineActionGuard.run(context, () async {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const AdminAdminTodosScreen(),
-                      ),
-                    );
+                    await Navigator.of(
+                      context,
+                    ).push(_fastAdminRoute(const AdminAdminTodosScreen()));
                   }),
                 );
               },
@@ -1151,9 +1134,9 @@ class _AdminHomeState extends State<AdminHome> {
           color: AdminHome.primaryBlue,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminLearners,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminLearnersScreen())),
           ),
         ),
       if (_isWindowVisibleForCurrentMode(AppWindowKeys.adminPayments))
@@ -1164,9 +1147,9 @@ class _AdminHomeState extends State<AdminHome> {
           color: AdminHome.actionOrange,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminPayments,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminPaymentsScreen())),
           ),
         ),
       if (_isWindowVisibleForCurrentMode(AppWindowKeys.adminClasses))
@@ -1177,9 +1160,9 @@ class _AdminHomeState extends State<AdminHome> {
           color: AdminHome.accentIndigo,
           onTap: () => _openAdminWindow(
             AppWindowKeys.adminClasses,
-            () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-            ),
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminClassesScreen())),
           ),
         ),
     ];
@@ -1254,9 +1237,9 @@ class _AdminHomeState extends State<AdminHome> {
             Navigator.of(context).pop();
             unawaited(
               OfflineActionGuard.run(context, () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AdminPublicPreview()),
-                );
+                await Navigator.of(
+                  context,
+                ).push(_fastAdminRoute(const AdminPublicPreview()));
               }),
             );
           },
@@ -1275,45 +1258,45 @@ class _AdminHomeState extends State<AdminHome> {
             Navigator.of(context).pop();
             _openAdminWindow(
               AppWindowKeys.adminLearners,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminLearnersScreen()),
-              ),
+              () => Navigator.of(
+                context,
+              ).push(_fastAdminRoute(const AdminLearnersScreen())),
             );
           },
           onOpenPayments: () {
             Navigator.of(context).pop();
             _openAdminWindow(
               AppWindowKeys.adminPayments,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminPaymentsScreen()),
-              ),
+              () => Navigator.of(
+                context,
+              ).push(_fastAdminRoute(const AdminPaymentsScreen())),
             );
           },
           onOpenClasses: () {
             Navigator.of(context).pop();
             _openAdminWindow(
               AppWindowKeys.adminClasses,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminClassesScreen()),
-              ),
+              () => Navigator.of(
+                context,
+              ).push(_fastAdminRoute(const AdminClassesScreen())),
             );
           },
           onOpenStaff: () {
             Navigator.of(context).pop();
             _openAdminWindow(
               AppWindowKeys.adminStaff,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminStaffScreen()),
-              ),
+              () => Navigator.of(
+                context,
+              ).push(_fastAdminRoute(const AdminStaffScreen())),
             );
           },
           onOpenMail: () {
             Navigator.of(context).pop();
             _openAdminWindow(
               AppWindowKeys.adminMail,
-              () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AdminMailInboxScreen()),
-              ),
+              () => Navigator.of(
+                context,
+              ).push(_fastAdminRoute(const AdminMailInboxScreen())),
             );
           },
         ),
@@ -2213,7 +2196,7 @@ class _AdminOnlineBookingDashCard extends StatelessWidget {
           isReceptionistStyle: isReceptionistStyle,
           onTap: () => Navigator.of(
             context,
-          ).push(MaterialPageRoute(builder: (_) => const AdminBookingScreen())),
+          ).push(_fastAdminRoute(const AdminBookingScreen())),
         );
       },
     );
@@ -2249,9 +2232,9 @@ class _SubscriptionsDashCard extends StatelessWidget {
           color: AdminHome.accentAmber,
           badgeCount: count,
           isReceptionistStyle: isReceptionistStyle,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminSubscriptionsScreen()),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(_fastAdminRoute(const AdminSubscriptionsScreen())),
         );
       },
     );
@@ -2317,11 +2300,9 @@ class _JobApplicationsDashCard extends StatelessWidget {
           color: AdminHome.accentSlate,
           badgeCount: uncalledCount,
           isReceptionistStyle: isReceptionistStyle,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const AdminJobApplicationsScreen(),
-            ),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(_fastAdminRoute(const AdminJobApplicationsScreen())),
         );
       },
     );
@@ -2430,9 +2411,9 @@ class _AdminSharedFilesDashCard extends StatelessWidget {
           color: AdminHome.accentTeal,
           badgeCount: count,
           isReceptionistStyle: isReceptionistStyle,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AdminSharedFilesScreen()),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(_fastAdminRoute(const AdminSharedFilesScreen())),
         );
       },
     );
@@ -2517,9 +2498,9 @@ class _CertificatesDashCardState extends State<_CertificatesDashCard> {
       color: AdminHome.accentIndigo,
       badgeCount: totalCount,
       isReceptionistStyle: widget.isReceptionistStyle,
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const AdminCertificatesScreen()),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(_fastAdminRoute(const AdminCertificatesScreen())),
     );
   }
 }

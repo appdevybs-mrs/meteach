@@ -43,6 +43,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   bool _busy = true;
   String? _error;
+  bool _openingHomeworkChat = false;
+  bool _openingHomeworkDialogVisible = false;
 
   String _uid = '';
   String _learnerUid = '';
@@ -52,6 +54,37 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   String _lang = 'ar';
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+
+  void _showOpeningHomeworkDialog() {
+    if (_openingHomeworkDialogVisible || !mounted) return;
+    _openingHomeworkDialogVisible = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text('Opening homework chat...'),
+          content: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.6),
+              ),
+              SizedBox(width: 14),
+              Expanded(child: Text('Please wait. Do not tap again.')),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(() => _openingHomeworkDialogVisible = false);
+  }
+
+  void _hideOpeningHomeworkDialog() {
+    if (!_openingHomeworkDialogVisible || !mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+  }
 
   Future<_HomeworkReceiver> _resolveHomeworkReceiver({
     required String classId,
@@ -211,6 +244,42 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       if (taughtTitle.trim().isNotEmpty) 'Session: ${taughtTitle.trim()}',
     ].join('\n');
 
+    Future<void> openThread() async {
+      if (!mounted) return;
+      await OfflineActionGuard.runExclusive(
+        context,
+        'learner.homework.open_mail.$sessionId',
+        () async {
+          _hideOpeningHomeworkDialog();
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LearnerMailThreadScreen(
+                threadId: threadId,
+                peerUid: teacherUid,
+                peerName: teacherName.isEmpty ? 'Teacher' : teacherName,
+                subject: subject,
+              ),
+            ),
+          );
+        },
+      );
+
+      if (mounted) await _load();
+    }
+
+    try {
+      final hwSnap = await _hwRefByPath(homeworkRefPath).get();
+      final hw = hwSnap.value is Map
+          ? (hwSnap.value as Map).map((k, v) => MapEntry('$k', v))
+          : <String, dynamic>{};
+      final existingAutoMsgKey = (hw['autoMailMsgKey'] ?? '').toString().trim();
+      if (existingAutoMsgKey.isNotEmpty) {
+        await openThread();
+        return;
+      }
+    } catch (_) {}
+
     // Push message id
     final msgKey = _db.child('mail_messages').child(threadId).push().key;
     if (msgKey == null) return;
@@ -346,28 +415,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       );
     } catch (_) {}
 
-    if (!mounted) return;
-
-    await OfflineActionGuard.runExclusive(
-      context,
-      'learner.homework.open_mail.$sessionId',
-      () async {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LearnerMailThreadScreen(
-              threadId: threadId,
-              peerUid: teacherUid,
-              peerName: teacherName.isEmpty ? 'Teacher' : teacherName,
-              subject: subject,
-            ),
-          ),
-        );
-      },
-    );
-
-    // ✅ refresh list so submittedAt appears
-    if (mounted) await _load();
+    await openThread();
   }
 
   Future<void> _deleteAutoHomeworkMessageIfAllowed({
@@ -600,7 +648,8 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   void _restoreFromCache() {
     final cacheKey = 'learner_${widget.courseKey}_items';
-    final cached = HomeworkCacheService.instance.retrieve<List<Map<String, dynamic>>>(cacheKey);
+    final cached = HomeworkCacheService.instance
+        .retrieve<List<Map<String, dynamic>>>(cacheKey);
     if (cached != null) {
       _items = cached;
       _busy = false;
@@ -1087,10 +1136,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                         ],
                       )
                     : _buildHomeworkTimeline(
-                      padding: EdgeInsets.only(
-                        bottom: MediaQuery.of(context).viewPadding.bottom + 20,
-                      ),
-                    )),
+                        padding: EdgeInsets.only(
+                          bottom:
+                              MediaQuery.of(context).viewPadding.bottom + 20,
+                        ),
+                      )),
         ),
       ),
     );
@@ -1372,70 +1422,78 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                     borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                                onPressed: () async {
-                                  final teacherUid = (it['teacherUid'] ?? '')
-                                      .toString()
-                                      .trim();
-                                  final teacherName = (it['teacherName'] ?? '')
-                                      .toString();
-                                  final homeworkRefPath =
-                                      (it['homeworkRefPath'] ?? '')
-                                          .toString()
-                                          .trim();
-                                  if (isDone) {
-                                    if (!isReviewed) {
-                                      await _deleteAutoHomeworkMessageIfAllowed(
-                                        sessionId: sessionId,
-                                        homeworkRefPath: homeworkRefPath,
-                                        teacherUid: teacherUid,
-                                      );
-                                      if (mounted) {
-                                        setState(() {
-                                          it['autoMailMsgKey'] = '';
-                                        });
-                                      }
-                                    }
-                                    await _toggleDone(
-                                      sessionId,
-                                      homeworkRefPath: homeworkRefPath,
-                                      currentlyDone: true,
-                                    );
-                                    if (mounted) {
-                                      setState(() => it['doneAt'] = null);
-                                    }
-                                    return;
-                                  }
-                                  final isFirstSend =
-                                      submittedAt == null &&
-                                      autoMailMsgKey.isEmpty;
-                                  if (isFirstSend) {
-                                    final ok = await _confirmFirstSubmit();
-                                    if (!ok) return;
-                                  }
-                                  final now = _nowMs();
-                                  await _hwRefByPath(homeworkRefPath).update({
-                                    'doneAt': now,
-                                    'submittedAt': now,
-                                    'seenAt': it['seenAt'] ?? now,
-                                  });
-                                  if (mounted) {
-                                    setState(() {
-                                      it['doneAt'] = now;
-                                      it['submittedAt'] = now;
-                                      it['seenAt'] ??= now;
-                                    });
-                                  }
-                                  await _createHomeworkMailAndOpen(
-                                    sessionId: sessionId,
-                                    teacherUid: teacherUid,
-                                    teacherName: teacherName,
-                                    date: date,
-                                    dueDate: due,
-                                    taughtTitle: taughtTitle,
-                                    homeworkText: text,
-                                    homeworkRefPath: homeworkRefPath,
-                                  );
-                                },
+                                onPressed: _openingHomeworkChat
+                                    ? null
+                                    : () async {
+                                        final teacherUid =
+                                            (it['teacherUid'] ?? '')
+                                                .toString()
+                                                .trim();
+                                        final teacherName =
+                                            (it['teacherName'] ?? '')
+                                                .toString();
+                                        final homeworkRefPath =
+                                            (it['homeworkRefPath'] ?? '')
+                                                .toString()
+                                                .trim();
+                                        if (isDone) {
+                                          if (!isReviewed) {
+                                            await _deleteAutoHomeworkMessageIfAllowed(
+                                              sessionId: sessionId,
+                                              homeworkRefPath: homeworkRefPath,
+                                              teacherUid: teacherUid,
+                                            );
+                                            if (mounted) {
+                                              setState(() {
+                                                it['autoMailMsgKey'] = '';
+                                              });
+                                            }
+                                          }
+                                          await _toggleDone(
+                                            sessionId,
+                                            homeworkRefPath: homeworkRefPath,
+                                            currentlyDone: true,
+                                          );
+                                          if (mounted) {
+                                            setState(() => it['doneAt'] = null);
+                                          }
+                                          return;
+                                        }
+                                        final isFirstSend =
+                                            submittedAt == null &&
+                                            autoMailMsgKey.isEmpty;
+                                        if (isFirstSend) {
+                                          final ok =
+                                              await _confirmFirstSubmit();
+                                          if (!ok) return;
+                                        }
+                                        if (mounted) {
+                                          setState(
+                                            () => _openingHomeworkChat = true,
+                                          );
+                                        }
+                                        _showOpeningHomeworkDialog();
+                                        try {
+                                          await _createHomeworkMailAndOpen(
+                                            sessionId: sessionId,
+                                            teacherUid: teacherUid,
+                                            teacherName: teacherName,
+                                            date: date,
+                                            dueDate: due,
+                                            taughtTitle: taughtTitle,
+                                            homeworkText: text,
+                                            homeworkRefPath: homeworkRefPath,
+                                          );
+                                        } finally {
+                                          _hideOpeningHomeworkDialog();
+                                          if (mounted) {
+                                            setState(
+                                              () =>
+                                                  _openingHomeworkChat = false,
+                                            );
+                                          }
+                                        }
+                                      },
                               ),
                             ),
                           ],

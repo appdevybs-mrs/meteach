@@ -464,6 +464,18 @@ class _TeacherHomeworkInboxScreenState
           final hw = (hwSnap.value as Map).map((k, v) => MapEntry('$k', v));
           reviewedAt = _toInt(hw['reviewedAt']);
           submittedAtMs = _toInt(hw['submittedAt']);
+          if (submittedAtMs > 0) {
+            final hasRealSubmission =
+                await HomeworkReviewSyncService.hasRealLearnerSubmission(
+                  db: FirebaseDatabase.instance,
+                  threadId: row.threadId,
+                  learnerUid: row.peerUid,
+                  submittedAt: submittedAtMs,
+                  homeworkRefPath: homeworkRefPath,
+                  autoMailMsgKey: (hw['autoMailMsgKey'] ?? '').toString(),
+                );
+            if (!hasRealSubmission) submittedAtMs = 0;
+          }
           reviewStatus = _normalizeHomeworkStatus(hw['reviewStatus']);
           score = _toInt(hw['reviewScore']);
           grade = (hw['reviewGrade'] ?? '').toString().trim();
@@ -1044,7 +1056,7 @@ class _TeacherHomeworkInboxScreenState
         byTab = views.where((v) => v.source == _HomeworkSource.sent).toList();
         break;
       case _HomeworkFilter.all:
-        byTab = views;
+        byTab = views.where(_isVisibleHomeworkView).toList();
         break;
     }
 
@@ -1064,10 +1076,16 @@ class _TeacherHomeworkInboxScreenState
   }
 
   bool _isPendingReviewView(_HomeworkThreadView v) {
-    return v.source == _HomeworkSource.inbox &&
+    return _isVisibleHomeworkView(v) &&
+        v.source == _HomeworkSource.inbox &&
         v.homeworkRefPath.trim().isNotEmpty &&
         v.submittedAtMs > 0 &&
         !v.reviewed;
+  }
+
+  bool _isVisibleHomeworkView(_HomeworkThreadView v) {
+    if (v.source != _HomeworkSource.inbox) return true;
+    return v.submittedAtMs > 0 || v.reviewed;
   }
 
   String _pendingClassKey(_HomeworkThreadView v) {
@@ -1442,7 +1460,8 @@ class _TeacherHomeworkInboxScreenState
   }
 
   Widget _buildFilterBar(List<_HomeworkThreadView> all) {
-    final allCount = all.length;
+    final visible = all.where(_isVisibleHomeworkView).toList();
+    final allCount = visible.length;
     final reviewedCount = all
         .where((v) => v.source == _HomeworkSource.inbox && v.reviewed)
         .length;
