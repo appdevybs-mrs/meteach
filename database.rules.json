@@ -126,7 +126,7 @@
       ".read": "auth != null",
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists())",
+        ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
 
         "role": {
           ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
@@ -174,6 +174,14 @@
             "short_description": { ".validate": "!newData.exists() || newData.isString()" },
 
             "$other": { ".validate": false }
+          }
+        },
+
+        "courses": {
+          "$courseKey": {
+            "attendance": {
+              ".write": "auth != null && (auth.uid == $uid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))"
+            }
           }
         }
       }
@@ -233,11 +241,11 @@
 
     "certificates": {
       ".read": true,
-      ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+      ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
       ".indexOn": ["cvn"],
 
       "$certificateId": {
-        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
 
         "cvn": {
           ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{6,50}$/)"
@@ -265,20 +273,20 @@
         },
 
         "pdfUrl": {
-          ".read": "data.parent().child('downloadsEnabled').val() == true || (auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+          ".read": "data.parent().child('downloadsEnabled').val() == true || (auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^https?:\\/\\/.+/))"
         },
         "pdfPreviewUrl": {
-          ".read": "data.parent().child('downloadsEnabled').val() == true || (auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
+          ".read": "data.parent().child('downloadsEnabled').val() == true || (auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin'))",
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^https?:\\/\\/.+/))"
         },
 
         "downloadCount": {
-          ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "newData.isNumber() && newData.val() >= 0"
         },
         "lastDownloadedAt": {
-          ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "!newData.exists() || newData.isNumber()"
         },
 
@@ -287,11 +295,11 @@
         },
 
         "nationalIdNumber": {
-          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "newData.isString() && newData.val().length >= 4 && newData.val().length <= 30"
         },
         "issuedBy": {
-          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "newData.isString() || !newData.exists()"
         },
         "instructorName": {
@@ -301,7 +309,7 @@
           ".validate": "!newData.exists() || (newData.isString() && (newData.val() == 'course' || newData.val() == 'exam'))"
         },
         "notes": {
-          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "newData.isString() || !newData.exists()"
         },
 
@@ -314,7 +322,7 @@
     "certificate_cvn_index": {
       ".read": true,
       "$cvn": {
-        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin' || ((newData.child('source').val() == 'recorded' || data.child('source').val() == 'recorded') && (newData.child('learnerUid').val() == auth.uid || data.child('learnerUid').val() == auth.uid)))",
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin' || ((newData.child('source').val() == 'recorded' || data.child('source').val() == 'recorded') && (newData.child('learnerUid').val() == auth.uid || data.child('learnerUid').val() == auth.uid)))",
         "source": {
           ".validate": "newData.isString() && newData.val() == 'recorded'"
         },
@@ -381,7 +389,36 @@
 
     "classes": {
       ".read": "auth != null",
-      ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
+      ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
+      "$classId": {
+        "attendance": {
+          ".write": "auth != null",
+          "$sessionId": {
+            "present": {
+              ".validate": "!newData.exists() || newData.hasChildren()",
+              "$learnerUid": { ".validate": "newData.isBoolean()" }
+            },
+            "absent": {
+              ".validate": "!newData.exists() || newData.hasChildren()",
+              "$learnerUid": { ".validate": "newData.isBoolean()" }
+            },
+            "date": { ".validate": "newData.isString() || newData.isNumber()" },
+            "meetingNumber": { ".validate": "newData.isNumber()" },
+            "teacherUid": { ".validate": "newData.isString()" },
+            "teacherName": { ".validate": "newData.isString()" },
+            "course_id": { ".validate": "newData.isString()" },
+            "course_code": { ".validate": "newData.isString()" },
+            "course_title": { ".validate": "newData.isString()" },
+            "successRate": { ".validate": "newData.isNumber()" },
+            "taughtItems": { ".validate": true },
+            "taught": { ".validate": "!newData.exists() || newData.isString() || newData.hasChildren()" },
+            "homework": { ".validate": "!newData.exists() || newData.isString() || newData.hasChildren(['text'])" },
+            "createdAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+            "updatedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+            "$other": { ".validate": true }
+          }
+        }
+      }
     },
 
     "payments": {
@@ -395,7 +432,7 @@
     },
 
     "subscriptions": {
-      ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
+      ".read": "auth != null",
       "$subscriptionId": {
         ".write": "(auth != null && root.child('admins').child(auth.uid).exists()) || (!data.exists() && newData.hasChildren(['courseId','courseTitle','fullName','phone','createdAt']) && newData.child('courseId').isString() && newData.child('courseTitle').isString() && newData.child('fullName').isString() && newData.child('phone').isString() && newData.child('createdAt').isNumber())",
 
@@ -421,6 +458,13 @@
         "accessLabel": { ".validate": "!newData.exists() || newData.isString()" },
         "additionalInfo": { ".validate": "!newData.exists() || newData.isString()" },
         "createdAt": { ".validate": "newData.isNumber()" },
+
+        "originalFee": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "discountedFee": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "promoCode": { ".validate": "!newData.exists() || newData.isString()" },
+        "promoType": { ".validate": "!newData.exists() || newData.isString()" },
+        "promoValue": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "discountAmount": { ".validate": "!newData.exists() || newData.isNumber()" },
 
         "$other": { ".validate": false }
       }
@@ -502,6 +546,27 @@
       ".write": "auth != null"
     },
 
+    "booking_progress": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$learnerUid": {
+        "$courseId": {
+          "online_attendance": {
+            ".write": "auth != null && (auth.uid == $learnerUid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))"
+          },
+          "currentSession": {
+            ".write": "auth != null && (auth.uid == $learnerUid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))"
+          },
+          "session_reviews": {
+            ".write": "auth != null && (auth.uid == $learnerUid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))"
+          },
+          "flexible_attendance": {
+            ".write": "auth != null && (auth.uid == $learnerUid || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))"
+          }
+        }
+      }
+    },
+
     "sessions": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
@@ -512,7 +577,7 @@
     "shared_files": {
       ".read": "auth != null",
       "$fileId": {
-        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('admins').child(auth.uid).exists())",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('admins').child(auth.uid).exists())",
 
         ".validate": "newData.hasChildren(['id', 'description', 'name', 'ext', 'url', 'ownerUid', 'ownerName', 'createdAt'])",
 
@@ -671,7 +736,7 @@
 
         "participants": {
           "$participantUid": {
-            ".write": "auth != null && ((data.exists() && data.val() == true && newData.exists() && newData.val() == true && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()) || (!data.exists() && newData.exists() && newData.val() == true && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')) || (data.exists() && !newData.exists() && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && root.child('mail_threads').child($threadId).child('isGroup').val() == true && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')))",
+            ".write": "auth != null && ((data.exists() && data.val() == true && newData.exists() && newData.val() == true && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()) || (!data.exists() && newData.exists() && newData.val() == true && (!root.child('mail_threads').child($threadId).exists() || (root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))))) || (data.exists() && !newData.exists() && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && root.child('mail_threads').child($threadId).child('isGroup').val() == true && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))))",
             ".validate": "!newData.exists() || (newData.isBoolean() && newData.val() == true)"
           }
         },
@@ -686,6 +751,7 @@
 
     "mail_messages": {
       "$threadId": {
+        ".indexOn": ["createdAt"],
         ".read": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()",
         "$messageId": {
           ".write": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && newData.child('fromUid').val() == auth.uid",
@@ -704,7 +770,7 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         "$threadId": {
-          ".write": "auth != null && auth.uid == $uid && root.child('mail_threads').child($threadId).child('participants').child($uid).exists()",
+          ".write": "auth != null && (auth.uid == $uid || root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists())",
           ".validate": "(!newData.isString() && !newData.isNumber() && !newData.isBoolean()) && newData.child('updatedAt').isNumber() && (!newData.child('subject').exists() || newData.child('subject').isString()) && (!newData.child('lastMessage').exists() || newData.child('lastMessage').isString()) && (!newData.child('unreadCount').exists() || newData.child('unreadCount').isNumber()) && (!newData.child('peerUid').exists() || newData.child('peerUid').isString()) && (!newData.child('peerName').exists() || newData.child('peerName').isString()) && (!newData.child('deletedAt').exists() || newData.child('deletedAt').isNumber() || newData.child('deletedAt').val() == null) && (!newData.child('type').exists() || newData.child('type').isString()) && (!newData.child('homeworkRef').exists() || newData.child('homeworkRef').isString()) && (!newData.child('isGroup').exists() || newData.child('isGroup').isBoolean()) && (!newData.child('groupName').exists() || newData.child('groupName').isString()) && (!newData.child('groupPicUrl').exists() || newData.child('groupPicUrl').isString()) && (!newData.child('participantCount').exists() || newData.child('participantCount').isNumber())"
         }
       }
@@ -714,7 +780,7 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         "$threadId": {
-          ".write": "auth != null && auth.uid == $uid && root.child('mail_threads').child($threadId).child('participants').child($uid).exists()",
+          ".write": "auth != null && (auth.uid == $uid || root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists())",
           ".validate": "!newData.exists() || (!newData.isString() && !newData.isNumber() && !newData.isBoolean())"
         }
       }
@@ -722,7 +788,7 @@
 
     "booking_availability": {
       ".read": "auth != null",
-      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
     },
 
     "booking_reservations": {
@@ -745,7 +811,7 @@
       "$courseId": {
         ".read": "auth != null",
         "$reviewId": {
-          ".write": "auth != null && ((!data.exists() && auth.uid == $reviewId && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+          ".write": "auth != null && ((!data.exists() && auth.uid == $reviewId && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           "uid": {
             ".validate": "newData.isString() && newData.val().length > 0"
           },
@@ -801,7 +867,7 @@
       "$courseId": {
         "$reviewId": {
           "$reportId": {
-            ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+            ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
             ".write": "auth != null && newData.child('uid').val() == auth.uid",
             "uid": {
               ".validate": "newData.isString() && newData.val() == auth.uid"
@@ -821,14 +887,14 @@
     },
 
     "lesson_comments": {
-      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
       "$courseId": {
         "$lessonId": {
           ".read": "auth != null",
           ".indexOn": ["createdAt", "uid"],
           "$commentId": {
             ".read": "auth != null",
-            ".write": "auth != null && ((root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin') || (!data.exists() && newData.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && newData.exists() && data.child('uid').val() == auth.uid && (data.child('status').val() == 'visible' || data.child('status').val() == 'pending' || data.child('status').val() == 'not_approved') && newData.hasChildren(['uid','courseId','lessonId','firstName','displayName','photoUrl','abbr','type','text','status','reportCount','createdAt','updatedAt']) && newData.child('uid').val() == auth.uid && newData.child('courseId').val() == data.child('courseId').val() && newData.child('lessonId').val() == data.child('lessonId').val() && newData.child('firstName').val() == data.child('firstName').val() && newData.child('displayName').val() == data.child('displayName').val() && newData.child('photoUrl').val() == data.child('photoUrl').val() && newData.child('abbr').val() == data.child('abbr').val() && newData.child('type').val() == data.child('type').val() && newData.child('reportCount').val() == data.child('reportCount').val() && newData.child('createdAt').val() == data.child('createdAt').val() && ((newData.child('status').val() == 'visible' || newData.child('status').val() == 'pending') || (newData.child('status').val() == 'removed' && newData.child('text').val() == data.child('text').val()))))",
+            ".write": "auth != null && ((root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin') || (!data.exists() && newData.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && newData.exists() && data.child('uid').val() == auth.uid && (data.child('status').val() == 'visible' || data.child('status').val() == 'pending' || data.child('status').val() == 'not_approved') && newData.hasChildren(['uid','courseId','lessonId','firstName','displayName','photoUrl','abbr','type','text','status','reportCount','createdAt','updatedAt']) && newData.child('uid').val() == auth.uid && newData.child('courseId').val() == data.child('courseId').val() && newData.child('lessonId').val() == data.child('lessonId').val() && newData.child('firstName').val() == data.child('firstName').val() && newData.child('displayName').val() == data.child('displayName').val() && newData.child('photoUrl').val() == data.child('photoUrl').val() && newData.child('abbr').val() == data.child('abbr').val() && newData.child('type').val() == data.child('type').val() && newData.child('reportCount').val() == data.child('reportCount').val() && newData.child('createdAt').val() == data.child('createdAt').val() && ((newData.child('status').val() == 'visible' || newData.child('status').val() == 'pending') || (newData.child('status').val() == 'removed' && newData.child('text').val() == data.child('text').val()))))",
             "uid": {
               ".validate": "newData.isString() && newData.val().length > 0"
             },
@@ -877,28 +943,28 @@
     },
 
     "lesson_comment_archive": {
-      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
       "$courseId": {
         "$lessonId": {
           "$commentId": {
-            ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-            ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+            ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
+            ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')"
           }
         }
       }
     },
 
     "lesson_comment_replies": {
-      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+      ".read": "auth != null && (root.child('admins').child(auth.uid).val() == true || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
       "$courseId": {
         "$lessonId": {
           "$commentId": {
             ".read": "auth != null",
-            ".write": "auth != null && !newData.exists() && ((root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin') || (root.child('lesson_comments').child($courseId).child($lessonId).child($commentId).child('uid').val() == auth.uid && root.child('lesson_comments').child($courseId).child($lessonId).child($commentId).child('status').val() == 'removed'))",
+            ".write": "auth != null && !newData.exists() && ((root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin') || (root.child('lesson_comments').child($courseId).child($lessonId).child($commentId).child('uid').val() == auth.uid && root.child('lesson_comments').child($courseId).child($lessonId).child($commentId).child('status').val() == 'removed'))",
             ".indexOn": ["createdAt"],
             "$replyId": {
               ".read": "auth != null",
-              ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'teacher' || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+              ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid && root.child('users').child(auth.uid).child('courses').exists()) || (data.exists() && data.child('uid').val() == auth.uid && newData.child('uid').val() == auth.uid) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i) || root.child('users').child(auth.uid).child('role').val() == 'admin')",
               "uid": {
                 ".validate": "newData.isString() && newData.val().length > 0"
               },
@@ -939,10 +1005,10 @@
       "$courseId": {
         "$lessonId": {
           "$commentId": {
-            ".write": "auth != null && !newData.exists() && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
+            ".write": "auth != null && !newData.exists() && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
             "$reportId": {
-              ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')",
-              ".write": "auth != null && ((newData.exists() && newData.child('uid').val() == auth.uid) || (!newData.exists() && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val() == 'teacher')))",
+              ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))",
+              ".write": "auth != null && ((newData.exists() && newData.child('uid').val() == auth.uid) || (!newData.exists() && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin' || root.child('users').child(auth.uid).child('role').val().matches(/^teacher/i))))",
               "uid": {
                 ".validate": "newData.isString() && newData.val() == auth.uid"
               },
@@ -1025,6 +1091,15 @@
 
         "$other": { ".validate": false }
       }
+    },
+
+    "public_teachers": {
+      ".read": true,
+      ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
+    },
+    "public_courses": {
+      ".read": true,
+      ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')"
     }
   }
 }

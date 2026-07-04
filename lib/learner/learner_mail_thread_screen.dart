@@ -594,6 +594,10 @@ class _LearnerMailThreadScreenState extends State<LearnerMailThreadScreen> {
           });
           unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
           unawaited(_markMessagesSeen(msgs));
+        })
+        .catchError((_) {
+          if (!mounted) return;
+          setState(() => _initialLoadDone = true);
         });
 
     _childSub = _msgsRef

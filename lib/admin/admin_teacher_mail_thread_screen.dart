@@ -753,6 +753,10 @@ class _AdminTeacherMailThreadScreenState
           unawaited(_warmSenderIdentities(msgs.map((m) => m.fromUid)));
           unawaited(_markMessagesSeen(msgs));
           _onMessagesChanged(msgs);
+        })
+        .catchError((_) {
+          if (!mounted) return;
+          setState(() => _initialLoadDone = true);
         });
 
     _childSub = _msgsRef

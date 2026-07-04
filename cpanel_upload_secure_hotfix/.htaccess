@@ -1,4 +1,11 @@
 SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+SetEnvIf X-Auth-Token "(.*)" HTTP_X_AUTH_TOKEN=$1
 RewriteEngine On
 RewriteCond %{HTTP:Authorization} ^(.+)$
 RewriteRule ^ - [E=HTTP_AUTHORIZATION:%1]
+RewriteCond %{HTTP:X-Auth-Token} ^(.+)$
+RewriteRule ^ - [E=HTTP_X_AUTH_TOKEN:%1]
+
+Header set Access-Control-Allow-Origin "*"
+Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
+Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, X-Auth-Token, X-Auth-Uid, Bearer-Token"
