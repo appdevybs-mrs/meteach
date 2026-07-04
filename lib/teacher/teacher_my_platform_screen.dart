@@ -147,10 +147,13 @@ class _RecordedLessonDetail {
   final String? commentId;
 
   bool get isDone {
-    if (hasVideo && hasMaterials) return videoDone && materialsDone;
-    if (hasVideo) return videoDone;
-    if (hasMaterials) return materialsDone;
-    return false;
+    if (hasVideo && hasMaterials && !videoDone) return false;
+    if (hasVideo && !videoDone) return false;
+    if (hasMaterials && !materialsDone) return false;
+    final cs = commentStatus;
+    if (cs == null) return false;
+    return CourseFeedbackService.normalizeLessonCommentStatus(cs) ==
+        CourseFeedbackService.statusVisible;
   }
 }
 
@@ -184,6 +187,9 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
       <String, Map<String, _RecordedSessionMeta>>{};
   final Map<String, Future<_RecordedLearnerDetails>>
   _recordedDetailsFutureByRow = <String, Future<_RecordedLearnerDetails>>{};
+  final Map<String, StreamSubscription<DatabaseEvent>>
+  _lessonCommentSubscriptions = <String, StreamSubscription<DatabaseEvent>>{};
+  Timer? _debounceLoadTimer;
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -191,6 +197,16 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    for (final sub in _lessonCommentSubscriptions.values) {
+      sub.cancel();
+    }
+    _lessonCommentSubscriptions.clear();
+    _debounceLoadTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -224,6 +240,7 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         _busy = false;
         _learnersBusy = false;
       });
+      _setupLessonCommentSubscriptions(assigned);
       _silentLegacyCleanup();
     } catch (e) {
       if (!mounted) return;
@@ -234,6 +251,29 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         _learnersBusy = false;
       });
     }
+  }
+
+  void _setupLessonCommentSubscriptions(Set<String> courseIds) {
+    for (final sub in _lessonCommentSubscriptions.values) {
+      sub.cancel();
+    }
+    _lessonCommentSubscriptions.clear();
+    for (final courseId in courseIds) {
+      if (courseId.trim().isEmpty) continue;
+      final sub = _db.child('lesson_comments').child(courseId).onValue.listen((
+        _,
+      ) {
+        _debouncedLoad();
+      });
+      _lessonCommentSubscriptions[courseId] = sub;
+    }
+  }
+
+  void _debouncedLoad() {
+    _debounceLoadTimer?.cancel();
+    _debounceLoadTimer = Timer(const Duration(milliseconds: 800), () {
+      _load();
+    });
   }
 
   void _silentLegacyCleanup() {
@@ -767,15 +807,26 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
         int totalSessions = sessionMeta.length;
         int completedSessions = 0;
 
+        final courseCommentCache = _commentCacheByCourse[courseId];
         if (sessionMeta.isNotEmpty) {
           for (final sessionEntry in sessionMeta.entries) {
             final raw = progressMap[sessionEntry.key];
             if (raw is! Map) continue;
             final progress = raw.map((k, v) => MapEntry('$k', v));
-            if (_isRecordedSessionDone(
+            if (!_isRecordedSessionDone(
               meta: sessionEntry.value,
               progress: progress,
             )) {
+              continue;
+            }
+            final cacheKey = '${sessionEntry.key}__$learnerUid';
+            final cached = courseCommentCache?[cacheKey];
+            final status = cached != null
+                ? CourseFeedbackService.normalizeLessonCommentStatus(
+                    cached['status'],
+                  )
+                : null;
+            if (status == CourseFeedbackService.statusVisible) {
               completedSessions += 1;
             }
           }
@@ -786,8 +837,10 @@ class _TeacherMyPlatformScreenState extends State<TeacherMyPlatformScreen> {
             final progress = raw.map((k, v) => MapEntry('$k', v));
             final videoDone = _asBool(progress['videoCompleted']);
             final materialsDone = _asBool(progress['materialsCompleted']);
-            if (videoDone ||
-                (!progress.containsKey('videoCompleted') && materialsDone)) {
+            if ((videoDone ||
+                    (!progress.containsKey('videoCompleted') &&
+                        materialsDone)) &&
+                courseCommentCache != null) {
               completedSessions += 1;
             }
           }

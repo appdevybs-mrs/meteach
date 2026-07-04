@@ -793,6 +793,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   );
   bool _celebrated = false;
   final Set<String> _celebratedMilestones = <String>{};
+  final Set<String> _celebratedModules = <String>{};
 
   @override
   void initState() {
@@ -803,6 +804,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     _offlineVideos.addListener(_onOfflineVideosChanged);
     unawaited(_offlineVideos.ensureLoaded());
     unawaited(_loadMilestonesFromPrefs());
+    unawaited(_loadModuleCelebrationsFromPrefs());
     _loadAll();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_showRecordedCourseIntroIfNeeded());
@@ -1089,6 +1091,8 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
           _ensureExpandedModules();
           _ensureSelectedUnits();
         });
+        _celebrateModuleIfComplete();
+        _celebrateIfComplete();
       }
     } catch (_) {
       // Cache stays unready, so later modules stay safely locked.
@@ -1509,14 +1513,6 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     return '${unit.order}|${unit.title.trim()}|${unit.otherTitle.trim()}';
   }
 
-  int _moduleCompletedSessions(List<_RecordedUnit> moduleUnits) {
-    int done = 0;
-    for (final unit in moduleUnits) {
-      done += _countCompletedInUnit(unit);
-    }
-    return done;
-  }
-
   int _moduleTotalSessions(List<_RecordedUnit> moduleUnits) {
     int total = 0;
     for (final unit in moduleUnits) {
@@ -1607,6 +1603,68 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
       }
     }
     return true;
+  }
+
+  bool _isSessionLearningComplete(_RecordedSession session) {
+    if (!_isSessionCompleted(session)) return false;
+    if (!_reflectionCacheReady) return true;
+    return _sessionsWithApprovedReflections.contains(session.id);
+  }
+
+  int _countLearningCompleteInUnit(_RecordedUnit unit) {
+    int done = 0;
+    for (final session in unit.sessions) {
+      if (_isSessionLearningComplete(session)) done++;
+    }
+    return done;
+  }
+
+  bool _isUnitLearningComplete(_RecordedUnit unit) {
+    final total = unit.sessions.length;
+    if (total <= 0) return false;
+    return _countLearningCompleteInUnit(unit) == total;
+  }
+
+  int get _learningCompletedSessions {
+    int done = 0;
+    for (final ref in _flatSessions) {
+      if (_isSessionLearningComplete(ref.session)) done++;
+    }
+    return done;
+  }
+
+  double get _progressLearningValue {
+    if (_totalSessions <= 0) return 0;
+    return _learningCompletedSessions / _totalSessions;
+  }
+
+  int get _learningCompletedUnits {
+    int done = 0;
+    for (final unit in _units) {
+      if (_isUnitLearningComplete(unit)) done++;
+    }
+    return done;
+  }
+
+  int _moduleLearningCompletedUnits(List<_RecordedUnit> moduleUnits) {
+    int done = 0;
+    for (final unit in moduleUnits) {
+      if (_isUnitLearningComplete(unit)) done++;
+    }
+    return done;
+  }
+
+  int _moduleLearningCompletedSessions(List<_RecordedUnit> moduleUnits) {
+    int done = 0;
+    for (final unit in moduleUnits) {
+      done += _countLearningCompleteInUnit(unit);
+    }
+    return done;
+  }
+
+  bool _isModuleLearningComplete(List<_RecordedUnit> moduleUnits) {
+    if (moduleUnits.isEmpty) return false;
+    return _moduleLearningCompletedUnits(moduleUnits) == moduleUnits.length;
   }
 
   bool _isSessionUnlocked(int flatIndex) {
@@ -2062,7 +2120,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Widget _buildTopOverviewCard() {
     final style = _expiryStyle;
-    final progressPct = (_progressValue * 100).round();
+    final progressPct = (_progressLearningValue * 100).round();
     final isNarrow = MediaQuery.sizeOf(context).width < 420;
 
     return Container(
@@ -2119,7 +2177,7 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
                   ),
                   const Spacer(),
                   Text(
-                    '$_completedSessions/$_totalSessions',
+                    '$_learningCompletedSessions/$_totalSessions',
                     style: const TextStyle(
                       color: Color(0xFF64748B),
                       fontWeight: FontWeight.w800,
@@ -2180,10 +2238,10 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
   Widget _buildUnitProgressTrack() {
     final moduleGroups = _unitsByModule.values.toList();
     final totalUnits = _units.length;
-    final doneUnits = _units.where(_isUnitCompleted).length;
+    final doneUnits = _learningCompletedUnits;
     final allSessions = _flatSessions.map((e) => e.session).toList();
     final totalLessons = allSessions.length;
-    final doneLessons = allSessions.where(_isSessionCompleted).length;
+    final doneLessons = _learningCompletedSessions;
 
     final unitsValue = totalUnits == 0
         ? 0.0
@@ -2326,14 +2384,17 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
 
   Widget _buildModuleDots(List<List<_RecordedUnit>> moduleGroups) {
     final doneModules = moduleGroups
-        .where((u) => u.isNotEmpty && _moduleCompletedUnits(u) == u.length)
+        .where(
+          (u) => u.isNotEmpty && _moduleLearningCompletedUnits(u) == u.length,
+        )
         .length;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         ...moduleGroups.map((units) {
           final isDone =
-              units.isNotEmpty && _moduleCompletedUnits(units) == units.length;
+              units.isNotEmpty &&
+              _moduleLearningCompletedUnits(units) == units.length;
           return Container(
             width: 12,
             height: 12,
@@ -3042,14 +3103,57 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
     } catch (_) {}
   }
 
+  Future<void> _loadModuleCelebrationsFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('rc_mod_cel_${widget.courseKey}') ?? '';
+      if (raw.isNotEmpty) {
+        _celebratedModules.addAll(raw.split(','));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveModuleCelebration(String moduleKey) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _celebratedModules.add(moduleKey);
+      await prefs.setString(
+        'rc_mod_cel_${widget.courseKey}',
+        _celebratedModules.join(','),
+      );
+    } catch (_) {}
+  }
+
+  void _celebrateModuleIfComplete() {
+    if (!_reflectionCacheReady) return;
+    final moduleEntries = _unitsByModule.entries.toList();
+    for (int i = 0; i < moduleEntries.length; i++) {
+      final moduleKey = 'mod_${i}_${moduleEntries[i].key}';
+      if (_celebratedModules.contains(moduleKey)) continue;
+      if (!_isModuleLearningComplete(moduleEntries[i].value)) continue;
+      _confettiController.play();
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) _confettiController.play();
+      });
+      unawaited(_saveModuleCelebration(moduleKey));
+      _celebratedModules.add(moduleKey);
+      if (!mounted) return;
+      _notice(
+        '🎉 Module ${i + 1} is fully completed with approved reflections!',
+        tone: LearnerNoticeTone.success,
+      );
+      break;
+    }
+  }
+
   void _celebrateIfComplete() {
     if (_totalSessions <= 0) return;
 
     final milestones = [25, 50, 75];
-    final pct = (_progressValue * 100).round();
+    final pct = (_progressLearningValue * 100).round();
 
     if (!_celebrated &&
-        _completedSessions == _totalSessions &&
+        _learningCompletedSessions == _totalSessions &&
         _totalSessions > 0) {
       _celebrated = true;
       _confettiController.play();
@@ -4313,9 +4417,9 @@ class _RecordedCourseStudyScreenState extends State<RecordedCourseStudyScreen> {
               final moduleExpanded = _expandedModuleLabels.contains(
                 moduleLabel,
               );
-              final doneUnits = _moduleCompletedUnits(moduleUnits);
+              final doneUnits = _moduleLearningCompletedUnits(moduleUnits);
               final totalUnits = moduleUnits.length;
-              final doneLessons = _moduleCompletedSessions(moduleUnits);
+              final doneLessons = _moduleLearningCompletedSessions(moduleUnits);
               final totalLessons = _moduleTotalSessions(moduleUnits);
               final selectedUnitId =
                   _selectedUnitByModule[moduleLabel] ??
