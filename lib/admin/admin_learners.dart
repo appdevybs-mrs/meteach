@@ -50,9 +50,10 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
   late final TabController _tab;
 
   final _db = FirebaseDatabase.instance;
-  late final Stream<DatabaseEvent> _usersStream;
-  late final Stream<DatabaseEvent> _deletedStream;
-  late final Stream<DatabaseEvent> _blockedStream;
+  Stream<DatabaseEvent> _usersStream = const Stream<DatabaseEvent>.empty();
+  Stream<DatabaseEvent> _deletedStream = const Stream<DatabaseEvent>.empty();
+  Stream<DatabaseEvent> _blockedStream = const Stream<DatabaseEvent>.empty();
+  bool _streamsReady = false;
 
   // Nodes (match your DB)
   static const _usersPath = 'users';
@@ -75,10 +76,28 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
     _search = widget.initialSearch.trim();
     _tab = TabController(length: 3, vsync: this);
 
-    // broadcast streams once (limited for performance)
-    _usersStream = _usersRef.orderByKey().limitToLast(300).onValue.asBroadcastStream();
-    _deletedStream = _deletedRef.orderByKey().limitToLast(100).onValue.asBroadcastStream();
-    _blockedStream = _blockedRef.orderByKey().limitToLast(100).onValue.asBroadcastStream();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        // Start database streams after the route has painted its first frame.
+        _usersStream = _usersRef
+            .orderByKey()
+            .limitToLast(300)
+            .onValue
+            .asBroadcastStream();
+        _deletedStream = _deletedRef
+            .orderByKey()
+            .limitToLast(100)
+            .onValue
+            .asBroadcastStream();
+        _blockedStream = _blockedRef
+            .orderByKey()
+            .limitToLast(100)
+            .onValue
+            .asBroadcastStream();
+        _streamsReady = true;
+      });
+    });
   }
 
   @override
@@ -489,135 +508,139 @@ class _AdminLearnersScreenState extends State<AdminLearnersScreen>
       body: adminWebBodyFrame(
         context: context,
         maxWidth: 1560,
-        child: TabBarView(
-          controller: _tab,
-          children: [
-            _LearnersList(
-              titleHint: 'Search learners…',
-              stream: _usersStream,
-              webDenseMode: _webDenseMode,
-              search: _search,
-              statusFilter: _statusFilter,
-              onSearchChanged: _onSearchChanged,
-              onStatusFilterChanged: (s) => setState(() => _statusFilter = s),
-              onEdit: (uid, learner) async {
-                final updated = await Navigator.of(context).push<Learner?>(
-                  MaterialPageRoute(
-                    builder: (_) => LearnerEditorScreen(
-                      mode: EditorMode.edit,
-                      uid: uid,
-                      initial: learner,
-                    ),
+        child: _streamsReady
+            ? TabBarView(
+                controller: _tab,
+                children: [
+                  _LearnersList(
+                    titleHint: 'Search learners…',
+                    stream: _usersStream,
+                    webDenseMode: _webDenseMode,
+                    search: _search,
+                    statusFilter: _statusFilter,
+                    onSearchChanged: _onSearchChanged,
+                    onStatusFilterChanged: (s) =>
+                        setState(() => _statusFilter = s),
+                    onEdit: (uid, learner) async {
+                      final updated = await Navigator.of(context)
+                          .push<Learner?>(
+                            MaterialPageRoute(
+                              builder: (_) => LearnerEditorScreen(
+                                mode: EditorMode.edit,
+                                uid: uid,
+                                initial: learner,
+                              ),
+                            ),
+                          );
+                      if (updated != null) _toast('Learner updated ✅');
+                    },
+                    actionsBuilder: (uid, learner) => [
+                      PopupMenuItem(
+                        value: _RowAction.pause,
+                        child: Text(
+                          learner.status == LearnerStatus.paused
+                              ? 'Activate'
+                              : 'Pause',
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: _RowAction.block,
+                        child: Text('Block'),
+                      ),
+                      const PopupMenuItem(
+                        value: _RowAction.delete,
+                        child: Text('Delete (move to deleted)'),
+                      ),
+                    ],
+                    onAction: (uid, learner, action) async {
+                      switch (action) {
+                        case _RowAction.pause:
+                          if (learner.status == LearnerStatus.paused) {
+                            await _activateLearner(uid);
+                          } else {
+                            await _pauseLearner(uid);
+                          }
+                          break;
+                        case _RowAction.block:
+                          await _moveToBlocked(uid, learner);
+                          break;
+                        case _RowAction.delete:
+                          await _moveToDeleted(uid, learner);
+                          break;
+                        default:
+                          break;
+                      }
+                    },
                   ),
-                );
-                if (updated != null) _toast('Learner updated ✅');
-              },
-              actionsBuilder: (uid, learner) => [
-                PopupMenuItem(
-                  value: _RowAction.pause,
-                  child: Text(
-                    learner.status == LearnerStatus.paused
-                        ? 'Activate'
-                        : 'Pause',
-                  ),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: _RowAction.block,
-                  child: Text('Block'),
-                ),
-                const PopupMenuItem(
-                  value: _RowAction.delete,
-                  child: Text('Delete (move to deleted)'),
-                ),
-              ],
-              onAction: (uid, learner, action) async {
-                switch (action) {
-                  case _RowAction.pause:
-                    if (learner.status == LearnerStatus.paused) {
-                      await _activateLearner(uid);
-                    } else {
-                      await _pauseLearner(uid);
-                    }
-                    break;
-                  case _RowAction.block:
-                    await _moveToBlocked(uid, learner);
-                    break;
-                  case _RowAction.delete:
-                    await _moveToDeleted(uid, learner);
-                    break;
-                  default:
-                    break;
-                }
-              },
-            ),
-            _LearnersList(
-              titleHint: 'Search deleted…',
-              stream: _deletedStream,
-              webDenseMode: _webDenseMode,
-              search: _search,
-              statusFilter: null,
-              onSearchChanged: _onSearchChanged,
-              onStatusFilterChanged: (_) {},
-              actionsBuilder: (_, _) => const [
-                PopupMenuItem(
-                  value: _RowAction.restore,
-                  child: Text('Restore'),
-                ),
-                PopupMenuDivider(),
-                PopupMenuItem(
-                  value: _RowAction.deleteForever,
-                  child: Text('Delete permanently'),
-                ),
-              ],
-              onAction: (uid, learner, action) async {
-                switch (action) {
-                  case _RowAction.restore:
-                    await _restoreFromDeleted(uid, learner);
-                    break;
-                  case _RowAction.deleteForever:
-                    await _deletePermanently(uid, _deletedRef);
-                    break;
+                  _LearnersList(
+                    titleHint: 'Search deleted…',
+                    stream: _deletedStream,
+                    webDenseMode: _webDenseMode,
+                    search: _search,
+                    statusFilter: null,
+                    onSearchChanged: _onSearchChanged,
+                    onStatusFilterChanged: (_) {},
+                    actionsBuilder: (_, _) => const [
+                      PopupMenuItem(
+                        value: _RowAction.restore,
+                        child: Text('Restore'),
+                      ),
+                      PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: _RowAction.deleteForever,
+                        child: Text('Delete permanently'),
+                      ),
+                    ],
+                    onAction: (uid, learner, action) async {
+                      switch (action) {
+                        case _RowAction.restore:
+                          await _restoreFromDeleted(uid, learner);
+                          break;
+                        case _RowAction.deleteForever:
+                          await _deletePermanently(uid, _deletedRef);
+                          break;
 
-                  default:
-                    break;
-                }
-              },
-            ),
-            _LearnersList(
-              titleHint: 'Search blocked…',
-              stream: _blockedStream,
-              webDenseMode: _webDenseMode,
-              search: _search,
-              statusFilter: null,
-              onSearchChanged: _onSearchChanged,
-              onStatusFilterChanged: (_) {},
-              actionsBuilder: (_, _) => const [
-                PopupMenuItem(
-                  value: _RowAction.restore,
-                  child: Text('Unblock'),
-                ),
-                PopupMenuDivider(),
-                PopupMenuItem(
-                  value: _RowAction.deleteForever,
-                  child: Text('Delete permanently'),
-                ),
-              ],
-              onAction: (uid, learner, action) async {
-                switch (action) {
-                  case _RowAction.restore:
-                    await _restoreFromBlocked(uid, learner);
-                    break;
-                  case _RowAction.deleteForever:
-                    await _deletePermanently(uid, _blockedRef);
-                    break;
-                  default:
-                    break;
-                }
-              },
-            ),
-          ],
-        ),
+                        default:
+                          break;
+                      }
+                    },
+                  ),
+                  _LearnersList(
+                    titleHint: 'Search blocked…',
+                    stream: _blockedStream,
+                    webDenseMode: _webDenseMode,
+                    search: _search,
+                    statusFilter: null,
+                    onSearchChanged: _onSearchChanged,
+                    onStatusFilterChanged: (_) {},
+                    actionsBuilder: (_, _) => const [
+                      PopupMenuItem(
+                        value: _RowAction.restore,
+                        child: Text('Unblock'),
+                      ),
+                      PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: _RowAction.deleteForever,
+                        child: Text('Delete permanently'),
+                      ),
+                    ],
+                    onAction: (uid, learner, action) async {
+                      switch (action) {
+                        case _RowAction.restore:
+                          await _restoreFromBlocked(uid, learner);
+                          break;
+                        case _RowAction.deleteForever:
+                          await _deletePermanently(uid, _blockedRef);
+                          break;
+                        default:
+                          break;
+                      }
+                    },
+                  ),
+                ],
+              )
+            : const Center(child: CircularProgressIndicator()),
       ),
     );
   }
@@ -2020,40 +2043,40 @@ class _LearnersListState extends State<_LearnersList>
                                 padding: EdgeInsets.all(dense ? 9 : 12),
                                 child: Row(
                                   children: [
-                                     GestureDetector(
-                                       onTap: () {
-                                         Navigator.of(context).push(
-                                           MaterialPageRoute(
-                                             builder: (_) =>
-                                                 TeacherLearnerProfileScreen(
-                                               learnerUid: row.uid,
-                                               learnerName: l.fullName,
-                                             ),
-                                           ),
-                                         );
-                                       },
-                                       child: Stack(
-                                         clipBehavior: Clip.none,
-                                         children: [
-                                           ProfileAvatar(
-                                             name: l.fullName,
-                                             photoUrl: l.primaryProfilePhoto,
-                                             radius: dense ? 17 : 20,
-                                             fallbackBg: avatarBg,
-                                             fallbackFg: avatarFg,
-                                             borderColor: avatarBg.withValues(
-                                               alpha: 0.45,
-                                             ),
-                                           ),
-                                           if (unread > 0)
-                                             Positioned(
-                                               right: -6,
-                                               top: -6,
-                                               child: _badge(unread),
-                                             ),
-                                         ],
-                                       ),
-                                     ),
+                                    GestureDetector(
+                                      onTap: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                TeacherLearnerProfileScreen(
+                                                  learnerUid: row.uid,
+                                                  learnerName: l.fullName,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                      child: Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          ProfileAvatar(
+                                            name: l.fullName,
+                                            photoUrl: l.primaryProfilePhoto,
+                                            radius: dense ? 17 : 20,
+                                            fallbackBg: avatarBg,
+                                            fallbackFg: avatarFg,
+                                            borderColor: avatarBg.withValues(
+                                              alpha: 0.45,
+                                            ),
+                                          ),
+                                          if (unread > 0)
+                                            Positioned(
+                                              right: -6,
+                                              top: -6,
+                                              child: _badge(unread),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
                                     SizedBox(width: dense ? 9 : 12),
                                     Expanded(
                                       child: Column(
@@ -2633,10 +2656,7 @@ const _sectionIcons = <IconData>[
   Icons.contact_phone_rounded,
 ];
 
-const _sectionColors = <Color>[
-  Color(0xFF1A2B48),
-  Color(0xFF0F766E),
-];
+const _sectionColors = <Color>[Color(0xFF1A2B48), Color(0xFF0F766E)];
 
 class LearnerEditorScreen extends StatefulWidget {
   const LearnerEditorScreen({
@@ -2834,7 +2854,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
     final ln = lastNameC.text.trim();
     final lnOk = ln.length >= 2 && RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(ln);
     final dob = dobC.text.trim();
-    final dobOk = dob.isNotEmpty && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(dob);
+    final dobOk =
+        dob.isNotEmpty && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(dob);
     final genderOk = !isCreate || _gender != null;
 
     final p1 = phone1C.text.trim();
@@ -3060,8 +3081,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
       final lon = first['lon'];
       if (lat != null) _parsedLat = double.tryParse(lat.toString());
       if (lon != null) _parsedLng = double.tryParse(lon.toString());
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Future<String> _createAuthUserAndGetUid({
@@ -3243,27 +3263,27 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
           prefill != null &&
           prefill.sourceSubscriptionId.trim().isNotEmpty &&
           prefill.promoCode.trim().isNotEmpty) {
-        final subRef =
-            _db.ref('subscriptions/${prefill.sourceSubscriptionId}');
+        final subRef = _db.ref('subscriptions/${prefill.sourceSubscriptionId}');
         final subSnap = await subRef.get();
         if (subSnap.value is Map) {
-          final subMap =
-              (subSnap.value as Map).map((k, v) => MapEntry(k.toString(), v));
+          final subMap = (subSnap.value as Map).map(
+            (k, v) => MapEntry(k.toString(), v),
+          );
           await _db
               .ref('promo_usage_history/${prefill.sourceSubscriptionId}')
               .set({
-            'promoCode': prefill.promoCode.trim(),
-            'promoType': prefill.promoType.trim(),
-            'promoValue': prefill.promoValue,
-            'discountAmount': prefill.discountAmount,
-            'selectedFee': prefill.selectedFee,
-            'originalFee': prefill.originalFee,
-            'discountedFee': prefill.discountedFee,
-            'fullName': '${prefill.firstName} ${prefill.lastName}'.trim(),
-            'courseTitle': prefill.courseTitle,
-            'createdAt': subMap['createdAt'] ?? ServerValue.timestamp,
-            'archivedAt': ServerValue.timestamp,
-          });
+                'promoCode': prefill.promoCode.trim(),
+                'promoType': prefill.promoType.trim(),
+                'promoValue': prefill.promoValue,
+                'discountAmount': prefill.discountAmount,
+                'selectedFee': prefill.selectedFee,
+                'originalFee': prefill.originalFee,
+                'discountedFee': prefill.discountedFee,
+                'fullName': '${prefill.firstName} ${prefill.lastName}'.trim(),
+                'courseTitle': prefill.courseTitle,
+                'createdAt': subMap['createdAt'] ?? ServerValue.timestamp,
+                'archivedAt': ServerValue.timestamp,
+              });
         }
         await subRef.remove();
       }
@@ -3423,8 +3443,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         color: state == StepState.complete
             ? _sectionColors[index]
             : (state == StepState.editing
-                ? _sectionColors[index].withValues(alpha: 0.12)
-                : Colors.transparent),
+                  ? _sectionColors[index].withValues(alpha: 0.12)
+                  : Colors.transparent),
         border: state == StepState.indexed
             ? Border.all(color: Colors.grey.shade400, width: 2)
             : null,
@@ -3460,10 +3480,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           border: Border(
-            top: BorderSide(
-              color: Theme.of(context).dividerColor,
-              width: 0.5,
-            ),
+            top: BorderSide(color: Theme.of(context).dividerColor, width: 0.5),
           ),
         ),
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -3566,8 +3583,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                           final t = (v ?? '').trim();
                           if (t.isEmpty) return 'Required';
                           if (t.length < 2) return 'Too short';
-                          if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
-                              .hasMatch(t)) {
+                          if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) {
                             return 'Invalid characters';
                           }
                           return null;
@@ -3583,8 +3599,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                           final t = (v ?? '').trim();
                           if (t.isEmpty) return 'Required';
                           if (t.length < 2) return 'Too short';
-                          if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$")
-                              .hasMatch(t)) {
+                          if (!RegExp(r"^[a-zA-ZÀ-ÿ\s'-]+$").hasMatch(t)) {
                             return 'Invalid characters';
                           }
                           return null;
@@ -3597,8 +3612,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         validator: (v) {
                           final t = (v ?? '').trim();
                           if (t.isEmpty) return 'Required';
-                          if (!RegExp(r'^\d{4}-\d{2}-\d{2}$')
-                              .hasMatch(t)) {
+                          if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(t)) {
                             return 'Use YYYY-MM-DD';
                           }
                           return null;
@@ -3607,8 +3621,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         decoration: const InputDecoration(
                           labelText: 'Date of birth',
                           hintText: 'Tap to pick',
-                          prefixIcon:
-                              Icon(Icons.calendar_month_rounded),
+                          prefixIcon: Icon(Icons.calendar_month_rounded),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -3640,8 +3653,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       GestureDetector(
                         onLongPress: () {
                           setState(() => _serialUnlocked = true);
-                          _toast(
-                              'Serial unlocked (you can edit it now).');
+                          _toast('Serial unlocked (you can edit it now).');
                         },
                         child: TextFormField(
                           controller: serialC,
@@ -3650,15 +3662,14 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                             labelText: 'Serial number',
                             hintText: '🎓-000001',
                             prefixIcon: const Icon(
-                                Icons.confirmation_number_rounded),
+                              Icons.confirmation_number_rounded,
+                            ),
                             suffixIcon: _serialUnlocked
                                 ? IconButton(
                                     tooltip: 'Lock',
-                                    icon: const Icon(
-                                        Icons.lock_open_rounded),
+                                    icon: const Icon(Icons.lock_open_rounded),
                                     onPressed: () {
-                                      setState(() =>
-                                          _serialUnlocked = false);
+                                      setState(() => _serialUnlocked = false);
                                       _toast('Serial locked ✅');
                                     },
                                   )
@@ -3693,13 +3704,13 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         keyboardType: TextInputType.phone,
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
-                              RegExp(r'[\d+\s-]')),
+                            RegExp(r'[\d+\s-]'),
+                          ),
                         ],
                         validator: (v) {
                           final t = (v ?? '').trim();
                           if (t.isEmpty) return 'Required';
-                          final digits =
-                              t.replaceAll(RegExp(r'[^0-9]'), '');
+                          final digits = t.replaceAll(RegExp(r'[^0-9]'), '');
                           if (digits.length < 9) return 'Too short';
                           return null;
                         },
@@ -3715,7 +3726,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                         keyboardType: TextInputType.phone,
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
-                              RegExp(r'[\d+\s-]')),
+                            RegExp(r'[\d+\s-]'),
+                          ),
                         ],
                         decoration: const InputDecoration(
                           labelText: 'Phone 2',
@@ -3726,42 +3738,39 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                       const SizedBox(height: 16),
                       Autocomplete<String>(
                         optionsBuilder: (_) => _countrySuggestions,
-                        initialValue:
-                            TextEditingValue(text: _countryC.text),
+                        initialValue: TextEditingValue(text: _countryC.text),
                         fieldViewBuilder:
                             (ctx, controller, focusNode, onSubmit) {
-                          _countryC.addListener(() {});
-                          return TextFormField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(
-                              labelText: 'Country',
-                              hintText: 'Select country',
-                              prefixIcon: Icon(Icons.public_rounded),
-                            ),
-                            onChanged: (v) {
-                              if (v != _selectedCountry &&
-                                  _worldData.containsKey(v)) {
-                                _onCountrySelected(v);
-                              } else {
-                                _countryC.text = v;
-                                _countryC.selection =
-                                    TextSelection.fromPosition(
-                                  TextPosition(offset: v.length),
-                                );
-                              }
+                              _countryC.addListener(() {});
+                              return TextFormField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Country',
+                                  hintText: 'Select country',
+                                  prefixIcon: Icon(Icons.public_rounded),
+                                ),
+                                onChanged: (v) {
+                                  if (v != _selectedCountry &&
+                                      _worldData.containsKey(v)) {
+                                    _onCountrySelected(v);
+                                  } else {
+                                    _countryC.text = v;
+                                    _countryC.selection =
+                                        TextSelection.fromPosition(
+                                          TextPosition(offset: v.length),
+                                        );
+                                  }
+                                },
+                              );
                             },
-                          );
-                        },
                         onSelected: _onCountrySelected,
                       ),
                       const SizedBox(height: 16),
                       Autocomplete<String>(
                         key: ValueKey(_selectedCountry),
-                        optionsBuilder: (value) =>
-                            _cityOptionsFor(value.text),
-                        optionsViewBuilder:
-                            (ctx, onSelected, options) {
+                        optionsBuilder: (value) => _cityOptionsFor(value.text),
+                        optionsViewBuilder: (ctx, onSelected, options) {
                           return Material(
                             elevation: 8,
                             borderRadius: BorderRadius.circular(6),
@@ -3779,8 +3788,8 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                                   final subtitle = city == null
                                       ? ''
                                       : city.ascii != city.name
-                                          ? '${city.ascii} • ${city.lat}, ${city.lng}'
-                                          : '${city.lat}, ${city.lng}';
+                                      ? '${city.ascii} • ${city.lat}, ${city.lng}'
+                                      : '${city.lat}, ${city.lng}';
                                   return ListTile(
                                     dense: true,
                                     title: Text(
@@ -3794,13 +3803,11 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                                         ? Text(
                                             subtitle,
                                             maxLines: 1,
-                                            overflow:
-                                                TextOverflow.ellipsis,
+                                            overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               fontSize: 11,
                                               color: _sectionColors[0]
-                                                  .withValues(
-                                                      alpha: 0.55),
+                                                  .withValues(alpha: 0.55),
                                             ),
                                           )
                                         : null,
@@ -3811,35 +3818,34 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                             ),
                           );
                         },
-                        initialValue:
-                            TextEditingValue(text: _cityC.text),
+                        initialValue: TextEditingValue(text: _cityC.text),
                         fieldViewBuilder:
                             (ctx, controller, focusNode, onSubmit) {
-                          return TextFormField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: InputDecoration(
-                              labelText: 'City',
-                              hintText: 'Select or type',
-                              prefixIcon: const Icon(
-                                  Icons.location_city_rounded),
-                              suffixIcon: _loadingCities
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(12),
-                                      child: SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child:
-                                            CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                            onChanged: _onCityChanged,
-                          );
-                        },
+                              return TextFormField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                decoration: InputDecoration(
+                                  labelText: 'City',
+                                  hintText: 'Select or type',
+                                  prefixIcon: const Icon(
+                                    Icons.location_city_rounded,
+                                  ),
+                                  suffixIcon: _loadingCities
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                onChanged: _onCityChanged,
+                              );
+                            },
                         onSelected: (v) {
                           final city = _cityByName(v);
                           if (city != null) _onCitySelected(city);
@@ -3876,8 +3882,7 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                           onLongPress: () async {
                             final email = emailC.text.trim();
                             if (email.isEmpty) return;
-                            await Clipboard.setData(
-                                ClipboardData(text: email));
+                            await Clipboard.setData(ClipboardData(text: email));
                             _toast('Email copied ✅');
                           },
                           child: _TextField(
@@ -3941,9 +3946,7 @@ class _SectionCard extends StatelessWidget {
       elevation: 0,
       color: color.withValues(alpha: 0.04),
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAlias,
       child: Container(
         decoration: BoxDecoration(

@@ -79,7 +79,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   // ===== Courses cache =====
   bool _loadingCourses = true;
   List<Map<String, dynamic>> _courses = [];
-  late final Future<void> _bootFuture;
+  Future<void> _bootFuture = Future<void>.value();
+  bool _heavyTabsReady = false;
 
   // ===== Learners cache (ALL learners) =====
   bool _loadingLearners = true;
@@ -125,7 +126,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
   bool _flexUnreadOnly = false;
   bool _recordedUnreadOnly = false;
   final Set<String> _expandedFlexKeys = <String>{};
-  late final Stream<Map<String, int>> _unreadByLearnerStream;
+  Stream<Map<String, int>> _unreadByLearnerStream =
+      const Stream<Map<String, int>>.empty();
   Set<String> _flexLearnerUidsForBadge = <String>{};
   Set<String> _recordedLearnerUidsForBadge = <String>{};
   final Map<String, Future<_FlexCourseDetails>> _flexDetailsFutureByKey =
@@ -134,6 +136,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       <String, List<Map<String, dynamic>>>{};
   final Map<String, Future<_ClassTabMetrics>> _classTabMetricsFutureByKey =
       <String, Future<_ClassTabMetrics>>{};
+  Future<List<_FlexCourseSummary>>? _flexSummariesFuture;
+  Future<List<_RecordedCourseSummary>>? _recordedSummariesFuture;
 
   // ===== Filters =====
   String _dayFilter = "All"; // "All" or one of week days
@@ -159,14 +163,16 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Let the route paint before starting the heavier admin class reads.
+      _bootFuture = _loadTeachers().then((_) => _loadCourses());
+      _loadInitialClasses();
+      _loadAllLearners();
+      _unreadByLearnerStream = _unreadByLearnerMapStream();
       _maybeOpenFromTimetable();
+      _checkPauseCooldowns();
+      setState(() => _heavyTabsReady = true);
     });
-
-    // IMPORTANT: load teachers first, then courses
-    _bootFuture = _loadTeachers().then((_) => _loadCourses());
-    _loadInitialClasses();
-    _loadAllLearners();
-    _unreadByLearnerStream = _unreadByLearnerMapStream();
 
     _searchCtrl.addListener(() {
       _searchDebounce?.cancel();
@@ -177,7 +183,6 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     });
 
     // ===== Pause cooldown: check immediately, then daily =====
-    _checkPauseCooldowns();
     _pauseCooldownTimer = Timer.periodic(const Duration(hours: 24), (_) {
       _checkPauseCooldowns();
     });
@@ -1635,6 +1640,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
       _hasMoreClasses = true;
       _lastClassKey = null;
       _classTabMetricsFutureByKey.clear();
+      _flexSummariesFuture = null;
+      _recordedSummariesFuture = null;
     });
     _loadInitialClasses();
   }
@@ -1664,12 +1671,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         }
       });
       list.sort((a, b) {
-        final aa = (a['created_at'] ?? 0) is int
-            ? (a['created_at'] as int)
-            : 0;
-        final bb = (b['created_at'] ?? 0) is int
-            ? (b['created_at'] as int)
-            : 0;
+        final aa = (a['created_at'] ?? 0) is int ? (a['created_at'] as int) : 0;
+        final bb = (b['created_at'] ?? 0) is int ? (b['created_at'] as int) : 0;
         return bb.compareTo(aa);
       });
       if (list.length < _classesPageSize) _hasMoreClasses = false;
@@ -1710,12 +1713,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         }
       });
       list.sort((a, b) {
-        final aa = (a['created_at'] ?? 0) is int
-            ? (a['created_at'] as int)
-            : 0;
-        final bb = (b['created_at'] ?? 0) is int
-            ? (b['created_at'] as int)
-            : 0;
+        final aa = (a['created_at'] ?? 0) is int ? (a['created_at'] as int) : 0;
+        final bb = (b['created_at'] ?? 0) is int ? (b['created_at'] as int) : 0;
         return bb.compareTo(aa);
       });
       if (list.length <= _classesPageSize) _hasMoreClasses = false;
@@ -4981,8 +4980,8 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
           child: _loadingClasses
               ? const Center(child: CircularProgressIndicator())
               : _loadedClasses.isEmpty
-                  ? const Center(child: Text("No classes yet."))
-                  : _buildClassesListView(),
+              ? const Center(child: Text("No classes yet."))
+              : _buildClassesListView(),
         ),
         if (_hasMoreClasses && !_loadingClasses && _loadedClasses.isNotEmpty)
           Container(
@@ -5060,572 +5059,505 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             itemBuilder: (context, i) {
               final cls = filtered[i];
 
-                        final id = (cls["class_id"] ?? "").toString();
-                        final classKey = id.isEmpty ? 'class_$i' : id;
-                        final expanded = _expandedClassIds.contains(classKey);
-                        final status = (cls["status"] ?? "active").toString();
-                        final isPaused = status.toLowerCase() == 'paused';
-                        final pauseWindowRaw = cls['pause_window'];
-                        final pauseWindow = pauseWindowRaw is Map
-                            ? pauseWindowRaw.map((k, v) => MapEntry('$k', v))
-                            : <String, dynamic>{};
-                        final pauseFrom = (pauseWindow['from'] ?? '')
-                            .toString()
-                            .trim();
-                        final pauseTo = (pauseWindow['to'] ?? '')
-                            .toString()
-                            .trim();
+              final id = (cls["class_id"] ?? "").toString();
+              final classKey = id.isEmpty ? 'class_$i' : id;
+              final expanded = _expandedClassIds.contains(classKey);
+              final status = (cls["status"] ?? "active").toString();
+              final isPaused = status.toLowerCase() == 'paused';
+              final pauseWindowRaw = cls['pause_window'];
+              final pauseWindow = pauseWindowRaw is Map
+                  ? pauseWindowRaw.map((k, v) => MapEntry('$k', v))
+                  : <String, dynamic>{};
+              final pauseFrom = (pauseWindow['from'] ?? '').toString().trim();
+              final pauseTo = (pauseWindow['to'] ?? '').toString().trim();
 
-                        final courseTitle = (cls["course_title"] ?? "")
-                            .toString();
-                        final variantKey = (cls["variantKey"] ?? "").toString();
-                        final studyMode = (cls["studyMode"] ?? "").toString();
-                        final classTypeLabel = _classTypeLabel(
-                          variantKey: variantKey,
-                          studyMode: studyMode,
-                        );
-                        final metricsFuture = _classTabMetricsFor(
-                          cls: cls,
-                          index: i,
-                        );
+              final courseTitle = (cls["course_title"] ?? "").toString();
+              final variantKey = (cls["variantKey"] ?? "").toString();
+              final studyMode = (cls["studyMode"] ?? "").toString();
+              final classTypeLabel = _classTypeLabel(
+                variantKey: variantKey,
+                studyMode: studyMode,
+              );
+              final metricsFuture = _classTabMetricsFor(cls: cls, index: i);
 
-                        final instructor = (cls["instructor"] ?? "").toString();
+              final instructor = (cls["instructor"] ?? "").toString();
 
-                        final sched = (cls["schedule"] is Map)
-                            ? Map<String, dynamic>.from(cls["schedule"])
-                            : <String, dynamic>{};
-                        final firstDate = (sched["first_session_date"] ?? "")
-                            .toString();
-                        final learners = _classLearnersList(cls);
-                        final learnerByUid = <String, Map<String, dynamic>>{};
-                        for (final learner in _allLearners) {
-                          final uid = (learner['uid'] ?? '').toString().trim();
-                          if (uid.isNotEmpty) learnerByUid[uid] = learner;
-                        }
+              final sched = (cls["schedule"] is Map)
+                  ? Map<String, dynamic>.from(cls["schedule"])
+                  : <String, dynamic>{};
+              final firstDate = (sched["first_session_date"] ?? "").toString();
+              final learners = _classLearnersList(cls);
+              final learnerByUid = <String, Map<String, dynamic>>{};
+              for (final learner in _allLearners) {
+                final uid = (learner['uid'] ?? '').toString().trim();
+                if (uid.isNotEmpty) learnerByUid[uid] = learner;
+              }
 
-                        return Card(
-                          color: isPaused ? const Color(0xFFFFF3E0) : null,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            side: BorderSide(
-                              color: isPaused
-                                  ? Colors.orange.shade300
-                                  : Colors.grey.withValues(alpha: 0.25),
-                              width: isPaused ? 1.4 : 1,
+              return Card(
+                color: isPaused ? const Color(0xFFFFF3E0) : null,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide(
+                    color: isPaused
+                        ? Colors.orange.shade300
+                        : Colors.grey.withValues(alpha: 0.25),
+                    width: isPaused ? 1.4 : 1,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              courseTitle.isEmpty
+                                  ? (id.isEmpty ? '-' : id)
+                                  : courseTitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        courseTitle.isEmpty
-                                            ? (id.isEmpty ? '-' : id)
-                                            : courseTitle,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 16,
+                          PopupMenuButton<String>(
+                            tooltip: 'Class actions',
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _openClassEditor(existingClass: cls);
+                                return;
+                              }
+                              if (value == 'pause') {
+                                _pauseClassWithWindow(cls);
+                                return;
+                              }
+                              if (value == 'block') {
+                                _setClassStatus(id, 'blocked');
+                                return;
+                              }
+                              if (value == 'activate') {
+                                _setClassStatus(id, 'active');
+                                return;
+                              }
+                              if (value == 'waiting') {
+                                _setClassStatus(id, 'waiting');
+                                return;
+                              }
+                              if (value == 'delete') {
+                                _deleteClass(id);
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Edit'),
+                              ),
+                              const PopupMenuDivider(),
+                              PopupMenuItem(
+                                value: 'activate',
+                                enabled: status != 'active',
+                                child: const Text('Activate'),
+                              ),
+                              PopupMenuItem(
+                                value: 'pause',
+                                enabled: status != 'paused',
+                                child: const Text('Pause'),
+                              ),
+                              PopupMenuItem(
+                                value: 'block',
+                                enabled: status != 'blocked',
+                                child: const Text('Block'),
+                              ),
+                              PopupMenuItem(
+                                value: 'waiting',
+                                enabled: status != 'waiting',
+                                child: const Text('Set waiting'),
+                              ),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete'),
+                              ),
+                            ],
+                            icon: const Icon(Icons.more_vert_rounded),
+                          ),
+                          IconButton(
+                            tooltip: 'Mass SMS',
+                            icon: const Icon(
+                              Icons.sms_rounded,
+                              size: 20,
+                              color: AdminLearnersScreen.accentCyan,
+                            ),
+                            onPressed: learners.isEmpty
+                                ? null
+                                : () => _handleMassSms(learners, cls),
+                          ),
+                          IconButton(
+                            tooltip: expanded
+                                ? 'Collapse learners'
+                                : 'Expand learners',
+                            onPressed: learners.isEmpty
+                                ? null
+                                : () {
+                                    setState(() {
+                                      if (expanded) {
+                                        _expandedClassIds.remove(classKey);
+                                      } else {
+                                        _expandedClassIds.add(classKey);
+                                      }
+                                    });
+                                  },
+                            icon: Icon(
+                              expanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (classTypeLabel.trim().isNotEmpty) ...[
+                        Text(
+                          'Variant: $classTypeLabel',
+                          style: TextStyle(
+                            color: Colors.grey.shade800,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      Text(
+                        instructor.isEmpty
+                            ? "Instructor: -"
+                            : "Instructor: $instructor",
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Status: ${status.toUpperCase()}',
+                        style: TextStyle(
+                          color: _statusColor(status),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (isPaused &&
+                          pauseFrom.isNotEmpty &&
+                          pauseTo.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Paused: $pauseFrom → $pauseTo',
+                          style: TextStyle(
+                            color: Colors.orange.shade900,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 6),
+                      Text(
+                        firstDate.isEmpty
+                            ? _prettySessions(cls)
+                            : 'Start: $firstDate • ${_prettySessions(cls)}',
+                        style: TextStyle(
+                          color: Colors.grey.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Learners: ${learners.length}',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      FutureBuilder<_ClassTabMetrics>(
+                        future: metricsFuture,
+                        builder: (context, metricsSnap) {
+                          if (!metricsSnap.hasData) {
+                            return const LinearProgressIndicator(minHeight: 2);
+                          }
+
+                          final metrics = metricsSnap.data!;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      metrics.totalSyllabusSessions > 0
+                                          ? 'Course progress: ${metrics.coveredSyllabusSessions} / ${metrics.totalSyllabusSessions}'
+                                          : 'Course progress: ${metrics.coveredSyllabusSessions} / -',
+                                      style: TextStyle(
+                                        color: Colors.grey.shade800,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ),
+                                  Tooltip(
+                                    message: 'Syllabus lesson details',
+                                    child: InkWell(
+                                      onTap: () {
+                                        _openClassSyllabusProgressSheet(cls);
+                                      },
+                                      borderRadius: BorderRadius.circular(999),
+                                      child: Container(
+                                        width: 22,
+                                        height: 22,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: const Color(0xFFFEF3C7),
+                                          border: Border.all(
+                                            color: const Color(0xFFF59E0B),
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          '!',
+                                          style: TextStyle(
+                                            color: Color(0xFF92400E),
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w900,
+                                            height: 1,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                    PopupMenuButton<String>(
-                                      tooltip: 'Class actions',
-                                      onSelected: (value) {
-                                        if (value == 'edit') {
-                                          _openClassEditor(existingClass: cls);
-                                          return;
-                                        }
-                                        if (value == 'pause') {
-                                          _pauseClassWithWindow(cls);
-                                          return;
-                                        }
-                                        if (value == 'block') {
-                                          _setClassStatus(id, 'blocked');
-                                          return;
-                                        }
-                                        if (value == 'activate') {
-                                          _setClassStatus(id, 'active');
-                                          return;
-                                        }
-                                        if (value == 'waiting') {
-                                          _setClassStatus(id, 'waiting');
-                                          return;
-                                        }
-                                        if (value == 'delete') {
-                                          _deleteClass(id);
-                                        }
-                                      },
-                                      itemBuilder: (context) => [
-                                        const PopupMenuItem(
-                                          value: 'edit',
-                                          child: Text('Edit'),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: metrics.courseProgressValue,
+                                  minHeight: 9,
+                                  backgroundColor: const Color(0xFFE5E7EB),
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                        Color(0xFF2563EB),
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                metrics.plannedMeetings > 0
+                                    ? 'Class meetings: ${metrics.heldMeetings} / ${metrics.plannedMeetings}'
+                                    : 'Class meetings: ${metrics.heldMeetings}',
+                                style: TextStyle(
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      if (expanded) ...[
+                        const SizedBox(height: 6),
+                        if (learners.isEmpty)
+                          Text(
+                            'No learners in this class.',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        else
+                          Column(
+                            children: learners.asMap().entries.map((entry) {
+                              final idx = entry.key;
+                              final l = entry.value;
+                              final serial = (l['serial'] ?? '').trim();
+                              final name = (l['name'] ?? '').trim();
+                              final title = name.isNotEmpty
+                                  ? name
+                                  : (serial.isNotEmpty
+                                        ? serial
+                                        : l['uid'] ?? '-');
+                              final subtitle = serial.isNotEmpty
+                                  ? 'Serial: $serial'
+                                  : null;
+                              final learnerUid = (l['uid'] ?? '').toString();
+                              final paymentProgress =
+                                  _learnerPaymentProgressForClass(
+                                    cls: cls,
+                                    learner: learnerByUid[learnerUid],
+                                  );
+
+                              return Column(
+                                children: [
+                                  ListTile(
+                                    dense: true,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                    ),
+                                    leading: ProfileAvatar(
+                                      name: name,
+                                      photoUrl: _learnerPhotoUrl(
+                                        learnerByUid[learnerUid],
+                                      ),
+                                      radius: 16,
+                                      borderColor: paymentProgress.isOver
+                                          ? Colors.red.shade400
+                                          : null,
+                                    ),
+                                    title: Text(
+                                      title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    subtitle: subtitle == null
+                                        ? null
+                                        : Text(subtitle),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _smallActionIcon(
+                                          icon: Icons.phone_rounded,
+                                          color: Colors.green,
+                                          tooltip: 'Call',
+                                          onTap: () => _handleLearnerCall(
+                                            learnerUid,
+                                            title,
+                                          ),
                                         ),
-                                        const PopupMenuDivider(),
-                                        PopupMenuItem(
-                                          value: 'activate',
-                                          enabled: status != 'active',
-                                          child: const Text('Activate'),
+                                        _smallActionIcon(
+                                          icon: Icons.sms_rounded,
+                                          color: AdminLearnersScreen.accentCyan,
+                                          tooltip: 'Send SMS',
+                                          onTap: () => _handleLearnerSms(
+                                            learnerUid,
+                                            title,
+                                          ),
                                         ),
-                                        PopupMenuItem(
-                                          value: 'pause',
-                                          enabled: status != 'paused',
-                                          child: const Text('Pause'),
+                                        _smallActionIcon(
+                                          icon: Icons
+                                              .notifications_active_rounded,
+                                          color:
+                                              AdminLearnersScreen.actionOrange,
+                                          tooltip: 'Send Reminder',
+                                          onTap: () => _handleLearnerReminder(
+                                            learnerUid,
+                                            title,
+                                          ),
                                         ),
-                                        PopupMenuItem(
-                                          value: 'block',
-                                          enabled: status != 'blocked',
-                                          child: const Text('Block'),
+                                        _smallActionIcon(
+                                          icon: Icons.mail_rounded,
+                                          color: Colors.purple,
+                                          tooltip: 'Open Mail',
+                                          onTap: () => _handleLearnerMail(
+                                            learnerUid,
+                                            title,
+                                          ),
                                         ),
-                                        PopupMenuItem(
-                                          value: 'waiting',
-                                          enabled: status != 'waiting',
-                                          child: const Text('Set waiting'),
-                                        ),
-                                        const PopupMenuDivider(),
-                                        const PopupMenuItem(
-                                          value: 'delete',
-                                          child: Text('Delete'),
+                                        GestureDetector(
+                                          onTap: () => _openLearnerFromClass(l),
+                                          child: const Padding(
+                                            padding: EdgeInsets.all(4),
+                                            child: Icon(
+                                              Icons.open_in_new_rounded,
+                                              size: 16,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
                                         ),
                                       ],
-                                      icon: const Icon(Icons.more_vert_rounded),
-                                    ),
-                                    IconButton(
-                                      tooltip: 'Mass SMS',
-                                      icon: const Icon(
-                                        Icons.sms_rounded,
-                                        size: 20,
-                                        color: AdminLearnersScreen.accentCyan,
-                                      ),
-                                      onPressed: learners.isEmpty
-                                          ? null
-                                          : () => _handleMassSms(learners, cls),
-                                    ),
-                                    IconButton(
-                                      tooltip: expanded
-                                          ? 'Collapse learners'
-                                          : 'Expand learners',
-                                      onPressed: learners.isEmpty
-                                          ? null
-                                          : () {
-                                              setState(() {
-                                                if (expanded) {
-                                                  _expandedClassIds.remove(
-                                                    classKey,
-                                                  );
-                                                } else {
-                                                  _expandedClassIds.add(
-                                                    classKey,
-                                                  );
-                                                }
-                                              });
-                                            },
-                                      icon: Icon(
-                                        expanded
-                                            ? Icons.keyboard_arrow_up_rounded
-                                            : Icons.keyboard_arrow_down_rounded,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                if (classTypeLabel.trim().isNotEmpty) ...[
-                                  Text(
-                                    'Variant: $classTypeLabel',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade800,
-                                      fontWeight: FontWeight.w800,
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
-                                ],
-                                Text(
-                                  instructor.isEmpty
-                                      ? "Instructor: -"
-                                      : "Instructor: $instructor",
-                                  style: TextStyle(
-                                    color: Colors.grey.shade700,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Status: ${status.toUpperCase()}',
-                                  style: TextStyle(
-                                    color: _statusColor(status),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                if (isPaused &&
-                                    pauseFrom.isNotEmpty &&
-                                    pauseTo.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Paused: $pauseFrom → $pauseTo',
-                                    style: TextStyle(
-                                      color: Colors.orange.shade900,
-                                      fontWeight: FontWeight.w700,
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      54,
+                                      0,
+                                      8,
+                                      8,
                                     ),
-                                  ),
-                                ],
-
-                                const SizedBox(height: 6),
-                                Text(
-                                  firstDate.isEmpty
-                                      ? _prettySessions(cls)
-                                      : 'Start: $firstDate • ${_prettySessions(cls)}',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade800,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Learners: ${learners.length}',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade700,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                FutureBuilder<_ClassTabMetrics>(
-                                  future: metricsFuture,
-                                  builder: (context, metricsSnap) {
-                                    if (!metricsSnap.hasData) {
-                                      return const LinearProgressIndicator(
-                                        minHeight: 2,
-                                      );
-                                    }
-
-                                    final metrics = metricsSnap.data!;
-                                    return Column(
+                                    child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                metrics.totalSyllabusSessions >
-                                                        0
-                                                    ? 'Course progress: ${metrics.coveredSyllabusSessions} / ${metrics.totalSyllabusSessions}'
-                                                    : 'Course progress: ${metrics.coveredSyllabusSessions} / -',
-                                                style: TextStyle(
-                                                  color: Colors.grey.shade800,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
+                                        Text.rich(
+                                          TextSpan(
+                                            text: paymentProgress.hasPackage
+                                                ? 'Payment: ${paymentProgress.consumedSessions} / ${paymentProgress.paidSessions}'
+                                                : 'Payment: no package',
+                                            style: TextStyle(
+                                              color: Colors.grey.shade700,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
                                             ),
-                                            Tooltip(
-                                              message:
-                                                  'Syllabus lesson details',
-                                              child: InkWell(
-                                                onTap: () {
-                                                  _openClassSyllabusProgressSheet(
-                                                    cls,
-                                                  );
-                                                },
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                                child: Container(
-                                                  width: 22,
-                                                  height: 22,
-                                                  alignment: Alignment.center,
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    color: const Color(
-                                                      0xFFFEF3C7,
-                                                    ),
-                                                    border: Border.all(
-                                                      color: const Color(
-                                                        0xFFF59E0B,
+                                            children:
+                                                paymentProgress.hasPackage &&
+                                                    paymentProgress.isOver
+                                                ? [
+                                                    TextSpan(
+                                                      text:
+                                                          '  Over:${paymentProgress.overSessions}',
+                                                      style: const TextStyle(
+                                                        color: Colors.red,
+                                                        fontSize: 11,
+                                                        fontWeight:
+                                                            FontWeight.w700,
                                                       ),
                                                     ),
-                                                  ),
-                                                  child: const Text(
-                                                    '!',
-                                                    style: TextStyle(
-                                                      color: Color(0xFF92400E),
-                                                      fontSize: 13,
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      height: 1,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                                  ]
+                                                : null,
+                                          ),
                                         ),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(height: 3),
                                         ClipRRect(
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
                                           child: LinearProgressIndicator(
-                                            value: metrics.courseProgressValue,
-                                            minHeight: 9,
+                                            value: paymentProgress.hasPackage
+                                                ? paymentProgress.progressValue
+                                                : 0,
+                                            minHeight: 4,
                                             backgroundColor: const Color(
                                               0xFFE5E7EB,
                                             ),
                                             valueColor:
-                                                const AlwaysStoppedAnimation<
-                                                  Color
-                                                >(Color(0xFF2563EB)),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          metrics.plannedMeetings > 0
-                                              ? 'Class meetings: ${metrics.heldMeetings} / ${metrics.plannedMeetings}'
-                                              : 'Class meetings: ${metrics.heldMeetings}',
-                                          style: TextStyle(
-                                            color: Colors.grey.shade700,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 12,
+                                                AlwaysStoppedAnimation<Color>(
+                                                  paymentProgress.hasPackage
+                                                      ? const Color(0xFFD97706)
+                                                      : Colors
+                                                            .blueGrey
+                                                            .shade500,
+                                                ),
                                           ),
                                         ),
                                       ],
-                                    );
-                                  },
-                                ),
-                                if (expanded) ...[
-                                  const SizedBox(height: 6),
-                                  if (learners.isEmpty)
-                                    Text(
-                                      'No learners in this class.',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    )
-                                  else
-                                    Column(
-                                      children: learners.asMap().entries.map((
-                                        entry,
-                                      ) {
-                                        final idx = entry.key;
-                                        final l = entry.value;
-                                        final serial = (l['serial'] ?? '')
-                                            .trim();
-                                        final name = (l['name'] ?? '').trim();
-                                        final title = name.isNotEmpty
-                                            ? name
-                                            : (serial.isNotEmpty
-                                                  ? serial
-                                                  : l['uid'] ?? '-');
-                                        final subtitle = serial.isNotEmpty
-                                            ? 'Serial: $serial'
-                                            : null;
-                                        final learnerUid = (l['uid'] ?? '')
-                                            .toString();
-                                        final paymentProgress =
-                                            _learnerPaymentProgressForClass(
-                                              cls: cls,
-                                              learner: learnerByUid[learnerUid],
-                                            );
-
-                                        return Column(
-                                          children: [
-                                            ListTile(
-                                              dense: true,
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                  ),
-                                              leading: ProfileAvatar(
-                                                name: name,
-                                                photoUrl: _learnerPhotoUrl(
-                                                  learnerByUid[learnerUid],
-                                                ),
-                                                radius: 16,
-                                                borderColor:
-                                                    paymentProgress.isOver
-                                                    ? Colors.red.shade400
-                                                    : null,
-                                              ),
-                                              title: Text(
-                                                title,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                              subtitle: subtitle == null
-                                                  ? null
-                                                  : Text(subtitle),
-                                              trailing: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  _smallActionIcon(
-                                                    icon: Icons.phone_rounded,
-                                                    color: Colors.green,
-                                                    tooltip: 'Call',
-                                                    onTap: () =>
-                                                        _handleLearnerCall(
-                                                          learnerUid,
-                                                          title,
-                                                        ),
-                                                  ),
-                                                  _smallActionIcon(
-                                                    icon: Icons.sms_rounded,
-                                                    color: AdminLearnersScreen
-                                                        .accentCyan,
-                                                    tooltip: 'Send SMS',
-                                                    onTap: () =>
-                                                        _handleLearnerSms(
-                                                          learnerUid,
-                                                          title,
-                                                        ),
-                                                  ),
-                                                  _smallActionIcon(
-                                                    icon: Icons
-                                                        .notifications_active_rounded,
-                                                    color: AdminLearnersScreen
-                                                        .actionOrange,
-                                                    tooltip: 'Send Reminder',
-                                                    onTap: () =>
-                                                        _handleLearnerReminder(
-                                                          learnerUid,
-                                                          title,
-                                                        ),
-                                                  ),
-                                                  _smallActionIcon(
-                                                    icon: Icons.mail_rounded,
-                                                    color: Colors.purple,
-                                                    tooltip: 'Open Mail',
-                                                    onTap: () =>
-                                                        _handleLearnerMail(
-                                                          learnerUid,
-                                                          title,
-                                                        ),
-                                                  ),
-                                                  GestureDetector(
-                                                    onTap: () =>
-                                                        _openLearnerFromClass(
-                                                          l,
-                                                        ),
-                                                    child: const Padding(
-                                                      padding: EdgeInsets.all(
-                                                        4,
-                                                      ),
-                                                      child: Icon(
-                                                        Icons
-                                                            .open_in_new_rounded,
-                                                        size: 16,
-                                                        color: Colors.grey,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.fromLTRB(
-                                                    54,
-                                                    0,
-                                                    8,
-                                                    8,
-                                                  ),
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text.rich(
-                                                    TextSpan(
-                                                      text:
-                                                          paymentProgress
-                                                              .hasPackage
-                                                          ? 'Payment: ${paymentProgress.consumedSessions} / ${paymentProgress.paidSessions}'
-                                                          : 'Payment: no package',
-                                                      style: TextStyle(
-                                                        color: Colors
-                                                            .grey
-                                                            .shade700,
-                                                        fontSize: 11,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                      children:
-                                                          paymentProgress
-                                                                  .hasPackage &&
-                                                              paymentProgress
-                                                                  .isOver
-                                                          ? [
-                                                              TextSpan(
-                                                                text:
-                                                                    '  Over:${paymentProgress.overSessions}',
-                                                                style: const TextStyle(
-                                                                  color: Colors
-                                                                      .red,
-                                                                  fontSize: 11,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .w700,
-                                                                ),
-                                                              ),
-                                                            ]
-                                                          : null,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 3),
-                                                  ClipRRect(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          999,
-                                                        ),
-                                                    child: LinearProgressIndicator(
-                                                      value:
-                                                          paymentProgress
-                                                              .hasPackage
-                                                          ? paymentProgress
-                                                                .progressValue
-                                                          : 0,
-                                                      minHeight: 4,
-                                                      backgroundColor:
-                                                          const Color(
-                                                            0xFFE5E7EB,
-                                                          ),
-                                                      valueColor:
-                                                          AlwaysStoppedAnimation<
-                                                            Color
-                                                          >(
-                                                            paymentProgress
-                                                                    .hasPackage
-                                                                ? const Color(
-                                                                    0xFFD97706,
-                                                                  )
-                                                                : Colors
-                                                                      .blueGrey
-                                                                      .shade500,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            if (idx != learners.length - 1)
-                                              const Divider(height: 1),
-                                          ],
-                                        );
-                                      }).toList(),
                                     ),
+                                  ),
+                                  if (idx != learners.length - 1)
+                                    const Divider(height: 1),
                                 ],
-                              ],
-                            ),
+                              );
+                            }).toList(),
                           ),
-                        );
-                      },
-                    ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               );
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   bool _isNearExpiryMs(int expiresAt, {int days = 7}) {
@@ -6476,7 +6408,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   Widget _buildFlexibleAttendanceTab(Map<String, int> unreadByLearner) {
     return FutureBuilder<List<_FlexCourseSummary>>(
-      future: _loadFlexibleAttendanceSummaries(),
+      future: _flexSummariesFuture ??= _loadFlexibleAttendanceSummaries(),
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(
@@ -6877,7 +6809,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
 
   Widget _buildRecordedProgressTab(Map<String, int> unreadByLearner) {
     return FutureBuilder<List<_RecordedCourseSummary>>(
-      future: _loadRecordedProgressSummaries(),
+      future: _recordedSummariesFuture ??= _loadRecordedProgressSummaries(),
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(
@@ -7238,8 +7170,12 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
                 child: TabBarView(
                   children: [
                     _buildClassesList(),
-                    _buildFlexibleAttendanceTab(unreadByLearner),
-                    _buildRecordedProgressTab(unreadByLearner),
+                    _heavyTabsReady
+                        ? _buildFlexibleAttendanceTab(unreadByLearner)
+                        : const Center(child: CircularProgressIndicator()),
+                    _heavyTabsReady
+                        ? _buildRecordedProgressTab(unreadByLearner)
+                        : const Center(child: CircularProgressIndicator()),
                   ],
                 ),
               ),

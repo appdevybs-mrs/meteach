@@ -57,6 +57,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   int? _oldestPaidAtMs;
   bool _loadingExtraPayments = false;
   bool _hasMorePayments = true;
+  Future<DatabaseEvent>? _initialPaymentsFuture;
+  bool _initialPaymentsStarted = false;
 
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
   static const String _teacherFilterAll = '__all__';
@@ -101,6 +103,16 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         ),
       );
       _syncingRowsScroll = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _initialPaymentsFuture = _paymentsRef
+            .orderByChild('paidAt')
+            .limitToLast(_paymentsWindowSize)
+            .once();
+        _initialPaymentsStarted = true;
+      });
     });
   }
 
@@ -1197,8 +1209,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                     }
 
                     if (!mounted) return;
-                    if (dialogCtx.mounted &&
-                        Navigator.of(dialogCtx).canPop()) {
+                    if (dialogCtx.mounted && Navigator.of(dialogCtx).canPop()) {
                       Navigator.pop(dialogCtx);
                     }
 
@@ -1522,6 +1533,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_initialPaymentsStarted || _initialPaymentsFuture == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return StreamBuilder<DatabaseEvent>(
       stream: _paymentPeriodsRef.onValue,
       builder: (context, periodsSnap) {
@@ -1557,12 +1572,8 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           }
         }
 
-        return StreamBuilder<DatabaseEvent>(
-          stream: _paymentsRef
-              .orderByChild('paidAt')
-              .limitToLast(_paymentsWindowSize)
-              .once()
-              .asStream(),
+        return FutureBuilder<DatabaseEvent>(
+          future: _initialPaymentsFuture,
           builder: (context, snap) {
             if (snap.hasError) {
               return const Scaffold(
@@ -2522,7 +2533,10 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
                         ],
                       ),
                     ),
-                    Divider(height: 1, color: Colors.black.withValues(alpha: 0.07)),
+                    Divider(
+                      height: 1,
+                      color: Colors.black.withValues(alpha: 0.07),
+                    ),
                     Expanded(
                       child: ListView.separated(
                         controller: _rowsScrollFrozen,
@@ -2714,7 +2728,7 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
             .get();
         final promoVal = promoSnap.value;
         enrollmentPromo = promoVal is Map
-            ? (promoVal as Map).map((k, v) => MapEntry(k.toString(), v))
+            ? promoVal.map((k, v) => MapEntry(k.toString(), v))
             : null;
       }
 
