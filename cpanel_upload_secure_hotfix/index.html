@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Your Bridge School helps learners build practical English skills through live classes, recorded courses, teacher support, certificates, games, stories, and a global learning community.">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <meta name="theme-color" content="#1A2B48">
+  <meta name="robots" content="index, follow">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Your Bridge School">
+  <meta property="og:title" content="Your Bridge School | Learn English Online and In Class">
+  <meta property="og:description" content="Learn practical English with live classes, recorded study, certificates, stories, games, and teacher-led support.">
+  <meta property="og:image" content="icons/Icon-512.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Your Bridge School | Learn English Online and In Class">
+  <meta name="twitter:description" content="Not for the certificate, for the skill. Build practical English with Your Bridge School.">
+  <meta name="twitter:image" content="icons/Icon-512.png">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Your Bridge School">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Your Bridge School | Learn English Online and In Class</title>
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Preload main bundles -->
+  <link rel="preload" href="main.dart.js" as="script">
+  <link rel="preload" href="flutter.js" as="script">
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "EducationalOrganization",
+      "name": "Your Bridge School",
+      "alternateName": "YBS",
+      "description": "Your Bridge School helps learners build practical English skills through live classes, recorded courses, teacher support, certificates, games, stories, and a global learning community.",
+      "slogan": "Not for the certificate, for the skill",
+      "logo": "icons/Icon-512.png",
+      "sameAs": []
+    }
+  </script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: #F4F7F9;
+    }
+    body { overflow-x: hidden; }
+    flutter-view {
+      display: block;
+      width: 100%;
+      min-height: 100vh;
+    }
+    .seo-fallback {
+      position: absolute;
+      left: -10000px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+    }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(145deg, #F4F7F9 0%, #E8EDF2 100%);
+      z-index: 9999;
+      font-family: system-ui, -apple-system, sans-serif;
+      transition: opacity 0.5s;
+    }
+    #loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #loading .logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+      animation: pulse 1.6s ease-in-out infinite;
+      box-shadow: 0 4px 20px rgba(26,43,72,0.12);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.06); opacity: 1; }
+    }
+
+    #loading h1 {
+      margin: 16px 0 4px;
+      color: #1A2B48;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+    #loading .sub {
+      color: #1A2B48;
+      font-size: 13px;
+      font-weight: 600;
+      opacity: 0.55;
+      margin: 0;
+    }
+
+    /* Progress bar */
+    .progress-wrap {
+      width: 280px;
+      max-width: 70vw;
+      height: 6px;
+      background: #D0D7DE;
+      border-radius: 99px;
+      margin: 22px 0 8px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #28466F, #1A2B48);
+      border-radius: 99px;
+      transition: width 0.8s ease-out;
+    }
+    .progress-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1A2B48;
+      opacity: 0.5;
+      letter-spacing: 0.5px;
+    }
+
+    /* Rotating messages */
+    .message-area {
+      height: 48px;
+      margin-top: 18px;
+      position: relative;
+      width: 320px;
+      max-width: 80vw;
+    }
+    .message-area .msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #28466F;
+      opacity: 0;
+      transition: opacity 0.5s;
+      pointer-events: none;
+    }
+    .message-area .msg.show {
+      opacity: 1;
+    }
+
+    /* Native app card */
+    .app-card {
+      margin-top: 16px;
+      padding: 14px 20px;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(26,43,72,0.08);
+      display: none;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1A2B48;
+      max-width: 320px;
+    }
+    .app-card.show { display: flex; }
+    .app-card .icon-wrap {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: #E8EDF2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .app-card a {
+      color: #28466F;
+      text-decoration: underline;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    /* Stuck fallback */
+    .stuck {
+      margin-top: 18px;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .stuck.show { display: flex; }
+    .stuck p {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1A2B48;
+      opacity: 0.6;
+      margin: 0;
+    }
+    .stuck button {
+      background: #28466F;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .stuck button:hover { background: #1A2B48; }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <img class="logo" src="icons/Icon-512.png" alt="Your Bridge School">
+    <h1 id="load-title">Your Bridge School</h1>
+    <p class="sub" id="load-sub">Not for the certificate, for the skill.</p>
+
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <span class="progress-label" id="progress-label">0%</span>
+
+    <div class="message-area" id="msg-area">
+      <div class="msg show" id="msg-0"></div>
+    </div>
+
+    <div class="app-card" id="app-card">
+      <div class="icon-wrap">📱</div>
+      <span id="app-text">Try the native app for a smoother experience!</span>
+      <a id="app-link" href="#" target="_blank">Get it</a>
+    </div>
+
+    <div class="stuck" id="stuck">
+      <p id="stuck-text">Taking longer than expected?</p>
+      <button id="refresh-btn" onclick="location.reload()">Refresh</button>
+    </div>
+
+  </div>
+
+  <script>
+    // ── Message pool ──
+    const messages = [
+      'Warming up the servers... 🔥',
+      'Feeding the class hamsters... 🐹',
+      'Polishing the virtual whiteboards... ✨',
+      'Tuning the audio waves... 🎵',
+      'Brewing virtual coffee... ☕',
+      'Untangling headphone wires... 🎧',
+      'Charging your certificates... 📜',
+      'Chatting with the teachers... 👨‍🏫',
+      'Organizing the library shelves... 📚',
+      'Counting practice questions... 🔢',
+      '📱 Get the native app for a smoother experience!',
+      'Setting up your virtual desk... 🪑',
+      'Reviewing today\'s grammar... 📝',
+      'Preparing interactive games... 🎮',
+      'Loading motivational quotes... 💪',
+      'Not for the certificate, for the skill.',
+      'Arranging the gallery photos... 🖼️',
+      'Polishing the graduation caps... 🎓',
+      'Warming up the English muscles... 💪',
+      'Almost there, just a few more seconds... ⏳',
+    ];
+    const nativeAppUrl = 'https://play.google.com/store/apps/details?id=com.yourbridgeschool.app';
+
+    let msgInterval = null;
+    let shownIndices = [];
+
+    function randomMsg() {
+      let idx;
+      do { idx = Math.floor(Math.random() * messages.length); }
+      while (shownIndices.length < messages.length && shownIndices.includes(idx));
+      shownIndices.push(idx);
+      if (shownIndices.length >= messages.length) shownIndices = [];
+      return messages[idx];
+    }
+
+    function updateMessage() {
+      const el = document.getElementById('msg-0');
+      const current = el.textContent;
+      let next;
+      do { next = randomMsg(); } while (next === current);
+      el.classList.remove('show');
+      setTimeout(() => {
+        el.textContent = next;
+        el.classList.add('show');
+      }, 400);
+    }
+
+    // ── Progress bar ──
+    let progress = 0;
+    function advanceProgress() {
+      if (progress >= 92) return;
+      const step = 0.5 + Math.random() * 1.5;
+      const delay = 120 + Math.random() * 200;
+      progress = Math.min(92, progress + step);
+      document.getElementById('progress-bar').style.width = progress + '%';
+      document.getElementById('progress-label').textContent = Math.round(progress) + '%';
+      if (progress < 92) setTimeout(advanceProgress, delay);
+    }
+
+    // ── Stage timings ──
+    function initLoader() {
+      advanceProgress();
+
+      // First message after 1s
+      setTimeout(() => {
+        document.getElementById('msg-0').textContent = randomMsg();
+        document.getElementById('msg-0').classList.add('show');
+      }, 1000);
+
+      // Rotate messages every 3.5s
+      msgInterval = setInterval(updateMessage, 3500);
+
+      // Show native app card at 6s
+      setTimeout(() => {
+        document.getElementById('app-card').classList.add('show');
+      }, 6000);
+
+      // Show stuck fallback at 22s
+      setTimeout(() => {
+        document.getElementById('stuck').classList.add('show');
+      }, 22000);
+    }
+
+    // ── Auto dismiss when Flutter boots ──
+    function watchBoot() {
+      const check = () => {
+        const bodyText = document.body.innerText || '';
+        const flView = document.querySelector('flutter-view');
+        if (flView && flView.children.length > 0) {
+          document.getElementById('loading').classList.add('hidden');
+          return;
+        }
+        // Also check if the loading element's siblings replaced it
+        if (!document.getElementById('loading')) return;
+        requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    }
+
+    initLoader();
+    watchBoot();
+  </script>
+  <main class="seo-fallback" aria-hidden="true">
+    <h1>Your Bridge School</h1>
+    <p>Learn English online and in class with Your Bridge School. Not for the certificate, for the skill.</p>
+    <h2>English Courses</h2>
+    <p>Explore live English classes, flexible learning, private lessons, in-class learning, and recorded courses.</p>
+    <h2>Gallery, Games, Stories, and Certificates</h2>
+    <p>View public learning moments, practice English with games, read stories, and verify certificates.</p>
+  </main>
+  <noscript>
+    <main style="font-family:Arial,sans-serif;max-width:840px;margin:40px auto;padding:24px;color:#1A2B48;line-height:1.6">
+      <h1>Your Bridge School</h1>
+      <p>Your Bridge School helps learners build practical English skills through live classes, recorded courses, teacher support, certificates, games, stories, and a global learning community.</p>
+      <p>Please enable JavaScript to use the online learning platform.</p>
+    </main>
+  </noscript>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

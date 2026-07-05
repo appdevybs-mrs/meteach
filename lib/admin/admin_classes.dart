@@ -5821,7 +5821,9 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
         att.forEach((key, value) {
           if (value is! Map) return;
           final m = Map<String, dynamic>.from(value);
-          final isPresent = m['present'] == true;
+          final status = (m['status'] ?? '').toString().trim().toLowerCase();
+          final isPresent = m['present'] == true || status == 'present';
+          final consumesCredit = onlineAttendanceRecordConsumesCredit(m);
 
           final tsRaw = m['startAt'] ?? m['updatedAt'] ?? m['createdAt'];
           int ts = 0;
@@ -5858,6 +5860,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             _FlexAttendanceRow(
               bookingKey: key.toString(),
               present: isPresent,
+              consumesCredit: consumesCredit,
               sessionNo: sessionNo,
               dayKey: (m['dayKey'] ?? '').toString().trim(),
               time: (m['time'] ?? '').toString().trim(),
@@ -5882,7 +5885,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
     } catch (_) {}
 
     rows.sort((a, b) => b.sortTs.compareTo(a.sortTs));
-    final presentRows = rows.where((row) => row.present).toList();
+    final consumedRows = rows.where((row) => row.consumesCredit).toList();
 
     final paymentsForUser = await _loadPaymentsForUidCached(item.uid);
     final matchedPayments =
@@ -5899,7 +5902,7 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             return ta.compareTo(tb);
           });
 
-    final attendanceAsc = [...presentRows]
+    final attendanceAsc = [...consumedRows]
       ..sort((a, b) => a.sortTs.compareTo(b.sortTs));
     int ptr = 0;
     final paymentBlocks = <_FlexPaymentBlock>[];
@@ -6049,10 +6052,15 @@ class _AdminClassesScreenState extends State<AdminClassesScreen> {
             for (final value in att.values) {
               if (value is! Map) continue;
               final m = Map<String, dynamic>.from(value);
-              if (m['present'] != true) continue;
+              if (!onlineAttendanceRecordConsumesCredit(m)) continue;
               consumed += 1;
+              final status = (m['status'] ?? '')
+                  .toString()
+                  .trim()
+                  .toLowerCase();
+              final isPresent = m['present'] == true || status == 'present';
               final sessionNo = _asInt(m['sessionNo']);
-              if (sessionNo > 0) coveredNos.add(sessionNo);
+              if (isPresent && sessionNo > 0) coveredNos.add(sessionNo);
               final ts = _asInt(m['startAt']) > 0
                   ? _asInt(m['startAt'])
                   : (_asInt(m['updatedAt']) > 0
@@ -7363,7 +7371,7 @@ class _FlexLearnerDetailsTabsState extends State<_FlexLearnerDetailsTabs> {
                     ),
                   ),
                   child: Text(
-                    'Payment ${idx + 1} | Paid: $paidDate | Amount: ${block.amount} | Studied: ${block.rows.length}${block.sessionsPaid > 0 ? ' / ${block.sessionsPaid}' : ''} | Left: ${block.sessionsPaid > 0 ? blockLeft : '-'} | Deadline: $blockDeadline',
+                    'Payment ${idx + 1} | Paid: $paidDate | Amount: ${block.amount} | Consumed: ${block.rows.length}${block.sessionsPaid > 0 ? ' / ${block.sessionsPaid}' : ''} | Left: ${block.sessionsPaid > 0 ? blockLeft : '-'} | Deadline: $blockDeadline',
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF1A2B48),
@@ -7531,6 +7539,7 @@ class _ScheduleRow {
 class _FlexAttendanceRow {
   final String bookingKey;
   final bool present;
+  final bool consumesCredit;
   final int sessionNo;
   final String dayKey;
   final String time;
@@ -7545,6 +7554,7 @@ class _FlexAttendanceRow {
   const _FlexAttendanceRow({
     required this.bookingKey,
     required this.present,
+    required this.consumesCredit,
     required this.sessionNo,
     required this.dayKey,
     required this.time,

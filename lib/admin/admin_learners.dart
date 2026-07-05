@@ -4915,6 +4915,69 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
     }
   }
 
+  String _learnerCourseDisplayName(String courseKey) {
+    final raw = _userCourses[courseKey];
+    final course = raw is Map
+        ? raw.map((k, v) => MapEntry(k.toString(), v))
+        : <String, dynamic>{};
+    final title = (course['title'] ?? '').toString().trim();
+    final code = (course['course_code'] ?? '').toString().trim();
+    final id = (course['id'] ?? '').toString().trim();
+
+    if (title.isNotEmpty && code.isNotEmpty) return '$title ($code)';
+    if (title.isNotEmpty) return title;
+    if (code.isNotEmpty) return code;
+    if (id.isNotEmpty) return id;
+    return courseKey;
+  }
+
+  Future<void> _removeSelectedLearnerCourse() async {
+    final courseKey = _selectedCourseKey?.trim() ?? '';
+    if (courseKey.isEmpty) return;
+
+    final raw = _userCourses[courseKey];
+    if (raw is! Map) return;
+
+    final courseNode = raw.map((k, v) => MapEntry(k.toString(), v));
+    final displayName = _learnerCourseDisplayName(courseKey);
+    final courseId = (courseNode['id'] ?? '').toString().trim();
+
+    final ok = await _confirm(
+      title: 'Remove learner course?',
+      message:
+          'This removes only this learner\'s course assignment:\n\n'
+          '$displayName\n\n'
+          'It will delete this learner\'s payment summary, attendance/progress, and class link for this course.\n\n'
+          'Global payment history will be kept.',
+      confirmText: 'Remove course',
+      danger: true,
+    );
+    if (!ok) return;
+
+    try {
+      await _cleanupClassAfterCourseRemoval(
+        Map<String, dynamic>.from(courseNode),
+      );
+      await _userCoursesRef.child(courseKey).remove();
+
+      _courseSnapFutureCache.remove(courseId);
+      _recordedSyllabusFutureCache.remove(courseId);
+
+      if (!mounted) return;
+      setState(() {
+        _selectedCourseKey = null;
+      });
+      AppToast.show(context, 'Removed learner course.');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(
+        context,
+        humanizeUiMessage('Could not remove learner course: $e'),
+        type: AppToastType.error,
+      );
+    }
+  }
+
   Future<void> _saveAssignedCourses(
     Set<String> selectedIds,
     Map<String, String> variantByCourseId,
@@ -5733,6 +5796,21 @@ class _LearnerExpandedTabsState extends State<_LearnerExpandedTabs>
       padding: const EdgeInsets.only(top: 0),
       children: [
         _coursePicker(keys),
+        if (_selectedCourseKey != null) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+              ),
+              onPressed: _removeSelectedLearnerCourse,
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Remove learner course'),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         if (_selectedCourseKey == null)
           const SizedBox.shrink()

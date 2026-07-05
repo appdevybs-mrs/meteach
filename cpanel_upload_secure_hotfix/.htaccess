@@ -1,11 +1,43 @@
-SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
-SetEnvIf X-Auth-Token "(.*)" HTTP_X_AUTH_TOKEN=$1
-RewriteEngine On
-RewriteCond %{HTTP:Authorization} ^(.+)$
-RewriteRule ^ - [E=HTTP_AUTHORIZATION:%1]
-RewriteCond %{HTTP:X-Auth-Token} ^(.+)$
-RewriteRule ^ - [E=HTTP_X_AUTH_TOKEN:%1]
+# Flutter Web Apache Configuration for cPanel
+AddType application/wasm .wasm
+AddType text/plain .symbols
 
-Header set Access-Control-Allow-Origin "*"
-Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
-Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, X-Auth-Token, X-Auth-Uid, Bearer-Token"
+# Gzip compression for faster downloads
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json application/manifest+json image/svg+xml
+    AddOutputFilterByType DEFLATE application/wasm
+    <IfModule mod_setenvif.c>
+        BrowserMatch ^Mozilla/4 gzip-only-text/html
+        BrowserMatch ^Mozilla/4\.0[678] no-gzip
+        BrowserMatch \bMSIE !no-gzip !gzip-only-text/html
+    </IfModule>
+</IfModule>
+
+# SPA fallback — serve index.html for any non-file route
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.html [QSA,L]
+</IfModule>
+
+# Cache static assets (1 year)
+<FilesMatch "\.(css|png|jpg|jpeg|gif|ico|svg|woff|woff2|wasm|symbols)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+
+# Cache JS bundles (main.dart.js, flutter.js, flutter_bootstrap.js)
+<FilesMatch "\.(dart\.js|flutter\.js|flutter_bootstrap\.js)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+
+# No cache for HTML, service worker, and JSON config
+<FilesMatch "\.(html|json)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+</FilesMatch>
+<FilesMatch "flutter_service_worker\.js$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+</FilesMatch>
+
+Options -Indexes
+AddDefaultCharset UTF-8
