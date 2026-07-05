@@ -161,6 +161,11 @@ class _AdminHomeState extends State<AdminHome> {
     super.dispose();
   }
 
+  void _clearHomeSearch() {
+    _homeSearchController.clear();
+    setState(() => _homeSearch = '');
+  }
+
   void _listenToReceptionistWindowAccess() {
     _receptionistWindowAccessSub?.cancel();
     _receptionistWindowAccessSub = _receptionistWindowAccessRef.onValue.listen((
@@ -986,10 +991,7 @@ class _AdminHomeState extends State<AdminHome> {
                       : IconButton(
                           tooltip: 'Clear search',
                           icon: const Icon(Icons.close_rounded, size: 18),
-                          onPressed: () {
-                            _homeSearchController.clear();
-                            setState(() => _homeSearch = '');
-                          },
+                          onPressed: _clearHomeSearch,
                         ),
                   filled: true,
                   fillColor: Colors.white,
@@ -1198,6 +1200,10 @@ class _AdminHomeState extends State<AdminHome> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_homeSearch.trim().isNotEmpty) {
+          _clearHomeSearch();
+          return;
+        }
         final now = DateTime.now().millisecondsSinceEpoch;
         if (now - _lastBackPressMs < 1800) {
           await SystemNavigator.pop();

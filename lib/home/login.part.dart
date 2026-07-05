@@ -7,9 +7,7 @@ class LoginScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final form = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 480),
-      child: CardShell(
-        child: ClassroomLoginSection(onLoggedInAdmin: () {}),
-      ),
+      child: CardShell(child: ClassroomLoginSection(onLoggedInAdmin: () {})),
     );
 
     if (context.isDesktopOrWider) {
@@ -57,11 +55,7 @@ class LoginScreen extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
                       child: SingleChildScrollView(
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        padding: EdgeInsets.only(
-                          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                        ),
+                        padding: const EdgeInsets.only(bottom: 16),
                         child: form,
                       ),
                     ),
@@ -100,11 +94,7 @@ class _ClassroomHomeState extends State<ClassroomHome> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
                   child: SingleChildScrollView(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                    ),
+                    padding: const EdgeInsets.only(bottom: 16),
                     child: CardShell(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 220),
@@ -411,7 +401,8 @@ class _ClassroomLoginSectionState extends State<ClassroomLoginSection> {
             if (!mounted) return;
             setState(() {
               loading = false;
-              error = 'This app is not for admin accounts.\nPlease use the Admin app.';
+              error =
+                  'This app is not for admin accounts.\nPlease use the Admin app.';
             });
             return;
           }
