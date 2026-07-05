@@ -588,9 +588,27 @@ class _GuidelineHeader extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             height: 106,
-            child: Stack(
-              alignment: Alignment.center,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                Container(
+                  width: 62,
+                  height: 62,
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.16),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Image.asset('assets/images/ybs_logo.png'),
+                ),
                 Container(
                   width: 118,
                   height: 86,
@@ -601,55 +619,33 @@ class _GuidelineHeader extends StatelessWidget {
                       color: Colors.white.withValues(alpha: 0.20),
                     ),
                   ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(30),
+                    child: Image.asset(
+                      'assets/images/character.png',
+                      height: 86,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
-                Positioned(
-                  left: 118,
-                  top: 2,
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
                   child: Container(
-                    width: 62,
-                    height: 62,
-                    padding: const EdgeInsets.all(9),
+                    key: ValueKey(icon),
+                    width: 58,
+                    height: 58,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.16),
+                          color: Colors.black.withValues(alpha: 0.18),
                           blurRadius: 16,
                           offset: const Offset(0, 8),
                         ),
                       ],
                     ),
-                    child: Image.asset('assets/images/ybs_logo.png'),
-                  ),
-                ),
-                Image.asset(
-                  'assets/images/character.png',
-                  height: 104,
-                  fit: BoxFit.contain,
-                ),
-                Positioned(
-                  right: 118,
-                  bottom: 5,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 260),
-                    child: Container(
-                      key: ValueKey(icon),
-                      width: 58,
-                      height: 58,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.18),
-                            blurRadius: 16,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Icon(icon, color: accentColor, size: 31),
-                    ),
+                    child: Icon(icon, color: accentColor, size: 31),
                   ),
                 ),
               ],
