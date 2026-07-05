@@ -437,39 +437,19 @@ class _AdminHomeState extends State<AdminHome> {
       String? windowKey,
       bool adminOnly = false,
     }) {
-      final isPinned = _pinnedCardTitles.contains(title);
       return _HomeCardItem(
         title: title,
-        child: Stack(
-          children: [
-            child,
-            Positioned(
-              top: 4,
-              right: 4,
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _togglePin(title),
-                  child: Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: isPinned
-                          ? Colors.blue.withValues(alpha: 0.9)
-                          : Colors.black.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Icon(
-                      Icons.push_pin_rounded,
-                      size: 14,
-                      color: isPinned ? Colors.white : Colors.black54,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPress: () {
+            final wasPinned = _pinnedCardTitles.contains(title);
+            _togglePin(title);
+            AppToast.show(
+              context,
+              wasPinned ? 'Unpinned $title' : 'Pinned $title',
+            );
+          },
+          child: child,
         ),
         windowKey: windowKey,
         adminOnly: adminOnly,
