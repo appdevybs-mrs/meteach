@@ -55,6 +55,13 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(toHumanError(message))));
+  }
+
   void _showOpeningHomeworkDialog() {
     if (_openingHomeworkDialogVisible || !mounted) return;
     _openingHomeworkDialogVisible = true;
@@ -211,7 +218,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       final ln = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
       final email = (m['email'] ?? '').toString().trim();
 
-      final full = ('$fn $ln').trim();
+      final full = '$fn $ln'.trim();
       return full.isNotEmpty ? full : (email.isNotEmpty ? email : 'Learner');
     } catch (_) {
       return 'Learner';
@@ -228,7 +235,11 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     required String taughtTitle,
     required String homeworkText,
   }) async {
-    if (teacherUid.trim().isEmpty) return;
+    if (teacherUid.trim().isEmpty) {
+      throw Exception(
+        'This homework is missing a teacher receiver. Please ask the academy to assign a teacher to this class.',
+      );
+    }
 
     final now = _nowMs();
 
@@ -243,6 +254,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       if (date.trim().isNotEmpty) 'Date: ${date.trim()}',
       if (taughtTitle.trim().isNotEmpty) 'Session: ${taughtTitle.trim()}',
     ].join('\n');
+    final preview = body.length > 60 ? body.substring(0, 60) : body;
 
     Future<void> openThread() async {
       if (!mounted) return;
@@ -285,7 +297,6 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
     if (msgKey == null) return;
     // Save the auto-created message key so we can delete it on Undo (if not reviewed)
     final hwMsgKeyPath = '$homeworkRefPath/autoMailMsgKey';
-    // Multi-location update (thread + message + my index)
     final learnerName = await _myDisplayName();
     final learnerRole = await MailConsistencyService.resolveUserRole(
       FirebaseDatabase.instance,
@@ -298,25 +309,28 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       seedRole: 'teacher',
     );
 
-    final Map<String, dynamic> updates = {
-      // thread meta
+    final Map<String, dynamic> threadUpdates = {
       'mail_threads/$threadId/subject': subject,
       'mail_threads/$threadId/updatedAt': now,
       'mail_threads/$threadId/createdAt': now,
-      'mail_threads/$threadId/lastMessage': body.length > 60
-          ? body.substring(0, 60)
-          : body,
+      'mail_threads/$threadId/lastMessage': preview,
       'mail_threads/$threadId/participants/$_uid': true,
       'mail_threads/$threadId/participants/$teacherUid': true,
-      // link auto-created message to homework for future Undo-delete
-      hwMsgKeyPath: msgKey,
-      // ✅ Homework linkage (for full cycle)
       'mail_threads/$threadId/type': 'homework',
       'mail_threads/$threadId/courseKey': widget.courseKey,
       'mail_threads/$threadId/sessionId': sessionId,
       'mail_threads/$threadId/learnerUid': _uid,
       'mail_threads/$threadId/teacherUid': teacherUid,
       'mail_threads/$threadId/homeworkRef': homeworkRefPath,
+    };
+
+    // Create the thread first. RTDB rules require the participant to already
+    // exist before messages, peer indexes, and state can be written.
+    await _db.update(threadUpdates);
+
+    final Map<String, dynamic> updates = {
+      // link auto-created message to homework for future Undo-delete
+      hwMsgKeyPath: msgKey,
 
       // message itself
       'mail_messages/$threadId/$msgKey/body': body,
@@ -331,9 +345,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           ? 'Teacher'
           : teacherName,
       'mail_index/$_uid/$threadId/subject': subject,
-      'mail_index/$_uid/$threadId/lastMessage': body.length > 60
-          ? body.substring(0, 60)
-          : body,
+      'mail_index/$_uid/$threadId/lastMessage': preview,
       'mail_index/$_uid/$threadId/unreadCount': 0,
       'mail_index/$_uid/$threadId/updatedAt': now,
       'mail_index/$_uid/$threadId/type': 'homework',
@@ -349,9 +361,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
           ? 'Learner'
           : learnerName,
       'mail_index/$teacherUid/$threadId/subject': subject,
-      'mail_index/$teacherUid/$threadId/lastMessage': body.length > 60
-          ? body.substring(0, 60)
-          : body,
+      'mail_index/$teacherUid/$threadId/lastMessage': preview,
       'mail_index/$teacherUid/$threadId/updatedAt': now,
       'mail_index/$teacherUid/$threadId/type': 'homework',
       'mail_index/$teacherUid/$threadId/peerRole': learnerRole,
@@ -372,7 +382,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       senderRole: learnerRole,
       receiverRole: teacherRole,
       subject: subject,
-      lastMessage: body.length > 60 ? body.substring(0, 60) : body,
+      lastMessage: preview,
       now: now,
       type: 'homework',
     );
@@ -877,7 +887,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
   // ---------- New: compact stats ----------
   Map<String, dynamic> _calcStats(List<Map<String, dynamic>> items) {
-    int total = items.length;
+    final total = items.length;
     int done = 0;
     int left = 0;
     int reviewed = 0;
@@ -1483,6 +1493,14 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                             taughtTitle: taughtTitle,
                                             homeworkText: text,
                                             homeworkRefPath: homeworkRefPath,
+                                          );
+                                        } catch (e) {
+                                          _showError(
+                                            toHumanError(
+                                              e,
+                                              fallback:
+                                                  'Could not open the homework chat. Please check your internet and try again.',
+                                            ),
                                           );
                                         } finally {
                                           _hideOpeningHomeworkDialog();

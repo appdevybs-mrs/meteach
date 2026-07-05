@@ -57,8 +57,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
   int? _oldestPaidAtMs;
   bool _loadingExtraPayments = false;
   bool _hasMorePayments = true;
-  Future<DatabaseEvent>? _initialPaymentsFuture;
-  bool _initialPaymentsStarted = false;
 
   static const List<String> _methods = ['Cash', 'Card', 'Transfer', 'Other'];
   static const String _teacherFilterAll = '__all__';
@@ -103,16 +101,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
         ),
       );
       _syncingRowsScroll = false;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _initialPaymentsFuture = _paymentsRef
-            .orderByChild('paidAt')
-            .limitToLast(_paymentsWindowSize)
-            .once();
-        _initialPaymentsStarted = true;
-      });
     });
   }
 
@@ -1533,10 +1521,6 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_initialPaymentsStarted || _initialPaymentsFuture == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
     return StreamBuilder<DatabaseEvent>(
       stream: _paymentPeriodsRef.onValue,
       builder: (context, periodsSnap) {
@@ -1572,8 +1556,11 @@ class _AdminPaymentsScreenState extends State<AdminPaymentsScreen> {
           }
         }
 
-        return FutureBuilder<DatabaseEvent>(
-          future: _initialPaymentsFuture,
+        return StreamBuilder<DatabaseEvent>(
+          stream: _paymentsRef
+              .orderByChild('paidAt')
+              .limitToLast(_paymentsWindowSize)
+              .onValue,
           builder: (context, snap) {
             if (snap.hasError) {
               return const Scaffold(
