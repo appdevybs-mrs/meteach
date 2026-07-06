@@ -938,6 +938,15 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
     }
   }
 
+  static Widget get _dot => Text(
+    ' • ',
+    style: TextStyle(
+      fontWeight: FontWeight.w900,
+      fontSize: 13,
+      color: Colors.black.withValues(alpha: 0.2),
+    ),
+  );
+
   static Widget _pill(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1073,9 +1082,9 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                                 gridDelegate:
                                     SliverGridDelegateWithFixedCrossAxisCount(
                                       crossAxisCount: 2,
-                                      mainAxisSpacing: 10,
-                                      crossAxisSpacing: 10,
-                                      childAspectRatio: 2.25,
+                                      mainAxisSpacing: 14,
+                                      crossAxisSpacing: 14,
+                                      childAspectRatio: 1.5,
                                     ),
                                 itemCount: teachers.length,
                                 itemBuilder: (context, i) {
@@ -1290,23 +1299,57 @@ class _TeacherWageDetailScreenState extends State<_TeacherWageDetailScreen> {
                             const SizedBox(height: 8),
                             Wrap(
                               spacing: 8,
-                              runSpacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                _AdminWagesScreenState._pill(
-                                  'Learners: ${uniqueLearners.length}',
-                                  AdminWagesScreen.primaryBlue,
+                                Text(
+                                  '${uniqueLearners.length} learners',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                    color: AdminWagesScreen.primaryBlue
+                                        .withValues(alpha: 0.85),
+                                  ),
                                 ),
-                                _AdminWagesScreenState._pill(
-                                  'Groups: ${widget.groups.length}',
-                                  Colors.blueGrey,
+                                _AdminWagesScreenState._dot,
+                                Text(
+                                  '${widget.groups.length} groups',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                    color: Colors.blueGrey
+                                        .withValues(alpha: 0.85),
+                                  ),
                                 ),
-                                _AdminWagesScreenState._pill(
-                                  'Logs: $totalLogs',
-                                  Colors.blueGrey,
+                                _AdminWagesScreenState._dot,
+                                Text(
+                                  '$totalLogs logs',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                    color: Colors.blueGrey
+                                        .withValues(alpha: 0.85),
+                                  ),
                                 ),
-                                _AdminWagesScreenState._pill(
-                                  'Teacher net: $totalNet DA',
-                                  Colors.green,
+                                _AdminWagesScreenState._dot,
+                                Text(
+                                  '$totalLogs logs',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                    color: Colors.blueGrey.withValues(
+                                      alpha: 0.85,
+                                    ),
+                                  ),
+                                ),
+                                _AdminWagesScreenState._dot,
+                                Text(
+                                  '$totalNet DA net',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                    color: Colors.green,
+                                  ),
                                 ),
                               ],
                             ),
@@ -1399,74 +1442,120 @@ class _LearnerGroupSectionState extends State<_LearnerGroupSection> {
       return;
     }
 
-    final lines = <String>[];
-    if ((classData['class_id'] ?? '').toString().trim().isNotEmpty) {
-      lines.add('Class ID: ${classData['class_id']}');
+    final rows = <Widget>[];
+
+    void addRow(IconData icon, Color labelColor, String label, String value) {
+      if (value.trim().isEmpty) return;
+      rows.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 18, color: labelColor),
+              const SizedBox(width: 10),
+              Text(
+                '$label:',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                  color: labelColor,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: Colors.black87,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
-    if ((classData['course_code'] ?? '').toString().trim().isNotEmpty) {
-      lines.add('Course code: ${classData['course_code']}');
-    }
-    if ((classData['course_title'] ?? '').toString().trim().isNotEmpty) {
-      lines.add('Course: ${classData['course_title']}');
-    }
+
+    addRow(
+      Icons.tag_rounded,
+      AdminWagesScreen.primaryBlue,
+      'Class ID',
+      '${classData['class_id'] ?? ''}',
+    );
+    addRow(
+      Icons.code_rounded,
+      Colors.blueGrey,
+      'Code',
+      '${classData['course_code'] ?? ''}',
+    );
+    addRow(
+      Icons.book_rounded,
+      const Color(0xFF1A237E),
+      'Course',
+      '${classData['course_title'] ?? ''}',
+    );
     final level = (classData['course_level'] ?? classData['level'] ?? '')
         .toString()
         .trim();
-    if (level.isNotEmpty) {
-      lines.add('Level: $level');
-    }
+    addRow(Icons.bar_chart_rounded, Colors.indigo, 'Level', level);
     final variant = _AdminWagesScreenState._variantLabel(
       _AdminWagesScreenState._safeString(
         classData['variantKey'] ?? classData['variant'],
       ),
     );
-    lines.add('Delivery: $variant');
+    addRow(Icons.school_rounded, Colors.teal, 'Delivery', variant);
 
+    String scheduleStr = '';
     final schedule = classData['schedule'];
     if (schedule is String && schedule.trim().isNotEmpty) {
-      lines.add('Schedule: $schedule');
+      scheduleStr = schedule;
     } else if (schedule is Map && schedule.isNotEmpty) {
-      final parts = schedule.entries
+      scheduleStr = schedule.entries
           .map((e) => '${e.key}: ${e.value}')
-          .toList();
-      lines.add('Schedule: ${parts.join(', ')}');
+          .join(', ');
     }
+    addRow(
+      Icons.calendar_month_rounded,
+      Colors.deepOrange,
+      'Schedule',
+      scheduleStr,
+    );
 
+    String daysStr = '';
     final days = classData['days'];
     if (days is String && days.trim().isNotEmpty) {
-      lines.add('Days: $days');
+      daysStr = days;
     } else if (days is List && days.isNotEmpty) {
-      lines.add('Days: ${days.join(', ')}');
+      daysStr = days.join(', ');
     }
+    addRow(Icons.today_rounded, Colors.purple, 'Days', daysStr);
 
+    String timeStr = '';
     final time = classData['time'];
     if (time is String && time.trim().isNotEmpty) {
-      lines.add('Time: $time');
+      timeStr = time;
     }
+    addRow(Icons.access_time_rounded, Colors.green, 'Time', timeStr);
 
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Class details'),
+        title: const Text(
+          'Class details',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: AdminWagesScreen.primaryBlue,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (lines.isEmpty)
-              const Text('No additional class data available.')
-            else
-              for (final line in lines)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Text(
-                    line,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-          ],
+          children: rows.isEmpty
+              ? [const Text('No additional class data available.')]
+              : rows,
         ),
         actions: [
           TextButton(
@@ -1536,11 +1625,15 @@ class _LearnerGroupSectionState extends State<_LearnerGroupSection> {
                       ],
                     ),
                   ),
-                  _AdminWagesScreenState._pill(
+                  Text(
                     '${widget.group.learners.length} learners',
-                    widget.group.kind == 'class'
-                        ? AdminWagesScreen.primaryBlue
-                        : Colors.blueGrey,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: widget.group.kind == 'class'
+                          ? AdminWagesScreen.primaryBlue
+                          : Colors.blueGrey,
+                    ),
                   ),
                   if (widget.group.classData != null)
                     Padding(
@@ -1669,7 +1762,7 @@ class _TeacherCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -1685,13 +1778,14 @@ class _TeacherCard extends StatelessWidget {
           ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ProfileAvatar(
               name: teacher.name,
               photoUrl: teacher.photoUrl,
-              radius: 30,
+              radius: 28,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1704,33 +1798,42 @@ class _TeacherCard extends StatelessWidget {
                     style: const TextStyle(
                       fontWeight: FontWeight.w900,
                       color: AdminWagesScreen.primaryBlue,
-                      fontSize: 14,
+                      fontSize: 15,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 5,
+                  const SizedBox(height: 10),
+                  Row(
                     children: [
-                      _AdminWagesScreenState._pill(
+                      Text(
                         '$learnerCount learners',
-                        AdminWagesScreen.primaryBlue,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: AdminWagesScreen.primaryBlue.withValues(
+                            alpha: 0.8,
+                          ),
+                        ),
                       ),
-                      _AdminWagesScreenState._pill(
+                      const SizedBox(width: 14),
+                      Text(
                         '$logCount logs',
-                        Colors.blueGrey,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: Colors.blueGrey.withValues(alpha: 0.9),
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 8),
                   Text(
                     '$teacherNet DA',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
                     ),
                   ),
                 ],
