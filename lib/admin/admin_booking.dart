@@ -162,6 +162,11 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
     return int.tryParse(v?.toString() ?? '') ?? fallback;
   }
 
+  bool _isTeacherRole(dynamic role) {
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'teacher' || r == 'teachers' || r == 'teacher(s)';
+  }
+
   DateTime? _parseSlotStart(String dayKey, String hhmm) {
     try {
       final dp = dayKey.split('-');
@@ -1055,12 +1060,28 @@ class _AdminBookingScreenState extends State<AdminBookingScreen> {
         return out;
       }
 
+      final usersSnap = await _db.child('users').get();
+      final activeTeacherIds = <String>{};
+      if (usersSnap.value is Map) {
+        final usersRoot = (usersSnap.value as Map).map(
+          (k, vv) => MapEntry(k.toString(), vv),
+        );
+
+        usersRoot.forEach((uid, rawUser) {
+          if (rawUser is! Map) return;
+          final user = rawUser.map((k, vv) => MapEntry(k.toString(), vv));
+          if (_isTeacherRole(user['role'])) activeTeacherIds.add(uid);
+        });
+      }
+
       final root = (availabilitySnap.value as Map).map(
         (k, vv) => MapEntry(k.toString(), vv),
       );
 
       for (final teacherEntry in root.entries) {
         final teacherId = teacherEntry.key;
+        if (!activeTeacherIds.contains(teacherId)) continue;
+
         final teacherNode = teacherEntry.value;
         if (teacherNode is! Map) continue;
 

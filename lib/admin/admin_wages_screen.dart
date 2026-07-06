@@ -1,27 +1,33 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'admin_wages_export_excel.dart';
-import '../shared/admin_web_layout.dart';
-import '../shared/human_error.dart';
-import '../shared/app_feedback.dart';
-import '../shared/finance_allocations.dart';
+import 'package:flutter/material.dart';
 
-class AdminWagesScreen extends StatelessWidget {
+import '../shared/admin_web_layout.dart';
+import '../shared/app_feedback.dart';
+import '../shared/human_error.dart';
+import '../shared/profile_avatar.dart';
+
+class AdminWagesScreen extends StatefulWidget {
   const AdminWagesScreen({super.key});
-  static const int _paymentsWindowSize = 3000;
 
   static const primaryBlue = Color(0xFF1A2B48);
   static const uiBorder = Color(0xFFD1D9E0);
   static const actionOrange = Color(0xFFF98D28);
-  static const mainText = Color(0xFF2D2D2D);
   static const appBg = Color(0xFFF4F7F9);
+
+  @override
+  State<AdminWagesScreen> createState() => _AdminWagesScreenState();
+}
+
+class _AdminWagesScreenState extends State<AdminWagesScreen> {
+  final DatabaseReference _db = FirebaseDatabase.instance.ref();
 
   static int _asInt(dynamic v) {
     if (v == null) return 0;
     if (v is int) return v;
     if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
+    final clean = v.toString().trim().replaceAll(RegExp(r'[^0-9-]'), '');
+    return int.tryParse(clean) ?? 0;
   }
 
   static bool _asBool(dynamic v) {
@@ -31,480 +37,660 @@ class AdminWagesScreen extends StatelessWidget {
     return s == 'true' || s == '1' || s == 'yes';
   }
 
-  static String _normalizeFinanceStatus(dynamic v) {
-    final s = (v ?? '').toString().trim().toLowerCase();
-    if (s == 'done' || s == 'tbpaid' || s == 'split' || s == 'waiting') {
-      return s;
-    }
-    return 'tbpaid';
-  }
-
-  static _FinanceAlloc _financeAlloc(Map<String, dynamic> p) {
-    final amount = _asInt(p['amount']);
-    final status = _normalizeFinanceStatus(p['financePayoutStatus']);
-    if (status == 'done') {
-      return _FinanceAlloc(gross: amount, tbpaid: 0, waiting: 0, done: amount);
-    }
-    if (status == 'waiting') {
-      return _FinanceAlloc(gross: amount, tbpaid: 0, waiting: amount, done: 0);
-    }
-    if (status == 'tbpaid') {
-      return _FinanceAlloc(gross: amount, tbpaid: amount, waiting: 0, done: 0);
-    }
-
-    final splitPaid = _asInt(p['financeSplitPaidAmount']);
-    var splitWaiting = _asInt(p['financeSplitWaitingAmount']);
-    if (splitWaiting <= 0) {
-      splitWaiting = amount - splitPaid;
-    }
-    final paid = splitPaid.clamp(0, amount);
-    final waiting = splitWaiting.clamp(0, amount - paid);
-    final paidStatus =
-        _normalizeFinanceStatus(p['financeSplitPaidStatus']) == 'done'
-        ? 'done'
-        : 'tbpaid';
-    return _FinanceAlloc(
-      gross: amount,
-      tbpaid: paidStatus == 'tbpaid' ? paid : 0,
-      waiting: waiting,
-      done: paidStatus == 'done' ? paid : 0,
-    );
-  }
-
-  static int _teacherPercent(dynamic v) {
-    final p = _asInt(v);
-    if (p <= 0) return 100;
-    if (p > 100) return 100;
-    return p;
-  }
-
-  static int _netOf(int amount, int percent) {
-    if (amount <= 0) return 0;
-    return ((amount * percent) / 100).round();
-  }
-
-  static bool _isPushed(Map<String, dynamic> p) {
-    return _asInt(p['financePushedAt']) > 0;
-  }
-
-  static int _teacherGross(Map<String, dynamic> p) {
-    var gross = _asInt(p['financeTeacherGross']);
-    if (gross <= 0) {
-      final alloc = _financeAlloc(p);
-      gross = alloc.tbpaid + alloc.done;
-    }
-    if (gross <= 0) gross = _asInt(p['amount']);
-    return gross;
-  }
-
-  static int _teacherNet(Map<String, dynamic> p) {
-    final saved = _asInt(p['financeTeacherNet']);
-    if (saved > 0) return saved;
-    final gross = _teacherGross(p);
-    return _netOf(gross, _teacherPercent(p['financeTeacherPercent']));
-  }
-
-  static int _schoolNet(Map<String, dynamic> p) {
-    if (!_isPushed(p)) return 0;
-    final saved = _asInt(p['financeSchoolNet']);
-    if (saved > 0) return saved;
-    final net = _teacherGross(p) - _teacherNet(p);
-    return net < 0 ? 0 : net;
-  }
-
-  static String _learnerName(Map<String, dynamic> p) {
-    final n1 = (p['learner_name'] ?? '').toString().trim();
-    if (n1.isNotEmpty) return n1;
-    final n2 = (p['learnerName'] ?? '').toString().trim();
-    if (n2.isNotEmpty) return n2;
-    return '(No name)';
-  }
-
-  static String _teacherName(Map<String, dynamic> p) {
-    final t1 = (p['teacherName'] ?? '').toString().trim();
-    if (t1.isNotEmpty) return t1;
-    final t2 = (p['teacher_name'] ?? '').toString().trim();
-    if (t2.isNotEmpty) return t2;
-    final t3 = (p['teacherId'] ?? '').toString().trim();
-    return t3.isEmpty ? 'Unknown teacher' : t3;
-  }
-
-  static String _methodLabel(Map<String, dynamic> p) {
-    final m = (p['financeMethod'] ?? '').toString().trim().toLowerCase();
-    if (m == 'cash') return '💵 Cash';
-    if (m == 'ccp') return '🏤 CCP';
-    return '❔ Unspecified';
-  }
+  static String _safeString(dynamic v) => (v ?? '').toString().trim();
 
   static String _two(int n) => n.toString().padLeft(2, '0');
 
-  static String _monthKeyFromPaidAtMs(int ms) {
-    if (ms <= 0) return 'Unknown';
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.year}-${_two(d.month)}'; // yyyy-MM
-  }
-
-  static String _fmtYmdFromMs(int ms) {
+  static String _ymdFromMs(int ms) {
     if (ms <= 0) return '';
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
     return '${d.year}-${_two(d.month)}-${_two(d.day)}';
   }
 
-  static String _monthKeyNow() {
-    final d = DateTime.now();
-    return '${d.year}-${_two(d.month)}'; // yyyy-MM
+  static int _sortMsFromYmd(String ymd) {
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(ymd.trim());
+    if (m == null) return 0;
+    final year = int.tryParse(m.group(1) ?? '') ?? 0;
+    final month = int.tryParse(m.group(2) ?? '') ?? 0;
+    final day = int.tryParse(m.group(3) ?? '') ?? 0;
+    if (year <= 0 || month <= 0 || day <= 0) return 0;
+    return DateTime(year, month, day).millisecondsSinceEpoch;
   }
 
-  static String _prettyMonthLabel(String monthKey) {
-    final parts = monthKey.split('-');
-    if (parts.length != 2) return monthKey;
-    final y = int.tryParse(parts[0]);
-    final m = int.tryParse(parts[1]);
-    if (y == null || m == null) return monthKey;
-
-    const names = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    final name = (m >= 1 && m <= 12) ? names[m - 1] : parts[1];
-    return '$name $y';
+  static String _normalizeVariant(dynamic v) {
+    final s = (v ?? '').toString().trim().toLowerCase();
+    if (s == 'flexible' || s == 'online' || s == 'booking') return 'flexible';
+    if (s == 'recorded' || s == 'on_demand' || s == 'ondemand')
+      return 'recorded';
+    if (s == 'private' || s == 'one_to_one') return 'private';
+    return 'inclass';
   }
 
-  static Map<String, _LearnerInfo> _parseLearners(dynamic raw) {
-    // Expected common RTDB structure: users/<uid> => { learner_name/name, learner_serial/serial, ... }
-    final out = <String, _LearnerInfo>{};
+  static bool _isTeacherRole(dynamic role) {
+    return role.toString().trim().toLowerCase() == 'teacher';
+  }
+
+  static String _fullNameFromMap(Map<String, dynamic> m, String fallback) {
+    final direct = _safeString(m['name'] ?? m['fullName'] ?? m['displayName']);
+    if (direct.isNotEmpty) return direct;
+    final first = _safeString(m['first_name'] ?? m['firstName']);
+    final last = _safeString(m['last_name'] ?? m['lastName']);
+    final full = '$first $last'.trim();
+    return full.isEmpty ? fallback : full;
+  }
+
+  static Map<String, _PersonInfo> _parsePeople(dynamic raw) {
+    final out = <String, _PersonInfo>{};
     if (raw is! Map) return out;
-
-    raw.forEach((k, v) {
-      final uid = (k ?? '').toString().trim();
-      if (uid.isEmpty || v is! Map) return;
-
-      final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-
-      final serial = (m['learner_serial'] ?? m['serial'] ?? m['code'] ?? '')
-          .toString()
-          .trim();
-
-      final phone1 = (m['phone1'] ?? m['phone'] ?? '').toString().trim();
-      final phone2 = (m['phone2'] ?? '').toString().trim();
-      final email = (m['email'] ?? '').toString().trim();
-
-      final first = (m['first_name'] ?? m['firstName'] ?? '').toString().trim();
-      final last = (m['last_name'] ?? m['lastName'] ?? '').toString().trim();
-
-      String name =
-          (m['learner_name'] ??
-                  m['name'] ??
-                  m['fullName'] ??
-                  m['displayName'] ??
-                  '')
-              .toString()
-              .trim();
-
-      // build from first + last if needed
-      if (name.isEmpty) {
-        name = [first, last].where((x) => x.isNotEmpty).join(' ').trim();
-      }
-
-      // Human-friendly fallback if still empty
-      if (name.isEmpty) {
-        if (serial.isNotEmpty) {
-          name = serial;
-        } else if (phone1.isNotEmpty) {
-          name = phone1;
-        } else if (phone2.isNotEmpty) {
-          name = phone2;
-        } else if (email.isNotEmpty) {
-          name = email;
-        } else {
-          final u = uid;
-          name = u.length > 6 ? 'ID …${u.substring(u.length - 6)}' : 'ID $u';
-        }
-      }
-
-      out[uid] = _LearnerInfo(uid: uid, name: name, serial: serial);
+    raw.forEach((key, value) {
+      final uid = key.toString().trim();
+      if (uid.isEmpty || value is! Map) return;
+      final map = value
+          .map((k, v) => MapEntry(k.toString(), v))
+          .cast<String, dynamic>();
+      final role = _safeString(map['role']).toLowerCase();
+      final fallback = _isTeacherRole(role) ? 'Teacher' : 'Learner';
+      out[uid] = _PersonInfo(
+        uid: uid,
+        name: _fullNameFromMap(map, fallback),
+        serial: _safeString(map['serial'] ?? map['learner_serial']),
+        role: role,
+        photoUrl: ProfileAvatar.resolvePhotoFromMap(map),
+      );
     });
-
     return out;
   }
 
-  static Map<String, Set<String>> _parseStudyingFromClasses(dynamic raw) {
-    // Returns: teacherKey -> set(uid)
-    // teacherKey prefers: class.teacherId OR instructor_current(...) OR instructor name
-    final out = <String, Set<String>>{};
-    if (raw is! Map) return out;
-
-    raw.forEach((ck, cv) {
-      if (cv is! Map) return;
-      final c = cv.map((kk, vv) => MapEntry(kk.toString(), vv));
-
-      final status = (c['status'] ?? '').toString().trim().toLowerCase();
-      final isOpen = _asBool(c['is_open']);
-      final active = status == 'active' && isOpen;
-      if (!active) return;
-
-      String teacherKey = '';
-      final t1 = (c['teacherId'] ?? '').toString().trim();
-      if (t1.isNotEmpty) {
-        teacherKey = t1;
-      } else {
-        final ic = c['instructor_current'];
-        if (ic is String && ic.trim().isNotEmpty) {
-          teacherKey = ic.trim();
-        } else if (ic is Map) {
-          final icm = ic.map((kk, vv) => MapEntry(kk.toString(), vv));
-          final tid = (icm['teacherId'] ?? icm['uid'] ?? icm['id'] ?? '')
-              .toString()
-              .trim();
-          if (tid.isNotEmpty) teacherKey = tid;
-        }
-        if (teacherKey.isEmpty) {
-          final name = (c['instructor'] ?? '').toString().trim();
-          if (name.isNotEmpty) teacherKey = name;
-        }
-      }
-      if (teacherKey.isEmpty) return;
-
-      final learners = c['learners'];
-      final uids = <String>[];
-
-      if (learners is Map) {
-        for (final k in learners.keys) {
-          final uid = k.toString().trim();
-          if (uid.isNotEmpty) uids.add(uid);
-        }
-      } else if (learners is List) {
-        for (final it in learners) {
-          final uid = it.toString().trim();
-          if (uid.isNotEmpty) uids.add(uid);
-        }
-      }
-
-      if (uids.isEmpty) return;
-
-      out.putIfAbsent(teacherKey, () => <String>{});
-      out[teacherKey]!.addAll(uids);
-    });
-
-    return out;
+  static bool _flexConsumesCredit(Map<String, dynamic> m) {
+    if (_asBool(m['countedCredit'])) return true;
+    if (_asBool(m['present'])) return true;
+    final status = _safeString(m['status']).toLowerCase();
+    if (status == 'present') return true;
+    return _asInt(m['sessionNo']) > 0;
   }
 
-  static Set<String>? _tryMatchStudyingByTeacherName({
-    required String teacherName,
-    required Map<String, Set<String>> studyingByTeacher,
+  static _WageSourceData _buildSourceData({
+    required Map<String, _PersonInfo> people,
+    required dynamic classesRaw,
+    required dynamic bookingProgressRaw,
   }) {
-    final name = teacherName.trim();
-    if (name.isEmpty) return null;
+    final learnerUidsByTeacher = <String, Set<String>>{};
+    final attendanceByTeacherLearner = <String, List<_AttendanceOption>>{};
 
-    if (studyingByTeacher.containsKey(name)) return studyingByTeacher[name];
-
-    for (final entry in studyingByTeacher.entries) {
-      if (entry.key.toLowerCase().trim() == name.toLowerCase().trim()) {
-        return entry.value;
-      }
+    void addLearner(String teacherUid, String learnerUid) {
+      final t = teacherUid.trim();
+      final l = learnerUid.trim();
+      if (t.isEmpty || l.isEmpty) return;
+      learnerUidsByTeacher.putIfAbsent(t, () => <String>{}).add(l);
     }
-    return null;
-  }
 
-  static void _showMissingBottomSheet({
-    required BuildContext context,
-    required String title,
-    required List<_LearnerInfo> learners,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                          color: primaryBlue,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (learners.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    child: Text(
-                      'Nothing to show 🎉',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black.withValues(alpha: 0.65),
-                      ),
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: learners.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final l = learners[i];
-                        final displayName = l.name.isNotEmpty
-                            ? l.name
-                            : '(No name)';
-                        final sub = [
-                          if (l.serial.isNotEmpty) l.serial,
-                          l.uid,
-                        ].join(' • ');
+    void addAttendance({
+      required String teacherUid,
+      required String learnerUid,
+      required _AttendanceOption option,
+    }) {
+      addLearner(teacherUid, learnerUid);
+      final key = _pairKey(teacherUid, learnerUid);
+      attendanceByTeacherLearner
+          .putIfAbsent(key, () => <_AttendanceOption>[])
+          .add(option);
+    }
 
-                        return ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                          ),
-                          title: Text(
-                            displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                          subtitle: Text(
-                            sub,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
+    if (classesRaw is Map) {
+      classesRaw.forEach((classKey, classValue) {
+        if (classValue is! Map) return;
+        final cls = classValue
+            .map((k, v) => MapEntry(k.toString(), v))
+            .cast<String, dynamic>();
+        final variant = _normalizeVariant(
+          cls['variantKey'] ?? cls['variant'] ?? cls['deliveryKey'],
         );
-      },
+        if (variant == 'recorded') return;
+
+        String classTeacherUid = _safeString(
+          cls['teacherId'] ?? cls['teacher_id'],
+        );
+        final current = cls['instructor_current'];
+        if (current is Map) {
+          final cur = current.map((k, v) => MapEntry(k.toString(), v));
+          final uid = _safeString(cur['uid'] ?? cur['teacherId'] ?? cur['id']);
+          if (uid.isNotEmpty) classTeacherUid = uid;
+        }
+
+        final learners = cls['learners'];
+        if (learners is Map && classTeacherUid.isNotEmpty) {
+          for (final learnerKey in learners.keys) {
+            addLearner(classTeacherUid, learnerKey.toString());
+          }
+        }
+
+        if (variant == 'flexible') return;
+        final attendance = cls['attendance'];
+        if (attendance is! Map) return;
+        attendance.forEach((sessionKey, sessionValue) {
+          if (sessionValue is! Map) return;
+          final rec = sessionValue
+              .map((k, v) => MapEntry(k.toString(), v))
+              .cast<String, dynamic>();
+          final recTeacherUid = _safeString(rec['teacherUid']).isNotEmpty
+              ? _safeString(rec['teacherUid'])
+              : classTeacherUid;
+          if (recTeacherUid.isEmpty) return;
+          final date = _safeString(rec['date']);
+          if (date.isEmpty) return;
+          final present = rec['present'] is Map
+              ? Map<dynamic, dynamic>.from(rec['present'] as Map)
+              : <dynamic, dynamic>{};
+          final absent = rec['absent'] is Map
+              ? Map<dynamic, dynamic>.from(rec['absent'] as Map)
+              : <dynamic, dynamic>{};
+          final learnerUids = <String>{
+            ...present.keys.map((k) => k.toString().trim()),
+            ...absent.keys.map((k) => k.toString().trim()),
+          }..removeWhere((uid) => uid.isEmpty);
+          for (final learnerUid in learnerUids) {
+            final isPresent = present.containsKey(learnerUid);
+            if (variant == 'private' && !isPresent) continue;
+            addAttendance(
+              teacherUid: recTeacherUid,
+              learnerUid: learnerUid,
+              option: _AttendanceOption(
+                id: sessionKey.toString(),
+                date: date,
+                sortMs: _sortMsFromYmd(date),
+                label:
+                    '$date • ${variant == 'private' ? 'private' : 'in-class'} • ${isPresent ? 'present' : 'absent'}',
+                source: variant,
+                courseId: _safeString(rec['course_id'] ?? cls['course_id']),
+                courseTitle: _safeString(
+                  rec['course_title'] ?? cls['course_title'] ?? cls['title'],
+                ),
+                present: isPresent,
+              ),
+            );
+          }
+        });
+      });
+    }
+
+    if (bookingProgressRaw is Map) {
+      bookingProgressRaw.forEach((learnerKey, learnerProgressValue) {
+        final learnerUid = learnerKey.toString().trim();
+        if (learnerUid.isEmpty || learnerProgressValue is! Map) return;
+        final learnerProgress = Map<dynamic, dynamic>.from(
+          learnerProgressValue,
+        );
+        learnerProgress.forEach((courseKey, courseValue) {
+          if (courseValue is! Map) return;
+          final course = courseValue
+              .map((k, v) => MapEntry(k.toString(), v))
+              .cast<String, dynamic>();
+          final attendance = course['online_attendance'];
+          if (attendance is! Map) return;
+          attendance.forEach((bookingKey, bookingValue) {
+            if (bookingValue is! Map) return;
+            final rec = bookingValue
+                .map((k, v) => MapEntry(k.toString(), v))
+                .cast<String, dynamic>();
+            if (!_flexConsumesCredit(rec)) return;
+            final teacherUid = _safeString(
+              rec['teacherUid'] ?? rec['teacherId'],
+            );
+            if (teacherUid.isEmpty) return;
+            final startAt = _asInt(rec['startAt']);
+            final date = _safeString(rec['dayKey']).isNotEmpty
+                ? _safeString(rec['dayKey'])
+                : _ymdFromMs(startAt);
+            if (date.isEmpty) return;
+            final present =
+                _asBool(rec['present']) ||
+                _safeString(rec['status']).toLowerCase() == 'present';
+            addAttendance(
+              teacherUid: teacherUid,
+              learnerUid: learnerUid,
+              option: _AttendanceOption(
+                id: bookingKey.toString(),
+                date: date,
+                sortMs: startAt > 0 ? startAt : _sortMsFromYmd(date),
+                label:
+                    '$date${_safeString(rec['time']).isEmpty ? '' : ' ${_safeString(rec['time'])}'} • flexible • ${present ? 'present' : 'credit'}',
+                source: 'flexible',
+                courseId: _safeString(rec['courseId'] ?? courseKey),
+                courseTitle: _safeString(rec['courseTitle'] ?? course['title']),
+                present: present,
+              ),
+            );
+          });
+        });
+      });
+    }
+
+    final teachers = people.values.where((p) => _isTeacherRole(p.role)).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final learnerLists = <String, List<_PersonInfo>>{};
+    for (final teacher in teachers) {
+      final uids = learnerUidsByTeacher[teacher.uid] ?? <String>{};
+      final learners =
+          uids.map((uid) {
+            return people[uid] ??
+                _PersonInfo(
+                  uid: uid,
+                  name: uid,
+                  serial: '',
+                  role: 'learner',
+                  photoUrl: '',
+                );
+          }).toList()..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
+      learnerLists[teacher.uid] = learners;
+    }
+
+    for (final list in attendanceByTeacherLearner.values) {
+      final seen = <String>{};
+      list.removeWhere(
+        (opt) => !seen.add('${opt.source}|${opt.id}|${opt.date}'),
+      );
+      list.sort((a, b) {
+        final byDate = a.sortMs.compareTo(b.sortMs);
+        if (byDate != 0) return byDate;
+        return a.label.compareTo(b.label);
+      });
+    }
+
+    return _WageSourceData(
+      teachers: teachers,
+      learnersByTeacher: learnerLists,
+      attendanceByTeacherLearner: attendanceByTeacherLearner,
     );
   }
 
-  Future<void> _togglePaid({
-    required BuildContext context,
-    required String paymentId,
-    String? allocationId,
-    required bool makePaid,
-  }) async {
-    final db = FirebaseDatabase.instance;
-    final ref = (allocationId ?? '').trim().isEmpty
-        ? db.ref('payments/$paymentId')
-        : db.ref(
-            'payments/$paymentId/financeAllocations/${allocationId!.trim()}',
+  static Map<String, Map<String, _WageLog>> _parseLogs(dynamic raw) {
+    final out = <String, Map<String, _WageLog>>{};
+    if (raw is! Map) return out;
+    raw.forEach((teacherKey, teacherValue) {
+      final teacherUid = teacherKey.toString().trim();
+      if (teacherUid.isEmpty || teacherValue is! Map) return;
+      final teacherNode = Map<dynamic, dynamic>.from(teacherValue);
+      teacherNode.forEach((learnerKey, learnerValue) {
+        final learnerUid = learnerKey.toString().trim();
+        if (learnerUid.isEmpty || learnerValue is! Map) return;
+        final learnerNode = Map<dynamic, dynamic>.from(learnerValue);
+        learnerNode.forEach((logKey, logValue) {
+          if (logValue is! Map) return;
+          final id = logKey.toString().trim();
+          if (id.isEmpty) return;
+          final map = logValue
+              .map((k, v) => MapEntry(k.toString(), v))
+              .cast<String, dynamic>();
+          out.putIfAbsent(
+            _pairKey(teacherUid, learnerUid),
+            () => <String, _WageLog>{},
+          )[id] = _WageLog.fromMap(
+            id,
+            map,
           );
+        });
+      });
+    });
+    return out;
+  }
 
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  static String _pairKey(String teacherUid, String learnerUid) =>
+      '${teacherUid.trim()}|${learnerUid.trim()}';
 
-    final ok =
-        await showDialog<bool>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text(makePaid ? 'Mark as PAID?' : 'Mark as UNPAID?'),
-            content: Text(
-              makePaid
-                  ? 'This means you already gave the money to the teacher for this payment.'
-                  : 'This will mark it as not paid to the teacher yet.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: makePaid ? Colors.green : Colors.red,
-                ),
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(makePaid ? 'Mark PAID' : 'Mark UNPAID'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+  Future<void> _openTeacher(
+    _PersonInfo teacher,
+    _WageSourceData source,
+    Map<String, Map<String, _WageLog>> logs,
+  ) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _TeacherWageDetailScreen(
+          teacher: teacher,
+          learners:
+              source.learnersByTeacher[teacher.uid] ?? const <_PersonInfo>[],
+          attendanceByPair: source.attendanceByTeacherLearner,
+          logsByPair: logs,
+          onAddOrEditLog: _showWageLogDialog,
+          onDeleteLog: _deleteLog,
+        ),
+      ),
+    );
+  }
 
-    if (!ok) return;
+  Future<void> _showWageLogDialog({
+    required _PersonInfo teacher,
+    required _PersonInfo learner,
+    required List<_AttendanceOption> attendanceOptions,
+    _WageLog? existing,
+  }) async {
+    final sessionsC = TextEditingController(
+      text: existing == null ? '' : existing.sessionCount.toString(),
+    );
+    final amountC = TextEditingController(
+      text: existing == null ? '' : existing.amount.toString(),
+    );
+    final percentC = TextEditingController(
+      text: existing == null ? '100' : existing.teacherPercent.toString(),
+    );
+    var startDate =
+        existing?.startDate ??
+        (attendanceOptions.isNotEmpty ? attendanceOptions.first.date : '');
+    var endDate =
+        existing?.endDate ??
+        (attendanceOptions.isNotEmpty ? attendanceOptions.last.date : '');
 
     try {
-      if (makePaid) {
-        await ref.update({
-          'teacherPaid': true,
-          'teacherPaidAt': ServerValue.timestamp,
-          'teacherPaidBy': uid,
-          'updatedAt': ServerValue.timestamp,
-        });
-      } else {
-        await ref.update({
-          'teacherPaid': false,
-          'teacherPaidAt': null,
-          'teacherPaidBy': null,
-          'updatedAt': ServerValue.timestamp,
-        });
-      }
+      final saved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogCtx) {
+          return StatefulBuilder(
+            builder: (context, setD) {
+              final amount = _asInt(amountC.text);
+              final percent = _asInt(percentC.text).clamp(0, 100);
+              final teacherNet = ((amount * percent) / 100).round();
+              final schoolNet = (amount - teacherNet).clamp(0, amount);
+              final dateValues = attendanceOptions
+                  .map((e) => e.date)
+                  .toSet()
+                  .toList();
+              if (startDate.isNotEmpty && !dateValues.contains(startDate))
+                dateValues.add(startDate);
+              if (endDate.isNotEmpty && !dateValues.contains(endDate))
+                dateValues.add(endDate);
+              dateValues.sort();
 
-      if (!context.mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(
-          content: Text(makePaid ? 'Marked PAID ✅' : 'Marked UNPAID ✅'),
-          duration: const Duration(milliseconds: 900),
-        ),
+              Widget dateDropdown({
+                required String label,
+                required String value,
+                required ValueChanged<String> onChanged,
+              }) {
+                if (dateValues.isEmpty) {
+                  return TextFormField(
+                    initialValue: value,
+                    decoration: InputDecoration(
+                      labelText: label,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: onChanged,
+                  );
+                }
+                return DropdownButtonFormField<String>(
+                  initialValue: value.isNotEmpty && dateValues.contains(value)
+                      ? value
+                      : dateValues.first,
+                  decoration: InputDecoration(
+                    labelText: label,
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: dateValues
+                      .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                      .toList(),
+                  onChanged: (v) => setD(() => onChanged(v ?? '')),
+                );
+              }
+
+              return AlertDialog(
+                title: Text(
+                  existing == null ? 'Add wage log' : 'Edit wage log',
+                ),
+                content: SizedBox(
+                  width: 560,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${learner.name} • ${teacher.name}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: AdminWagesScreen.primaryBlue,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (attendanceOptions.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.orange.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            child: const Text(
+                              'No in-class/private/flexible attendance found for this learner and teacher. Dates can still be typed manually.',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        if (attendanceOptions.isEmpty)
+                          const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: dateDropdown(
+                                label: 'From date',
+                                value: startDate,
+                                onChanged: (v) => startDate = v,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: dateDropdown(
+                                label: 'To date',
+                                value: endDate,
+                                onChanged: (v) => endDate = v,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: sessionsC,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: 'Number of sessions',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: amountC,
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => setD(() {}),
+                                decoration: const InputDecoration(
+                                  labelText: 'Amount',
+                                  suffixText: 'DA',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: percentC,
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setD(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Teacher percentage',
+                            suffixText: '%',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _pill('Teacher: $teacherNet DA', Colors.green),
+                            _pill(
+                              'School: $schoolNet DA',
+                              AdminWagesScreen.primaryBlue,
+                            ),
+                            _pill(
+                              'Attendance dates: ${attendanceOptions.length}',
+                              Colors.blueGrey,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogCtx).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton.icon(
+                    icon: Icon(
+                      existing == null ? Icons.add_rounded : Icons.edit_rounded,
+                    ),
+                    label: Text(existing == null ? 'Add log' : 'Save'),
+                    onPressed: () async {
+                      final sessions = _asInt(sessionsC.text);
+                      final amount = _asInt(amountC.text);
+                      final pct = _asInt(percentC.text).clamp(0, 100);
+                      if (sessions <= 0 ||
+                          amount <= 0 ||
+                          pct <= 0 ||
+                          startDate.trim().isEmpty ||
+                          endDate.trim().isEmpty) {
+                        AppToast.fromSnackBar(
+                          context,
+                          const SnackBar(
+                            content: Text(
+                              'Fill sessions, amount, percentage, start date, and end date.',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      final ok =
+                          await showDialog<bool>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: Text(
+                                existing == null
+                                    ? 'Add this log?'
+                                    : 'Save changes?',
+                              ),
+                              content: Text(
+                                '${learner.name}\n$startDate to $endDate\n$sessions sessions • $amount DA • $pct%',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(context, true),
+                                  child: const Text('Confirm'),
+                                ),
+                              ],
+                            ),
+                          ) ??
+                          false;
+                      if (!ok) return;
+
+                      final selectedSessionIds = attendanceOptions
+                          .where(
+                            (a) =>
+                                a.date.compareTo(startDate) >= 0 &&
+                                a.date.compareTo(endDate) <= 0,
+                          )
+                          .map((a) => a.id)
+                          .toList();
+                      final teacherNet = ((amount * pct) / 100).round();
+                      final schoolNet = (amount - teacherNet).clamp(0, amount);
+                      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                      final ref = existing == null
+                          ? _db
+                                .child(
+                                  'teacher_wage_logs/${teacher.uid}/${learner.uid}',
+                                )
+                                .push()
+                          : _db.child(
+                              'teacher_wage_logs/${teacher.uid}/${learner.uid}/${existing.id}',
+                            );
+                      await ref.update({
+                        'teacherUid': teacher.uid,
+                        'teacherName': teacher.name,
+                        'learnerUid': learner.uid,
+                        'learnerName': learner.name,
+                        'learnerSerial': learner.serial,
+                        'sessionCount': sessions,
+                        'startDate': startDate.trim(),
+                        'endDate': endDate.trim(),
+                        'amount': amount,
+                        'teacherPercent': pct,
+                        'teacherNet': teacherNet,
+                        'schoolNet': schoolNet,
+                        'attendanceSessionIds': selectedSessionIds,
+                        'updatedAt': ServerValue.timestamp,
+                        'updatedBy': uid,
+                        if (existing == null)
+                          'createdAt': ServerValue.timestamp,
+                        if (existing == null) 'createdBy': uid,
+                      });
+                      if (dialogCtx.mounted) Navigator.of(dialogCtx).pop(true);
+                    },
+                  ),
+                ],
+              );
+            },
+          );
+        },
       );
-    } catch (e) {
-      if (!context.mounted) return;
-      AppToast.fromSnackBar(
-        context,
-        SnackBar(
-          content: Text(
-            toHumanError(e, fallback: 'Could not update this wage entry.'),
+      if (saved == true && mounted) {
+        AppToast.fromSnackBar(
+          context,
+          SnackBar(
+            content: Text(
+              existing == null ? 'Wage log added.' : 'Wage log updated.',
+            ),
           ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.fromSnackBar(
+        context,
+        SnackBar(
+          content: Text(toHumanError(e, fallback: 'Could not save wage log.')),
         ),
       );
+    } finally {
+      sessionsC.dispose();
+      amountC.dispose();
+      percentC.dispose();
     }
   }
 
-  Future<void> _adminRemoveTeacherConfirmation({
-    required BuildContext context,
-    required String paymentId,
-    String? allocationId,
+  Future<void> _deleteLog({
+    required _PersonInfo teacher,
+    required _PersonInfo learner,
+    required _WageLog log,
   }) async {
     final ok =
         await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text('Remove confirmation?'),
-            content: const Text(
-              'This will undo the confirmation for this payment.',
+            title: const Text('Delete wage log?'),
+            content: Text(
+              'Delete ${learner.name}\'s log from ${log.startDate} to ${log.endDate}?',
             ),
             actions: [
               TextButton(
@@ -514,455 +700,158 @@ class AdminWagesScreen extends StatelessWidget {
               FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: Colors.red),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Remove'),
+                child: const Text('Delete'),
               ),
             ],
           ),
         ) ??
         false;
-
     if (!ok) return;
-
     try {
-      final ref = (allocationId ?? '').trim().isEmpty
-          ? FirebaseDatabase.instance.ref('payments/$paymentId')
-          : FirebaseDatabase.instance.ref(
-              'payments/$paymentId/financeAllocations/${allocationId!.trim()}',
-            );
-      await ref.update({
-        'teacherConfirmed': null,
-        'teacherConfirmedAt': null,
-        'teacherConfirmedBy': null,
-        if ((allocationId ?? '').trim().isNotEmpty) 'payoutStatus': 'tbpaid',
-        'updatedAt': ServerValue.timestamp,
-      });
-
-      if (!context.mounted) return;
+      await _db
+          .child('teacher_wage_logs/${teacher.uid}/${learner.uid}/${log.id}')
+          .remove();
+      if (!mounted) return;
       AppToast.fromSnackBar(
         context,
-        const SnackBar(content: Text('Confirmation removed ✅')),
+        const SnackBar(content: Text('Wage log deleted.')),
       );
     } catch (e) {
-      if (!context.mounted) return;
+      if (!mounted) return;
       AppToast.fromSnackBar(
         context,
         SnackBar(
           content: Text(
-            toHumanError(e, fallback: 'Could not complete this action.'),
+            toHumanError(e, fallback: 'Could not delete wage log.'),
           ),
         ),
       );
     }
   }
 
+  static Widget _pill(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w900,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final paymentsRef = FirebaseDatabase.instance.ref('payments');
-    final classesRef = FirebaseDatabase.instance.ref('classes');
-    final learnersRef = FirebaseDatabase.instance.ref(
-      'users',
-    ); // <-- assumed path
-
     return Scaffold(
-      backgroundColor: appBg,
+      backgroundColor: AdminWagesScreen.appBg,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 0,
         surfaceTintColor: Colors.white,
+        elevation: 0,
         title: const Text(
           'Wages',
-          style: TextStyle(color: primaryBlue, fontWeight: FontWeight.w900),
-        ),
-        actions: [
-          const SizedBox.shrink(),
-          IconButton(
-            tooltip: 'Export Excel',
-            icon: const Icon(Icons.file_download_outlined),
-            onPressed: () async {
-              try {
-                await AdminWagesExcelExporter.exportAndShareExcel(context);
-                if (!context.mounted) return;
-                AppToast.fromSnackBar(
-                  context,
-                  const SnackBar(content: Text('Excel exported ✅')),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-                AppToast.fromSnackBar(
-                  context,
-                  SnackBar(
-                    content: Text(
-                      toHumanError(e, fallback: 'Could not export wages file.'),
-                    ),
-                  ),
-                );
-              }
-            },
+          style: TextStyle(
+            color: AdminWagesScreen.primaryBlue,
+            fontWeight: FontWeight.w900,
           ),
-        ],
+        ),
       ),
       body: adminWebBodyFrame(
         context: context,
-        maxWidth: 1700,
+        maxWidth: 1500,
         child: StreamBuilder<DatabaseEvent>(
-          stream: paymentsRef
-              .orderByChild('paidAt')
-              .limitToLast(_paymentsWindowSize)
-              .onValue,
-          builder: (context, paySnap) {
-            final payRaw = paySnap.data?.snapshot.value;
-
-            if (paySnap.hasError) {
-              return const Center(child: Text('Could not load wages.'));
-            }
-            if (!paySnap.hasData) {
+          stream: _db.child('users').onValue,
+          builder: (context, usersSnap) {
+            if (usersSnap.hasError)
+              return const Center(child: Text('Could not load users.'));
+            if (!usersSnap.hasData)
               return const Center(child: CircularProgressIndicator());
-            }
-            if (payRaw is! Map) {
-              return const Center(child: Text('No payments found.'));
-            }
-
-            // Payments list
-            final payments = <Map<String, dynamic>>[];
-            payRaw.forEach((k, v) {
-              if (k == null || v == null) return;
-              if (v is! Map) return;
-              final m = v.map((kk, vv) => MapEntry(kk.toString(), vv));
-              final payment = {'paymentId': k.toString(), ...m};
-              final rows = financeAllocationsFromPayment(payment);
-              for (final row in rows) {
-                payments.add(row.toRow());
-              }
-            });
-
-            // Sort newest first by paidAt
-            payments.sort(
-              (a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])),
-            );
-
-            // Group (NEW): teacherId -> list of payments (NO MONTH GROUPING)
-            final Map<String, List<Map<String, dynamic>>> groupedByTeacher = {};
-            for (final p in payments) {
-              final teacherId = (p['teacherId'] ?? '').toString().trim();
-              final teacherKey = teacherId.isEmpty ? 'Unknown' : teacherId;
-              groupedByTeacher.putIfAbsent(teacherKey, () => []);
-              groupedByTeacher[teacherKey]!.add(p);
-            }
-
-            final teacherKeys = groupedByTeacher.keys.toList()
-              ..sort((a, b) {
-                final aName =
-                    (groupedByTeacher[a]!.isNotEmpty
-                            ? (groupedByTeacher[a]!.first['teacherName'] ?? '')
-                            : '')
-                        .toString()
-                        .trim();
-                final bName =
-                    (groupedByTeacher[b]!.isNotEmpty
-                            ? (groupedByTeacher[b]!.first['teacherName'] ?? '')
-                            : '')
-                        .toString()
-                        .trim();
-                final aa = aName.isEmpty ? a : aName;
-                final bb = bName.isEmpty ? b : bName;
-                return aa.toLowerCase().compareTo(bb.toLowerCase());
-              });
-
-            if (teacherKeys.isEmpty) {
-              return const Center(child: Text('No payments found.'));
-            }
-
+            final people = _parsePeople(usersSnap.data?.snapshot.value);
             return StreamBuilder<DatabaseEvent>(
-              stream: classesRef.onValue,
-              builder: (context, classSnap) {
-                final classRaw = classSnap.data?.snapshot.value;
-
-                final studyingByTeacher = _parseStudyingFromClasses(classRaw);
-                final studyingAll = <String>{};
-                for (final s in studyingByTeacher.values) {
-                  studyingAll.addAll(s);
-                }
-
+              stream: _db.child('classes').onValue,
+              builder: (context, classesSnap) {
+                if (classesSnap.hasError)
+                  return const Center(child: Text('Could not load classes.'));
+                if (!classesSnap.hasData)
+                  return const Center(child: CircularProgressIndicator());
                 return StreamBuilder<DatabaseEvent>(
-                  stream: learnersRef.onValue,
-                  builder: (context, learnersSnap) {
-                    final learnersRaw = learnersSnap.data?.snapshot.value;
-                    final learnerMap = _parseLearners(learnersRaw);
-
-                    // Stats header: still shows THIS MONTH global stats (same as before)
-                    final nowMonthKey = _monthKeyNow();
-                    final monthPayments = payments.where((p) {
-                      final mk = _monthKeyFromPaidAtMs(_asInt(p['paidAt']));
-                      return mk == nowMonthKey;
-                    }).toList();
-
-                    final stats = _StatsData.fromMonth(
-                      monthLabel: _prettyMonthLabel(nowMonthKey),
-                      monthPayments: monthPayments,
-                      studyingAllUids: studyingAll,
-                      asInt: _asInt,
-                      asBool: _asBool,
+                  stream: _db.child('booking_progress').onValue,
+                  builder: (context, bookingSnap) {
+                    final source = _buildSourceData(
+                      people: people,
+                      classesRaw: classesSnap.data?.snapshot.value,
+                      bookingProgressRaw: bookingSnap.data?.snapshot.value,
                     );
-
-                    // Missing uids (global) for this month
-                    final paidUidsThisMonth = <String>{};
-                    for (final p in monthPayments) {
-                      final uid = (p['uid'] ?? '').toString().trim();
-                      if (uid.isNotEmpty) paidUidsThisMonth.add(uid);
-                    }
-                    final missingUidsThisMonth = <String>{...studyingAll}
-                      ..removeAll(paidUidsThisMonth);
-
-                    List<_LearnerInfo> missingGlobalList() {
-                      final list = <_LearnerInfo>[];
-                      for (final uid in missingUidsThisMonth) {
-                        list.add(
-                          learnerMap[uid] ??
-                              const _LearnerInfo(uid: '', name: '', serial: ''),
-                        );
-                        if (list.last.uid.isEmpty) {
-                          list[list.length - 1] = _LearnerInfo(
-                            uid: uid,
-                            name: '',
-                            serial: '',
+                    return StreamBuilder<DatabaseEvent>(
+                      stream: _db.child('teacher_wage_logs').onValue,
+                      builder: (context, logsSnap) {
+                        final logs = _parseLogs(logsSnap.data?.snapshot.value);
+                        final teachers = source.teachers;
+                        if (teachers.isEmpty) {
+                          return const Center(
+                            child: Text('No teachers found.'),
                           );
                         }
-                      }
-                      list.sort((a, b) {
-                        final aa = a.name.trim().isEmpty
-                            ? a.uid
-                            : a.name.trim();
-                        final bb = b.name.trim().isEmpty
-                            ? b.uid
-                            : b.name.trim();
-                        return aa.toLowerCase().compareTo(bb.toLowerCase());
-                      });
-                      return list;
-                    }
-
-                    final waitingRows = <Map<String, dynamic>>[];
-                    final schoolRows = <Map<String, dynamic>>[];
-                    var waitingTotal = 0;
-                    var schoolTotal = 0;
-                    var grossTotal = 0;
-                    var teacherNetTotal = 0;
-                    var confirmedCount = 0;
-
-                    for (final p in payments) {
-                      final alloc = _financeAlloc(p);
-                      if (alloc.waiting > 0) {
-                        waitingRows.add(p);
-                        waitingTotal += alloc.waiting;
-                      }
-
-                      if (_isPushed(p)) {
-                        final gross = _teacherGross(p);
-                        final tNet = _teacherNet(p);
-                        final sNet = _schoolNet(p);
-                        grossTotal += gross;
-                        teacherNetTotal += tNet;
-                        schoolTotal += sNet;
-                        if (sNet > 0) schoolRows.add(p);
-                      }
-
-                      if (_asBool(p['teacherConfirmed'])) {
-                        confirmedCount++;
-                      }
-                    }
-
-                    void openFinanceDetails({
-                      required String title,
-                      required List<Map<String, dynamic>> rows,
-                      required bool waitingMode,
-                    }) {
-                      showDialog<void>(
-                        context: context,
-                        builder: (dialogCtx) {
-                          return AlertDialog(
-                            title: Text(title),
-                            content: SizedBox(
-                              width: 860,
-                              child: rows.isEmpty
-                                  ? const Center(child: Text('No records.'))
-                                  : ListView.separated(
-                                      shrinkWrap: true,
-                                      itemCount: rows.length,
-                                      separatorBuilder: (_, _) =>
-                                          const Divider(height: 1),
-                                      itemBuilder: (_, i) {
-                                        final p = rows[i];
-                                        final alloc = _financeAlloc(p);
-                                        final learner = _learnerName(p);
-                                        final teacher = _teacherName(p);
-                                        final method = _methodLabel(p);
-                                        final date = _fmtYmdFromMs(
-                                          _asInt(p['paidAt']),
-                                        );
-                                        final percent = _teacherPercent(
-                                          p['financeTeacherPercent'],
-                                        );
-                                        final gross = _teacherGross(p);
-                                        final tNet = _teacherNet(p);
-                                        final sNet = _schoolNet(p);
-                                        final pushed =
-                                            (p['financePushedStatus'] ?? '')
-                                                .toString()
-                                                .trim()
-                                                .toUpperCase();
-
-                                        return ListTile(
-                                          dense: true,
-                                          title: Text(
-                                            learner,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                              color: primaryBlue,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            waitingMode
-                                                ? 'Teacher: $teacher · Date: ${date.isEmpty ? '—' : date} · $method\nPayment: ${_asInt(p['amount'])} DA · Paid: ${alloc.tbpaid + alloc.done} DA · Waiting: ${alloc.waiting} DA\nSplit status: ${(p['financePayoutStatus'] ?? '').toString().toUpperCase()}'
-                                                : 'Teacher: $teacher · Date: ${date.isEmpty ? '—' : date} · $method\nGross: $gross DA · Teacher net: $tNet DA · School net: $sNet DA · %: $percent\nPushed: ${pushed.isEmpty ? '-' : pushed} · Confirmed: ${_asBool(p['teacherConfirmed']) ? 'YES' : 'NO'}',
-                                            style: const TextStyle(
-                                              color: primaryBlue,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          isThreeLine: true,
-                                        );
-                                      },
-                                    ),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(dialogCtx).pop(),
-                                child: const Text('Close'),
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            final width = constraints.maxWidth;
+                            final crossAxisCount = width >= 1100
+                                ? 4
+                                : (width >= 760 ? 3 : (width >= 520 ? 2 : 1));
+                            return GridView.builder(
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                12,
+                                12,
+                                24,
                               ),
-                            ],
-                          );
-                        },
-                      );
-                    }
-
-                    return ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 18),
-                      itemCount: teacherKeys.length + 1,
-                      itemBuilder: (context, i) {
-                        if (i == 0) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Column(
-                              children: [
-                                _StatsHeaderCard(
-                                  data: stats,
-                                  onTapMissing: () {
-                                    _showMissingBottomSheet(
-                                      context: context,
-                                      title:
-                                          'Not paid yet • ${stats.monthLabel}',
-                                      learners: missingGlobalList(),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 10),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  children: [
-                                    _FinanceSummaryCard(
-                                      title: 'Gross (Pushed)',
-                                      value: '$grossTotal DA',
-                                      color: const Color(0xFF64748B),
-                                    ),
-                                    _FinanceSummaryCard(
-                                      title: 'Teacher Net',
-                                      value: '$teacherNetTotal DA',
-                                      color: const Color(0xFF3666D8),
-                                    ),
-                                    _FinanceSummaryCard(
-                                      title: 'School (Pushed)',
-                                      value: '$schoolTotal DA',
-                                      color: const Color(0xFF1F3B7A),
-                                      onTap: () => openFinanceDetails(
-                                        title: 'School Net (Pushed Only)',
-                                        rows: schoolRows,
-                                        waitingMode: false,
-                                      ),
-                                    ),
-                                    _FinanceSummaryCard(
-                                      title: 'Waiting (All Teachers)',
-                                      value: '$waitingTotal DA',
-                                      color: const Color(0xFFF0A526),
-                                      onTap: () => openFinanceDetails(
-                                        title: 'Waiting (All Teachers)',
-                                        rows: waitingRows,
-                                        waitingMode: true,
-                                      ),
-                                    ),
-                                    _FinanceSummaryCard(
-                                      title: 'Confirmed',
-                                      value: '$confirmedCount',
-                                      color: const Color(0xFF22945A),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        final tKey = teacherKeys[i - 1];
-                        final teacherPayments =
-                            groupedByTeacher[tKey] ?? const [];
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: uiBorder.withValues(alpha: 0.8),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 10,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                          ),
-                          child: _TeacherSection(
-                            teacherId: tKey,
-                            payments: teacherPayments,
-                            nowMonthKey: nowMonthKey,
-                            studyingLearnerUids:
-                                studyingByTeacher[tKey] ??
-                                _tryMatchStudyingByTeacherName(
-                                  teacherName:
-                                      (teacherPayments.isNotEmpty
-                                              ? (teacherPayments
-                                                        .first['teacherName'] ??
-                                                    '')
-                                              : '')
-                                          .toString()
-                                          .trim(),
-                                  studyingByTeacher: studyingByTeacher,
-                                ),
-                            learnerMap: learnerMap,
-                            onTogglePaid: (paymentId, allocationId, makePaid) =>
-                                _togglePaid(
-                                  context: context,
-                                  paymentId: paymentId,
-                                  allocationId: allocationId,
-                                  makePaid: makePaid,
-                                ),
-                            onRemoveTeacherConfirm: (paymentId, allocationId) =>
-                                _adminRemoveTeacherConfirmation(
-                                  context: context,
-                                  paymentId: paymentId,
-                                  allocationId: allocationId,
-                                ),
-                          ),
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: crossAxisCount,
+                                    mainAxisSpacing: 12,
+                                    crossAxisSpacing: 12,
+                                    childAspectRatio: 0.95,
+                                  ),
+                              itemCount: teachers.length,
+                              itemBuilder: (context, i) {
+                                final teacher = teachers[i];
+                                final learners =
+                                    source.learnersByTeacher[teacher.uid] ??
+                                    const <_PersonInfo>[];
+                                var logCount = 0;
+                                var teacherNet = 0;
+                                for (final learner in learners) {
+                                  final bucket =
+                                      logs[_pairKey(
+                                        teacher.uid,
+                                        learner.uid,
+                                      )] ??
+                                      const <String, _WageLog>{};
+                                  logCount += bucket.length;
+                                  teacherNet += bucket.values.fold<int>(
+                                    0,
+                                    (sum, log) => sum + log.teacherNet,
+                                  );
+                                }
+                                return _TeacherCard(
+                                  teacher: teacher,
+                                  learnerCount: learners.length,
+                                  logCount: logCount,
+                                  teacherNet: teacherNet,
+                                  onTap: () =>
+                                      _openTeacher(teacher, source, logs),
+                                );
+                              },
+                            );
+                          },
                         );
                       },
                     );
@@ -977,1045 +866,521 @@ class AdminWagesScreen extends StatelessWidget {
   }
 }
 
-// ---------------- Data models ----------------
-
-class _LearnerInfo {
-  const _LearnerInfo({
-    required this.uid,
-    required this.name,
-    required this.serial,
+class _TeacherWageDetailScreen extends StatelessWidget {
+  const _TeacherWageDetailScreen({
+    required this.teacher,
+    required this.learners,
+    required this.attendanceByPair,
+    required this.logsByPair,
+    required this.onAddOrEditLog,
+    required this.onDeleteLog,
   });
 
-  final String uid;
-  final String name;
-  final String serial;
-}
+  final _PersonInfo teacher;
+  final List<_PersonInfo> learners;
+  final Map<String, List<_AttendanceOption>> attendanceByPair;
+  final Map<String, Map<String, _WageLog>> logsByPair;
+  final Future<void> Function({
+    required _PersonInfo teacher,
+    required _PersonInfo learner,
+    required List<_AttendanceOption> attendanceOptions,
+    _WageLog? existing,
+  })
+  onAddOrEditLog;
+  final Future<void> Function({
+    required _PersonInfo teacher,
+    required _PersonInfo learner,
+    required _WageLog log,
+  })
+  onDeleteLog;
 
-class _FinanceAlloc {
-  const _FinanceAlloc({
-    required this.gross,
-    required this.tbpaid,
-    required this.waiting,
-    required this.done,
-  });
-
-  final int gross;
-  final int tbpaid;
-  final int waiting;
-  final int done;
-}
-
-class _StatsData {
-  _StatsData({
-    required this.monthLabel,
-    required this.paymentsCount,
-    required this.paidLearnersCount,
-    required this.studyingLearnersCount,
-    required this.notPaidYetCount,
-    required this.totalAmount,
-    required this.unpaidCount,
-    required this.unpaidAmount,
-    required this.notConfirmedCount,
-    required this.incompleteCount,
-  });
-
-  final String monthLabel;
-
-  final int paymentsCount;
-  final int paidLearnersCount;
-  final int studyingLearnersCount;
-  final int notPaidYetCount;
-
-  final int totalAmount;
-
-  final int unpaidCount;
-  final int unpaidAmount;
-
-  final int notConfirmedCount;
-  final int incompleteCount;
-
-  static _StatsData fromMonth({
-    required String monthLabel,
-    required List<Map<String, dynamic>> monthPayments,
-    required Set<String> studyingAllUids,
-    required int Function(dynamic) asInt,
-    required bool Function(dynamic) asBool,
-  }) {
-    final paidUids = <String>{};
-
-    int totalAmount = 0;
-    int unpaidCount = 0;
-    int unpaidAmount = 0;
-    int notConfirmedCount = 0;
-    int incompleteCount = 0;
-
-    for (final p in monthPayments) {
-      final uid = (p['uid'] ?? '').toString().trim();
-      if (uid.isNotEmpty) {
-        paidUids.add(uid);
-      } else {
-        incompleteCount++;
-      }
-
-      final amount = asInt(p['amount']);
-      totalAmount += amount;
-
-      final teacherPaid = asBool(p['teacherPaid']);
-      if (!teacherPaid) {
-        unpaidCount++;
-        unpaidAmount += amount;
-      }
-
-      final teacherConfirmed = asBool(p['teacherConfirmed']);
-      if (!teacherConfirmed) {
-        notConfirmedCount++;
-      }
-
-      final learnerName = (p['learner_name'] ?? '').toString().trim();
-      if (learnerName.isEmpty) incompleteCount++;
+  @override
+  Widget build(BuildContext context) {
+    var totalLogs = 0;
+    var totalNet = 0;
+    for (final learner in learners) {
+      final bucket =
+          logsByPair[_AdminWagesScreenState._pairKey(
+            teacher.uid,
+            learner.uid,
+          )] ??
+          const <String, _WageLog>{};
+      totalLogs += bucket.length;
+      totalNet += bucket.values.fold<int>(
+        0,
+        (sum, log) => sum + log.teacherNet,
+      );
     }
 
-    final notPaidYet = <String>{...studyingAllUids}..removeAll(paidUids);
-
-    return _StatsData(
-      monthLabel: monthLabel,
-      paymentsCount: monthPayments.length,
-      paidLearnersCount: paidUids.length,
-      studyingLearnersCount: studyingAllUids.length,
-      notPaidYetCount: notPaidYet.length,
-      totalAmount: totalAmount,
-      unpaidCount: unpaidCount,
-      unpaidAmount: unpaidAmount,
-      notConfirmedCount: notConfirmedCount,
-      incompleteCount: incompleteCount,
-    );
-  }
-}
-
-// ---------------- Stats header card ----------------
-
-class _StatsHeaderCard extends StatelessWidget {
-  const _StatsHeaderCard({required this.data, required this.onTapMissing});
-
-  final _StatsData data;
-  final VoidCallback onTapMissing;
-
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const uiBorder = Color(0xFFD1D9E0);
-  String _fmtDa(int n) => '$n DA';
-
-  Widget _tile({
-    required String label,
-    required String value,
-    IconData? icon,
-    VoidCallback? onTap,
-  }) {
-    final child = Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7F9),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
+    return Scaffold(
+      backgroundColor: AdminWagesScreen.appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        title: Text(
+          teacher.name,
+          style: const TextStyle(
+            color: AdminWagesScreen.primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
       ),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 18, color: primaryBlue.withValues(alpha: 0.85)),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                    color: Colors.black.withValues(alpha: 0.65),
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1200,
+        child: Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AdminWagesScreen.uiBorder),
+              ),
+              child: Row(
+                children: [
+                  ProfileAvatar(
+                    name: teacher.name,
+                    photoUrl: teacher.photoUrl,
+                    radius: 38,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                    color: primaryBlue,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (onTap != null) ...[
-            const SizedBox(width: 6),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.black.withValues(alpha: 0.35),
-            ),
-          ],
-        ],
-      ),
-    );
-
-    if (onTap == null) return child;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: child,
-    );
-  }
-
-  Widget _smallNotice(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7F9),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.8)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Stats • ${data.monthLabel}',
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
-              color: primaryBlue,
-              fontSize: 15,
-            ),
-          ),
-          const SizedBox(height: 10),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 2.6,
-            children: [
-              _tile(
-                label: 'Studying',
-                value: '${data.studyingLearnersCount}',
-                icon: Icons.groups_rounded,
-              ),
-              _tile(
-                label: 'Paid learners',
-                value: '${data.paidLearnersCount}',
-                icon: Icons.verified_rounded,
-              ),
-              _tile(
-                label: 'Not paid yet',
-                value: '${data.notPaidYetCount}',
-                icon: Icons.person_off_rounded,
-                onTap: onTapMissing,
-              ),
-              _tile(
-                label: 'Payments',
-                value: '${data.paymentsCount}',
-                icon: Icons.receipt_long_rounded,
-              ),
-              _tile(
-                label: 'Unpaid (to staff)',
-                value: '${data.unpaidCount} • ${_fmtDa(data.unpaidAmount)}',
-                icon: Icons.payments_rounded,
-              ),
-              _tile(
-                label: 'Total',
-                value: _fmtDa(data.totalAmount),
-                icon: Icons.account_balance_wallet_rounded,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              if (data.notConfirmedCount > 0)
-                _smallNotice('Waiting confirmation: ${data.notConfirmedCount}'),
-              if (data.incompleteCount > 0)
-                _smallNotice(
-                  'Some records incomplete: ${data.incompleteCount}',
-                ),
-              if (data.paymentsCount == 0)
-                _smallNotice('No payments in this month yet.'),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FinanceSummaryCard extends StatelessWidget {
-  const _FinanceSummaryCard({
-    required this.title,
-    required this.value,
-    required this.color,
-    this.onTap,
-  });
-
-  final String title;
-  final String value;
-  final Color color;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Container(
-      width: 230,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (onTap == null) return child;
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: child,
-    );
-  }
-}
-
-// ---------------- Teacher -> Learners -> Payments ----------------
-
-class _TeacherSection extends StatelessWidget {
-  const _TeacherSection({
-    required this.teacherId,
-    required this.payments,
-    required this.nowMonthKey,
-    required this.studyingLearnerUids,
-    required this.learnerMap,
-    required this.onTogglePaid,
-    required this.onRemoveTeacherConfirm,
-  });
-
-  final String teacherId;
-  final List<Map<String, dynamic>> payments;
-
-  // to compute "not paid yet" for current month for this teacher
-  final String nowMonthKey;
-
-  final Set<String>? studyingLearnerUids;
-  final Map<String, _LearnerInfo> learnerMap;
-
-  final Future<void> Function(
-    String paymentId,
-    String? allocationId,
-    bool makePaid,
-  )
-  onTogglePaid;
-  final Future<void> Function(String paymentId, String? allocationId)
-  onRemoveTeacherConfirm;
-
-  static const primaryBlue = Color(0xFF1A2B48);
-
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
-  static bool _asBool(dynamic v) {
-    if (v == null) return false;
-    if (v is bool) return v;
-    final s = v.toString().trim().toLowerCase();
-    return s == 'true' || s == '1' || s == 'yes';
-  }
-
-  static void _showMissingList({
-    required BuildContext context,
-    required String title,
-    required List<_LearnerInfo> learners,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (_) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                          color: primaryBlue,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          teacher.name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: AdminWagesScreen.primaryBlue,
+                            fontSize: 20,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _AdminWagesScreenState._pill(
+                              'Learners: ${learners.length}',
+                              AdminWagesScreen.primaryBlue,
+                            ),
+                            _AdminWagesScreenState._pill(
+                              'Logs: $totalLogs',
+                              Colors.blueGrey,
+                            ),
+                            _AdminWagesScreenState._pill(
+                              'Teacher net: $totalNet DA',
+                              Colors.green,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                if (learners.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    child: Text(
-                      'Nothing to show 🎉',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black.withValues(alpha: 0.65),
-                      ),
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: learners.isEmpty
+                  ? const Center(
+                      child: Text('No learners found for this teacher.'),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
                       itemCount: learners.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final l = learners[i];
-                        final displayName = l.name.isNotEmpty
-                            ? l.name
-                            : '(No name)';
-                        final sub = [
-                          if (l.serial.isNotEmpty) l.serial,
-                          l.uid,
-                        ].join(' • ');
-
-                        return ListTile(
-                          dense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 4,
+                      itemBuilder: (context, i) {
+                        final learner = learners[i];
+                        final pairKey = _AdminWagesScreenState._pairKey(
+                          teacher.uid,
+                          learner.uid,
+                        );
+                        final attendance =
+                            attendanceByPair[pairKey] ??
+                            const <_AttendanceOption>[];
+                        final logs =
+                            (logsByPair[pairKey] ?? const <String, _WageLog>{})
+                                .values
+                                .toList()
+                              ..sort((a, b) => b.sortKey.compareTo(a.sortKey));
+                        return _LearnerWageCard(
+                          teacher: teacher,
+                          learner: learner,
+                          attendanceOptions: attendance,
+                          logs: logs,
+                          onAdd: () => onAddOrEditLog(
+                            teacher: teacher,
+                            learner: learner,
+                            attendanceOptions: attendance,
                           ),
-                          title: Text(
-                            displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          onEdit: (log) => onAddOrEditLog(
+                            teacher: teacher,
+                            learner: learner,
+                            attendanceOptions: attendance,
+                            existing: log,
                           ),
-                          subtitle: Text(
-                            sub,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          onDelete: (log) => onDeleteLog(
+                            teacher: teacher,
+                            learner: learner,
+                            log: log,
                           ),
                         );
                       },
                     ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final teacherName =
-        (payments.isNotEmpty ? (payments.first['teacherName'] ?? '') : '')
-            .toString()
-            .trim();
-    final header = teacherName.isNotEmpty ? teacherName : teacherId;
-
-    final itemsAll = [...payments]
-      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
-
-    // Teacher totals (ALL TIME, finance model)
-    int grossAll = 0;
-    int teacherNetAll = 0;
-    int schoolNetAll = 0;
-    int confirmedCount = 0;
-    for (final p in itemsAll) {
-      final alloc = AdminWagesScreen._financeAlloc(p);
-      final percent = AdminWagesScreen._teacherPercent(
-        p['financeTeacherPercent'],
-      );
-      final int gross = alloc.tbpaid + alloc.done;
-      final int tNet = AdminWagesScreen._netOf(gross, percent);
-      final int sNet = gross - tNet;
-      grossAll += gross;
-      teacherNetAll += tNet;
-      schoolNetAll += sNet;
-      if (_asBool(p['teacherConfirmed'])) confirmedCount++;
-    }
-
-    // Teacher "not paid yet" (CURRENT MONTH only)
-    final itemsThisMonth = itemsAll.where((p) {
-      final mk = AdminWagesScreen._monthKeyFromPaidAtMs(_asInt(p['paidAt']));
-      return mk == nowMonthKey;
-    }).toList();
-
-    final paidUidsThisMonth = <String>{};
-    for (final p in itemsThisMonth) {
-      final uid = (p['uid'] ?? '').toString().trim();
-      if (uid.isNotEmpty) paidUidsThisMonth.add(uid);
-    }
-
-    int notPaidYet = 0;
-    List<_LearnerInfo> missingList = const [];
-
-    final studying = studyingLearnerUids ?? <String>{};
-    if (studying.isNotEmpty) {
-      final missingUids = <String>{...studying}..removeAll(paidUidsThisMonth);
-      notPaidYet = missingUids.length;
-
-      final list = <_LearnerInfo>[];
-      for (final uid in missingUids) {
-        list.add(
-          learnerMap[uid] ?? _LearnerInfo(uid: uid, name: '', serial: ''),
-        );
-      }
-      list.sort((a, b) {
-        final aa = a.name.trim().isEmpty ? a.uid : a.name.trim();
-        final bb = b.name.trim().isEmpty ? b.uid : b.name.trim();
-        return aa.toLowerCase().compareTo(bb.toLowerCase());
-      });
-      missingList = list;
-    }
-
-    // Group by learner (uid) under this teacher
-    final Map<String, List<Map<String, dynamic>>> byLearner = {};
-    for (final p in itemsAll) {
-      final uid = (p['uid'] ?? '').toString().trim();
-      final key = uid.isEmpty ? 'Unknown' : uid;
-      byLearner.putIfAbsent(key, () => []);
-      byLearner[key]!.add(p);
-    }
-
-    final learnerKeys = byLearner.keys.toList()
-      ..sort((a, b) {
-        String nameA = '';
-        String nameB = '';
-        if (a != 'Unknown') {
-          nameA = (learnerMap[a]?.name ?? '').trim();
-        }
-        if (b != 'Unknown') {
-          nameB = (learnerMap[b]?.name ?? '').trim();
-        }
-        if (nameA.isEmpty) {
-          nameA =
-              (byLearner[a]!.isNotEmpty
-                      ? (byLearner[a]!.first['learner_name'] ?? '')
-                      : '')
-                  .toString()
-                  .trim();
-        }
-        if (nameB.isEmpty) {
-          nameB =
-              (byLearner[b]!.isNotEmpty
-                      ? (byLearner[b]!.first['learner_name'] ?? '')
-                      : '')
-                  .toString()
-                  .trim();
-        }
-        final aa = nameA.isEmpty ? a : nameA;
-        final bb = nameB.isEmpty ? b : nameB;
-        return aa.toLowerCase().compareTo(bb.toLowerCase());
-      });
-
-    final subtitle =
-        'Learners: ${learnerKeys.length} • Payments: ${itemsAll.length} • Gross: $grossAll DA • Net: $teacherNetAll DA • School: $schoolNetAll DA • Received: $confirmedCount';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              header,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                color: primaryBlue,
-                fontSize: 15,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                if (notPaidYet > 0) ...[
-                  const SizedBox(width: 8),
-                  InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => _showMissingList(
-                      context: context,
-                      title:
-                          'Not paid yet • $header • ${AdminWagesScreen._prettyMonthLabel(nowMonthKey)}',
-                      learners: missingList,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.red.withValues(alpha: 0.45),
-                        ),
-                      ),
-                      child: Text(
-                        'List ($notPaidYet)',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                          color: Colors.red,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
             ),
           ],
         ),
-        children: [
-          for (final lKey in learnerKeys) ...[
-            _LearnerSection(
-              learnerUid: lKey,
-              payments: byLearner[lKey] ?? const [],
-              learnerMap: learnerMap,
-              onTogglePaid: onTogglePaid,
-              onRemoveTeacherConfirm: onRemoveTeacherConfirm,
-            ),
-            const SizedBox(height: 10),
-          ],
-        ],
       ),
     );
   }
 }
 
-class _LearnerSection extends StatelessWidget {
-  const _LearnerSection({
-    required this.learnerUid,
-    required this.payments,
-    required this.learnerMap,
-    required this.onTogglePaid,
-    required this.onRemoveTeacherConfirm,
+class _TeacherCard extends StatelessWidget {
+  const _TeacherCard({
+    required this.teacher,
+    required this.learnerCount,
+    required this.logCount,
+    required this.teacherNet,
+    required this.onTap,
   });
 
-  final String learnerUid;
-  final List<Map<String, dynamic>> payments;
-  final Map<String, _LearnerInfo> learnerMap;
-
-  final Future<void> Function(
-    String paymentId,
-    String? allocationId,
-    bool makePaid,
-  )
-  onTogglePaid;
-  final Future<void> Function(String paymentId, String? allocationId)
-  onRemoveTeacherConfirm;
-
-  static const primaryBlue = Color(0xFF1A2B48);
-  static const uiBorder = Color(0xFFD1D9E0);
-
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
-  static bool _asBool(dynamic v) {
-    if (v == null) return false;
-    if (v is bool) return v;
-    final s = v.toString().trim().toLowerCase();
-    return s == 'true' || s == '1' || s == 'yes';
-  }
+  final _PersonInfo teacher;
+  final int learnerCount;
+  final int logCount;
+  final int teacherNet;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final items = [...payments]
-      ..sort((a, b) => _asInt(b['paidAt']).compareTo(_asInt(a['paidAt'])));
-
-    // Learner name/serial
-    String learnerName = '';
-    String learnerSerial = '';
-
-    if (learnerUid != 'Unknown') {
-      final info = learnerMap[learnerUid];
-      learnerName = (info?.name ?? '').trim();
-      learnerSerial = (info?.serial ?? '').trim();
-    }
-
-    if (learnerName.isEmpty) {
-      learnerName =
-          (items.isNotEmpty ? (items.first['learner_name'] ?? '') : '')
-              .toString()
-              .trim();
-    }
-    if (learnerSerial.isEmpty) {
-      learnerSerial =
-          (items.isNotEmpty ? (items.first['learner_serial'] ?? '') : '')
-              .toString()
-              .trim();
-    }
-
-    if (learnerName.isEmpty) {
-      learnerName = learnerUid == 'Unknown' ? 'Unknown learner' : learnerUid;
-    }
-
-    int total = 0;
-    int unpaid = 0;
-    for (final p in items) {
-      final amount = _asInt(p['amount']);
-      total += amount;
-      if (!_asBool(p['teacherPaid'])) unpaid++;
-    }
-
-    final subtitle = [
-      if (learnerSerial.isNotEmpty) learnerSerial,
-      'Payments: ${items.length}',
-      'Unpaid: $unpaid',
-      'Total: $total DA',
-    ].join(' • ');
-
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7F9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: uiBorder.withValues(alpha: 0.85)),
-      ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return InkWell(
+      borderRadius: BorderRadius.circular(22),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: AdminWagesScreen.uiBorder.withValues(alpha: 0.85),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.035),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            ProfileAvatar(
+              name: teacher.name,
+              photoUrl: teacher.photoUrl,
+              radius: 48,
+            ),
+            const SizedBox(height: 14),
             Text(
-              learnerName,
-              maxLines: 1,
+              teacher.name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontWeight: FontWeight.w900,
-                color: primaryBlue,
-                fontSize: 14,
+                color: AdminWagesScreen.primaryBlue,
+                fontSize: 16,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 12),
+            _AdminWagesScreenState._pill(
+              '$learnerCount learners',
+              AdminWagesScreen.primaryBlue,
+            ),
+            const SizedBox(height: 8),
             Text(
-              subtitle,
-              maxLines: 2,
+              '$logCount logs • $teacherNet DA',
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.65),
-                fontWeight: FontWeight.w700,
+                color: Colors.black.withValues(alpha: 0.62),
+                fontWeight: FontWeight.w800,
                 fontSize: 12,
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _LearnerWageCard extends StatelessWidget {
+  const _LearnerWageCard({
+    required this.teacher,
+    required this.learner,
+    required this.attendanceOptions,
+    required this.logs,
+    required this.onAdd,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final _PersonInfo teacher;
+  final _PersonInfo learner;
+  final List<_AttendanceOption> attendanceOptions;
+  final List<_WageLog> logs;
+  final VoidCallback onAdd;
+  final ValueChanged<_WageLog> onEdit;
+  final ValueChanged<_WageLog> onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalNet = logs.fold<int>(0, (sum, log) => sum + log.teacherNet);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AdminWagesScreen.uiBorder.withValues(alpha: 0.85),
+        ),
+      ),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        leading: ProfileAvatar(
+          name: learner.name,
+          photoUrl: learner.photoUrl,
+          radius: 22,
+        ),
+        title: Text(
+          learner.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: AdminWagesScreen.primaryBlue,
+          ),
+        ),
+        subtitle: Text(
+          [
+            if (learner.serial.isNotEmpty) learner.serial,
+            '${attendanceOptions.length} attendance dates',
+            '${logs.length} logs',
+            '$totalNet DA',
+          ].join(' • '),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: Colors.black.withValues(alpha: 0.62),
+          ),
+        ),
+        trailing: IconButton(
+          tooltip: 'Add wage log',
+          icon: const Icon(
+            Icons.payments_rounded,
+            color: AdminWagesScreen.actionOrange,
+          ),
+          onPressed: onAdd,
+        ),
         children: [
-          for (final p in items) ...[
-            _PaymentRow(
-              payment: p,
-              onTogglePaid: onTogglePaid,
-              onRemoveTeacherConfirm: onRemoveTeacherConfirm,
-            ),
-            const SizedBox(height: 8),
-          ],
+          if (logs.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AdminWagesScreen.appBg,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Text(
+                'No wage logs yet. Tap the cash icon to add one.',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            )
+          else
+            for (final log in logs) ...[
+              _WageLogRow(
+                log: log,
+                onEdit: () => onEdit(log),
+                onDelete: () => onDelete(log),
+              ),
+              const SizedBox(height: 8),
+            ],
         ],
       ),
     );
   }
 }
 
-// ---------------- Existing row ----------------
-
-class _PaymentRow extends StatelessWidget {
-  const _PaymentRow({
-    required this.payment,
-    required this.onTogglePaid,
-    required this.onRemoveTeacherConfirm,
+class _WageLogRow extends StatelessWidget {
+  const _WageLogRow({
+    required this.log,
+    required this.onEdit,
+    required this.onDelete,
   });
 
-  final Map<String, dynamic> payment;
-  final Future<void> Function(
-    String paymentId,
-    String? allocationId,
-    bool makePaid,
-  )
-  onTogglePaid;
-  final Future<void> Function(String paymentId, String? allocationId)
-  onRemoveTeacherConfirm;
-
-  static int _asInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
-  static bool _asBool(dynamic v) {
-    if (v == null) return false;
-    if (v is bool) return v;
-    final s = v.toString().trim().toLowerCase();
-    return s == 'true' || s == '1' || s == 'yes';
-  }
-
-  static String _two(int n) => n.toString().padLeft(2, '0');
-
-  static String _fmtYmdFromMs(int ms) {
-    if (ms <= 0) return '';
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.year}-${_two(d.month)}-${_two(d.day)}';
-  }
-
-  static Widget _miniTag(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF4F7F9),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFD1D9E0)),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-      ),
-    );
-  }
-
-  static Widget _chip({required String text, required Color color}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.65)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontWeight: FontWeight.w900,
-          color: color,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
+  final _WageLog log;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final paymentId = (payment['paymentId'] ?? '').toString().trim();
-    final allocationId = (payment['allocationId'] ?? '').toString().trim();
-
-    final learnerName = (payment['learner_name'] ?? '').toString().trim();
-    final serial = (payment['learner_serial'] ?? '').toString().trim();
-
-    final paidAtMs = _asInt(payment['paidAt']);
-    final paidDate = _fmtYmdFromMs(paidAtMs);
-
-    final startDate = (payment['startDate'] ?? '').toString().trim();
-
-    final sessionsPaid = _asInt(payment['assignedSessions']);
-    final left = _asInt(payment['remindBeforeSession']);
-    final amount = _asInt(payment['amount']);
-    final alloc = AdminWagesScreen._financeAlloc(payment);
-    final percent = AdminWagesScreen._teacherPercent(
-      payment['financeTeacherPercent'],
-    );
-    final gross = alloc.tbpaid + alloc.done;
-    final teacherNet = AdminWagesScreen._netOf(gross, percent);
-    final schoolNet = gross - teacherNet;
-
-    final isPaidStaff = _asBool(payment['teacherPaid']);
-    final confirmed = _asBool(payment['teacherConfirmed']);
-
-    final paidChipBg = isPaidStaff
-        ? Colors.green.withValues(alpha: 0.15)
-        : Colors.red.withValues(alpha: 0.12);
-    final paidChipBorder = isPaidStaff ? Colors.green : Colors.red;
-    final paidChipText = isPaidStaff ? 'PAID' : 'UNPAID';
-
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AdminWagesScreen.appBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+        border: Border.all(
+          color: AdminWagesScreen.uiBorder.withValues(alpha: 0.7),
+        ),
       ),
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(
-                  learnerName.isEmpty ? '(No name)' : learnerName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w900),
+                _AdminWagesScreenState._pill(
+                  '${log.startDate} -> ${log.endDate}',
+                  AdminWagesScreen.primaryBlue,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  [
-                    if (serial.isNotEmpty) serial,
-                    if (paidDate.isNotEmpty) 'Paid: $paidDate',
-                    if (startDate.isNotEmpty) 'Start: $startDate',
-                  ].join(' • '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.black.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
+                _AdminWagesScreenState._pill(
+                  '${log.sessionCount} sessions',
+                  Colors.blueGrey,
                 ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: [
-                    _miniTag('Sessions: $sessionsPaid'),
-                    _miniTag('Left: $left'),
-                    _miniTag('Amount: $amount DA'),
-                    _miniTag('Share: $percent%'),
-                    _miniTag('Gross: $gross DA'),
-                    _miniTag('Net: $teacherNet DA'),
-                    _miniTag('School: $schoolNet DA'),
-                  ],
+                _AdminWagesScreenState._pill(
+                  '${log.amount} DA',
+                  Colors.black87,
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _chip(
-                      text: confirmed ? 'RECEIVED' : 'NOT RECEIVED',
-                      color: confirmed ? Colors.green : Colors.red,
-                    ),
-                    if (confirmed && paymentId.isNotEmpty)
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.undo_rounded, size: 18),
-                        label: const Text('Unconfirm'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: BorderSide(
-                            color: Colors.red.withValues(alpha: 0.5),
-                          ),
-                        ),
-                        onPressed: () =>
-                            onRemoveTeacherConfirm(paymentId, allocationId),
-                      ),
-                  ],
+                _AdminWagesScreenState._pill(
+                  '${log.teacherPercent}% = ${log.teacherNet} DA',
+                  Colors.green,
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: paymentId.isEmpty
-                ? null
-                : () => onTogglePaid(paymentId, allocationId, !isPaidStaff),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: paidChipBg,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: paidChipBorder.withValues(alpha: 0.7),
-                ),
-              ),
-              child: Text(
-                paidChipText,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: paidChipBorder,
-                  fontSize: 12,
-                ),
-              ),
+          IconButton(
+            tooltip: 'Edit',
+            onPressed: onEdit,
+            icon: const Icon(
+              Icons.edit_rounded,
+              color: AdminWagesScreen.actionOrange,
             ),
           ),
+          IconButton(
+            tooltip: 'Delete',
+            onPressed: onDelete,
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _WageSourceData {
+  const _WageSourceData({
+    required this.teachers,
+    required this.learnersByTeacher,
+    required this.attendanceByTeacherLearner,
+  });
+
+  final List<_PersonInfo> teachers;
+  final Map<String, List<_PersonInfo>> learnersByTeacher;
+  final Map<String, List<_AttendanceOption>> attendanceByTeacherLearner;
+}
+
+class _PersonInfo {
+  const _PersonInfo({
+    required this.uid,
+    required this.name,
+    required this.serial,
+    required this.role,
+    required this.photoUrl,
+  });
+
+  final String uid;
+  final String name;
+  final String serial;
+  final String role;
+  final String photoUrl;
+}
+
+class _AttendanceOption {
+  const _AttendanceOption({
+    required this.id,
+    required this.date,
+    required this.sortMs,
+    required this.label,
+    required this.source,
+    required this.courseId,
+    required this.courseTitle,
+    required this.present,
+  });
+
+  final String id;
+  final String date;
+  final int sortMs;
+  final String label;
+  final String source;
+  final String courseId;
+  final String courseTitle;
+  final bool present;
+}
+
+class _WageLog {
+  const _WageLog({
+    required this.id,
+    required this.sessionCount,
+    required this.startDate,
+    required this.endDate,
+    required this.amount,
+    required this.teacherPercent,
+    required this.teacherNet,
+    required this.schoolNet,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final int sessionCount;
+  final String startDate;
+  final String endDate;
+  final int amount;
+  final int teacherPercent;
+  final int teacherNet;
+  final int schoolNet;
+  final int updatedAt;
+
+  int get sortKey => updatedAt > 0
+      ? updatedAt
+      : _AdminWagesScreenState._sortMsFromYmd(endDate);
+
+  factory _WageLog.fromMap(String id, Map<String, dynamic> map) {
+    final amount = _AdminWagesScreenState._asInt(map['amount']);
+    final percent = _AdminWagesScreenState._asInt(
+      map['teacherPercent'],
+    ).clamp(0, 100);
+    final teacherNet = _AdminWagesScreenState._asInt(map['teacherNet']) > 0
+        ? _AdminWagesScreenState._asInt(map['teacherNet'])
+        : ((amount * percent) / 100).round();
+    return _WageLog(
+      id: id,
+      sessionCount: _AdminWagesScreenState._asInt(map['sessionCount']),
+      startDate: _AdminWagesScreenState._safeString(map['startDate']),
+      endDate: _AdminWagesScreenState._safeString(map['endDate']),
+      amount: amount,
+      teacherPercent: percent,
+      teacherNet: teacherNet,
+      schoolNet: _AdminWagesScreenState._asInt(map['schoolNet']) > 0
+          ? _AdminWagesScreenState._asInt(map['schoolNet'])
+          : (amount - teacherNet).clamp(0, amount),
+      updatedAt: _AdminWagesScreenState._asInt(
+        map['updatedAt'] ?? map['createdAt'],
       ),
     );
   }

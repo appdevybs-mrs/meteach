@@ -115,6 +115,11 @@ class _AdminTeacherAvailabilityOverviewScreenState
     return '$first $last'.trim();
   }
 
+  bool _isTeacherRole(dynamic role) {
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'teacher' || r == 'teachers' || r == 'teacher(s)';
+  }
+
   Future<void> _loadAll() async {
     setState(() => loading = true);
 
@@ -193,13 +198,10 @@ class _AdminTeacherAvailabilityOverviewScreenState
       usersRoot.forEach((uid, rawUser) {
         if (rawUser is! Map) return;
         final um = rawUser.map((k, v) => MapEntry(k.toString(), v));
-        final role = (um['role'] ?? '').toString().trim().toLowerCase();
-        if (role == 'teacher') {
+        if (_isTeacherRole(um['role'])) {
           teacherIds.add(uid);
         }
       });
-
-      teacherIds.addAll(bookingRoot.keys);
 
       final List<_TeacherCoverage> builtTeachers = [];
       final Map<String, List<_TeacherCoverage>> courseCoverage = {};

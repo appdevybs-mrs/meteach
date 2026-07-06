@@ -33,6 +33,7 @@ import '../shared/session_manager.dart';
 import 'admin_booking.dart';
 import 'admin_teacher_session_count_screen.dart';
 import 'admin_attendance_overview_screen.dart';
+import 'admin_learners_feedback_screen.dart';
 import 'admin_timetable_screen.dart';
 import 'admin_teacher_availability_overview_screen.dart';
 import '../shared/app_feedback.dart';
@@ -132,6 +133,7 @@ class _AdminHomeState extends State<AdminHome> {
     'Classes',
     'Payments',
     'Courses',
+    "Learners' Feedback",
     'Online Booking',
     'Priority Alerts',
     'Admin Mail',
@@ -598,6 +600,22 @@ class _AdminHomeState extends State<AdminHome> {
             () => Navigator.of(
               context,
             ).push(_fastAdminRoute(const AdminCourseReviewsScreen())),
+          ),
+        ),
+      ),
+      card(
+        "Learners' Feedback",
+        windowKey: AppWindowKeys.adminLearnersFeedback,
+        child: _DashCard(
+          title: "Learners' Feedback",
+          icon: Icons.rate_review_rounded,
+          color: AdminHome.accentGreen,
+          isReceptionistStyle: !_isAdminMode,
+          onTap: () => _openAdminWindow(
+            AppWindowKeys.adminLearnersFeedback,
+            () => Navigator.of(
+              context,
+            ).push(_fastAdminRoute(const AdminLearnersFeedbackScreen())),
           ),
         ),
       ),
@@ -2870,17 +2888,41 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
     return s == 'true' || s == '1' || s == 'yes';
   }
 
-  int _slotCount(dynamic availability) {
-    if (availability is! Map) return 0;
+  bool _isAvailabilityMetaKey(String key) {
+    return key == 'settings' ||
+        key == 'teacherId' ||
+        key == 'teacherName' ||
+        key == 'teacher_name' ||
+        key == 'updatedAt';
+  }
+
+  int _slotCount(Map<String, dynamic> teacherNode) {
     var c = 0;
-    availability.forEach((_, rawDay) {
-      if (rawDay is Map) {
-        c += rawDay.length;
-      } else if (rawDay is List) {
-        c += rawDay.length;
-      }
+    teacherNode.forEach((key, rawCourse) {
+      if (_isAvailabilityMetaKey(key) || rawCourse is! Map) return;
+
+      final course = rawCourse.map((k, v) => MapEntry(k.toString(), v));
+      if (!_toBool(course['courseOnlineEnabled'])) return;
+
+      final week = course['week'];
+      if (week is! Map) return;
+
+      week.forEach((_, rawDay) {
+        if (rawDay is List) {
+          c += rawDay.length;
+        }
+      });
     });
     return c;
+  }
+
+  bool _teacherOnline(Map<String, dynamic> teacherNode) {
+    final settings = teacherNode['settings'];
+    if (settings is Map) {
+      final sm = settings.map((k, v) => MapEntry(k.toString(), v));
+      return _toBool(sm['teacherOnlineEnabled']);
+    }
+    return false;
   }
 
   @override
@@ -2898,12 +2940,10 @@ class _TeacherAvailabilityDashCard extends StatelessWidget {
           root.forEach((_, teacherNode) {
             if (teacherNode is! Map) return;
             final m = teacherNode.map((k, v) => MapEntry(k.toString(), v));
-            final settings = m['settings'];
-            if (settings is Map) {
-              final sm = settings.map((k, v) => MapEntry(k.toString(), v));
-              if (_toBool(sm['teacherOnlineEnabled'])) online += 1;
+            if (_teacherOnline(m)) {
+              online += 1;
+              slots += _slotCount(m);
             }
-            slots += _slotCount(m['availability']);
           });
         }
 

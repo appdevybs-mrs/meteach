@@ -57,6 +57,8 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
   DatabaseReference get _deletedRef => _db.ref(_deletedPath);
   DatabaseReference get _blockedRef => _db.ref(_blockedPath);
 
+  String _bookingAvailabilityPath(String uid) => 'booking_availability/$uid';
+
   @override
   void initState() {
     super.initState();
@@ -225,6 +227,10 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
         '$_usersPath/$uid': null,
       };
 
+      if (staff.role == StaffRole.teacher) {
+        updates[_bookingAvailabilityPath(uid)] = null;
+      }
+
       await _db.ref().update(updates);
 
       _snack('Moved to deleted 🗑️');
@@ -246,8 +252,16 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     final data = staff.toMap()
       ..addAll({'movedAt': ServerValue.timestamp, 'movedFrom': _usersPath});
 
-    await _blockedRef.child(uid).set(data);
-    await _usersRef.child(uid).remove();
+    final updates = <String, dynamic>{
+      '$_blockedPath/$uid': data,
+      '$_usersPath/$uid': null,
+    };
+
+    if (staff.role == StaffRole.teacher) {
+      updates[_bookingAvailabilityPath(uid)] = null;
+    }
+
+    await _db.ref().update(updates);
 
     _snack('Moved to blocked ⛔');
   }
@@ -290,7 +304,11 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     _snack('Unblocked ✅');
   }
 
-  Future<void> _deletePermanently(String uid, DatabaseReference fromRef) async {
+  Future<void> _deletePermanently(
+    String uid,
+    Staff staff,
+    String fromPath,
+  ) async {
     final ok = await _confirm(
       title: 'Delete permanently?',
       message: 'This cannot be undone.',
@@ -299,7 +317,13 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
     );
     if (!ok) return;
 
-    await fromRef.child(uid).remove();
+    final updates = <String, dynamic>{'$fromPath/$uid': null};
+
+    if (staff.role == StaffRole.teacher) {
+      updates[_bookingAvailabilityPath(uid)] = null;
+    }
+
+    await _db.ref().update(updates);
     _snack('Deleted permanently ✅');
   }
 
@@ -464,7 +488,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
                     await _restoreFromDeleted(uid, staff);
                     break;
                   case _RowAction.deleteForever:
-                    await _deletePermanently(uid, _deletedRef);
+                    await _deletePermanently(uid, staff, _deletedPath);
                     break;
                   default:
                     break;
@@ -498,7 +522,7 @@ class _AdminStaffScreenState extends State<AdminStaffScreen>
                     await _restoreFromBlocked(uid, staff);
                     break;
                   case _RowAction.deleteForever:
-                    await _deletePermanently(uid, _blockedRef);
+                    await _deletePermanently(uid, staff, _blockedPath);
                     break;
                   default:
                     break;
