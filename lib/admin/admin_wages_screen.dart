@@ -21,6 +21,23 @@ class AdminWagesScreen extends StatefulWidget {
 
 class _AdminWagesScreenState extends State<AdminWagesScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+  final TextEditingController _searchC = TextEditingController();
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchC.addListener(() {
+      if (!mounted) return;
+      setState(() => _search = _searchC.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchC.dispose();
+    super.dispose();
+  }
 
   static int _asInt(dynamic v) {
     if (v == null) return 0;
@@ -96,9 +113,73 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
         serial: _safeString(map['serial'] ?? map['learner_serial']),
         role: role,
         photoUrl: ProfileAvatar.resolvePhotoFromMap(map),
+        fallbackLevel: _fallbackLevelFromUserMap(map),
       );
     });
     return out;
+  }
+
+  static String _fallbackLevelFromUserMap(Map<String, dynamic> map) {
+    final courses = map['courses'];
+    if (courses is! Map) return '';
+    final levels = <String>{};
+    courses.forEach((_, courseValue) {
+      if (courseValue is! Map) return;
+      final course = courseValue.map((k, v) => MapEntry(k.toString(), v));
+      final variant = _normalizeVariant(
+        course['variantKey'] ?? course['variant'],
+      );
+      if (variant == 'recorded') return;
+      final classMap = course['class'] is Map
+          ? (course['class'] as Map).map((k, v) => MapEntry(k.toString(), v))
+          : <String, dynamic>{};
+      final level = _safeString(
+        course['course_level'] ??
+            course['level'] ??
+            classMap['course_level'] ??
+            classMap['level'],
+      );
+      if (level.isNotEmpty) levels.add(level);
+    });
+    if (levels.isEmpty) return '';
+    final sorted = levels.toList()..sort();
+    return sorted.first;
+  }
+
+  static String _variantLabel(String variant) {
+    switch (_normalizeVariant(variant)) {
+      case 'flexible':
+        return 'Flexible';
+      case 'private':
+        return 'Private';
+      case 'recorded':
+        return 'Recorded';
+      default:
+        return 'In-class';
+    }
+  }
+
+  static String _classGroupTitle(Map<String, dynamic> cls, String classKey) {
+    final level = _safeString(cls['course_level'] ?? cls['level']);
+    final code = _safeString(cls['course_code']);
+    final title = _safeString(cls['course_title'] ?? cls['title']);
+    final parts = <String>[
+      if (level.isNotEmpty) level,
+      if (code.isNotEmpty) code,
+      if (title.isNotEmpty) title,
+    ];
+    if (parts.isEmpty) return classKey.isEmpty ? 'Class' : 'Class $classKey';
+    return parts.join(' - ');
+  }
+
+  static String _classGroupSubtitle(Map<String, dynamic> cls, String classKey) {
+    final classId = _safeString(cls['class_id']).isNotEmpty
+        ? _safeString(cls['class_id'])
+        : classKey;
+    final variant = _variantLabel(
+      _safeString(cls['variantKey'] ?? cls['variant']),
+    );
+    return [if (classId.isNotEmpty) 'Class: $classId', variant].join(' • ');
   }
 
   static bool _flexConsumesCredit(Map<String, dynamic> m) {
@@ -116,6 +197,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
   }) {
     final learnerUidsByTeacher = <String, Set<String>>{};
     final attendanceByTeacherLearner = <String, List<_AttendanceOption>>{};
+    final classGroupsByTeacher = <String, Map<String, _LearnerGroup>>{};
 
     void addLearner(String teacherUid, String learnerUid) {
       final t = teacherUid.trim();
@@ -134,6 +216,46 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
       attendanceByTeacherLearner
           .putIfAbsent(key, () => <_AttendanceOption>[])
           .add(option);
+    }
+
+    void addToClassGroup({
+      required String teacherUid,
+      required String groupId,
+      required String title,
+      required String subtitle,
+      required String learnerUid,
+    }) {
+      final teacher = teacherUid.trim();
+      final learner = learnerUid.trim();
+      if (teacher.isEmpty || learner.isEmpty) return;
+      addLearner(teacher, learner);
+      final groupMap = classGroupsByTeacher.putIfAbsent(
+        teacher,
+        () => <String, _LearnerGroup>{},
+      );
+      final group = groupMap.putIfAbsent(
+        groupId,
+        () => _LearnerGroup(
+          id: groupId,
+          title: title,
+          subtitle: subtitle,
+          kind: 'class',
+          learners: <_PersonInfo>[],
+        ),
+      );
+      final person =
+          people[learner] ??
+          _PersonInfo(
+            uid: learner,
+            name: learner,
+            serial: '',
+            role: 'learner',
+            photoUrl: '',
+            fallbackLevel: '',
+          );
+      if (!group.learners.any((p) => p.uid == person.uid)) {
+        group.learners.add(person);
+      }
     }
 
     if (classesRaw is Map) {
@@ -159,8 +281,20 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
 
         final learners = cls['learners'];
         if (learners is Map && classTeacherUid.isNotEmpty) {
+          final classId = _safeString(cls['class_id']).isNotEmpty
+              ? _safeString(cls['class_id'])
+              : classKey.toString();
+          final groupId = 'class|$classId';
+          final groupTitle = _classGroupTitle(cls, classId);
+          final groupSubtitle = _classGroupSubtitle(cls, classId);
           for (final learnerKey in learners.keys) {
-            addLearner(classTeacherUid, learnerKey.toString());
+            addToClassGroup(
+              teacherUid: classTeacherUid,
+              groupId: groupId,
+              title: groupTitle,
+              subtitle: groupSubtitle,
+              learnerUid: learnerKey.toString(),
+            );
           }
         }
 
@@ -269,6 +403,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     final learnerLists = <String, List<_PersonInfo>>{};
+    final groupsByTeacher = <String, List<_LearnerGroup>>{};
     for (final teacher in teachers) {
       final uids = learnerUidsByTeacher[teacher.uid] ?? <String>{};
       final learners =
@@ -280,11 +415,55 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                   serial: '',
                   role: 'learner',
                   photoUrl: '',
+                  fallbackLevel: '',
                 );
           }).toList()..sort(
             (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
           );
       learnerLists[teacher.uid] = learners;
+
+      final classGroups = (classGroupsByTeacher[teacher.uid] ?? {}).values
+          .toList();
+      for (final group in classGroups) {
+        group.learners.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+      }
+      classGroups.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
+
+      final groupedUids = <String>{};
+      for (final group in classGroups) {
+        groupedUids.addAll(group.learners.map((l) => l.uid));
+      }
+      final ungrouped = learners
+          .where((l) => !groupedUids.contains(l.uid))
+          .toList();
+      final levelBuckets = <String, List<_PersonInfo>>{};
+      for (final learner in ungrouped) {
+        final level = learner.fallbackLevel.trim().isEmpty
+            ? 'No level'
+            : learner.fallbackLevel.trim();
+        levelBuckets.putIfAbsent(level, () => <_PersonInfo>[]).add(learner);
+      }
+      final levelGroups =
+          levelBuckets.entries.map((entry) {
+            final list = entry.value
+              ..sort(
+                (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+              );
+            return _LearnerGroup(
+              id: 'level|${entry.key}',
+              title: 'Level: ${entry.key}',
+              subtitle: 'No class group found',
+              kind: 'level',
+              learners: list,
+            );
+          }).toList()..sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+          );
+      groupsByTeacher[teacher.uid] = [...classGroups, ...levelGroups];
     }
 
     for (final list in attendanceByTeacherLearner.values) {
@@ -303,6 +482,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
       teachers: teachers,
       learnersByTeacher: learnerLists,
       attendanceByTeacherLearner: attendanceByTeacherLearner,
+      groupsByTeacher: groupsByTeacher,
     );
   }
 
@@ -337,22 +517,48 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
     return out;
   }
 
+  static Map<String, Map<String, _WageLog>> _parseTeacherLogs(
+    String teacherUid,
+    dynamic raw,
+  ) {
+    final out = <String, Map<String, _WageLog>>{};
+    final teacher = teacherUid.trim();
+    if (teacher.isEmpty || raw is! Map) return out;
+    final teacherNode = Map<dynamic, dynamic>.from(raw);
+    teacherNode.forEach((learnerKey, learnerValue) {
+      final learnerUid = learnerKey.toString().trim();
+      if (learnerUid.isEmpty || learnerValue is! Map) return;
+      final learnerNode = Map<dynamic, dynamic>.from(learnerValue);
+      learnerNode.forEach((logKey, logValue) {
+        if (logValue is! Map) return;
+        final id = logKey.toString().trim();
+        if (id.isEmpty) return;
+        final map = logValue
+            .map((k, v) => MapEntry(k.toString(), v))
+            .cast<String, dynamic>();
+        out.putIfAbsent(
+          _pairKey(teacher, learnerUid),
+          () => <String, _WageLog>{},
+        )[id] = _WageLog.fromMap(
+          id,
+          map,
+        );
+      });
+    });
+    return out;
+  }
+
   static String _pairKey(String teacherUid, String learnerUid) =>
       '${teacherUid.trim()}|${learnerUid.trim()}';
 
-  Future<void> _openTeacher(
-    _PersonInfo teacher,
-    _WageSourceData source,
-    Map<String, Map<String, _WageLog>> logs,
-  ) async {
+  Future<void> _openTeacher(_PersonInfo teacher, _WageSourceData source) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => _TeacherWageDetailScreen(
           teacher: teacher,
-          learners:
-              source.learnersByTeacher[teacher.uid] ?? const <_PersonInfo>[],
+          groups:
+              source.groupsByTeacher[teacher.uid] ?? const <_LearnerGroup>[],
           attendanceByPair: source.attendanceByTeacherLearner,
-          logsByPair: logs,
           onAddOrEditLog: _showWageLogDialog,
           onDeleteLog: _deleteLog,
         ),
@@ -748,6 +954,34 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
     );
   }
 
+  static bool _matches(String text, String query) {
+    if (query.isEmpty) return true;
+    return text.toLowerCase().contains(query);
+  }
+
+  static bool _teacherMatchesSearch({
+    required _PersonInfo teacher,
+    required List<_PersonInfo> learners,
+    required String query,
+  }) {
+    if (query.isEmpty) return true;
+    final teacherHaystack = [
+      teacher.name,
+      teacher.serial,
+      teacher.uid,
+    ].join(' ');
+    if (_matches(teacherHaystack, query)) return true;
+    for (final learner in learners) {
+      final learnerHaystack = [
+        learner.name,
+        learner.serial,
+        learner.uid,
+      ].join(' ');
+      if (_matches(learnerHaystack, query)) return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -794,62 +1028,92 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                       stream: _db.child('teacher_wage_logs').onValue,
                       builder: (context, logsSnap) {
                         final logs = _parseLogs(logsSnap.data?.snapshot.value);
-                        final teachers = source.teachers;
+                        final teachers = source.teachers.where((teacher) {
+                          final learners =
+                              source.learnersByTeacher[teacher.uid] ??
+                              const <_PersonInfo>[];
+                          return _teacherMatchesSearch(
+                            teacher: teacher,
+                            learners: learners,
+                            query: _search,
+                          );
+                        }).toList();
                         if (teachers.isEmpty) {
-                          return const Center(
-                            child: Text('No teachers found.'),
+                          return Column(
+                            children: [
+                              _SearchBox(
+                                controller: _searchC,
+                                hint: 'Search teacher or learner...',
+                              ),
+                              const Expanded(
+                                child: Center(
+                                  child: Text('No teachers found.'),
+                                ),
+                              ),
+                            ],
                           );
                         }
                         return LayoutBuilder(
                           builder: (context, constraints) {
                             final width = constraints.maxWidth;
-                            final crossAxisCount = width >= 1100
-                                ? 4
-                                : (width >= 760 ? 3 : (width >= 520 ? 2 : 1));
-                            return GridView.builder(
-                              padding: const EdgeInsets.fromLTRB(
-                                12,
-                                12,
-                                12,
-                                24,
-                              ),
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: crossAxisCount,
-                                    mainAxisSpacing: 12,
-                                    crossAxisSpacing: 12,
-                                    childAspectRatio: 0.95,
+                            final crossAxisCount = width < 430 ? 1 : 2;
+                            return Column(
+                              children: [
+                                _SearchBox(
+                                  controller: _searchC,
+                                  hint: 'Search teacher or learner...',
+                                ),
+                                Expanded(
+                                  child: GridView.builder(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      0,
+                                      12,
+                                      24,
+                                    ),
+                                    gridDelegate:
+                                        SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: crossAxisCount,
+                                          mainAxisSpacing: 10,
+                                          crossAxisSpacing: 10,
+                                          childAspectRatio: crossAxisCount == 1
+                                              ? 2.6
+                                              : 2.25,
+                                        ),
+                                    itemCount: teachers.length,
+                                    itemBuilder: (context, i) {
+                                      final teacher = teachers[i];
+                                      final learners =
+                                          source.learnersByTeacher[teacher
+                                              .uid] ??
+                                          const <_PersonInfo>[];
+                                      var logCount = 0;
+                                      var teacherNet = 0;
+                                      for (final learner in learners) {
+                                        final bucket =
+                                            logs[_pairKey(
+                                              teacher.uid,
+                                              learner.uid,
+                                            )] ??
+                                            const <String, _WageLog>{};
+                                        logCount += bucket.length;
+                                        teacherNet += bucket.values.fold<int>(
+                                          0,
+                                          (sum, log) => sum + log.teacherNet,
+                                        );
+                                      }
+                                      return _TeacherCard(
+                                        teacher: teacher,
+                                        learnerCount: learners.length,
+                                        logCount: logCount,
+                                        teacherNet: teacherNet,
+                                        onTap: () =>
+                                            _openTeacher(teacher, source),
+                                      );
+                                    },
                                   ),
-                              itemCount: teachers.length,
-                              itemBuilder: (context, i) {
-                                final teacher = teachers[i];
-                                final learners =
-                                    source.learnersByTeacher[teacher.uid] ??
-                                    const <_PersonInfo>[];
-                                var logCount = 0;
-                                var teacherNet = 0;
-                                for (final learner in learners) {
-                                  final bucket =
-                                      logs[_pairKey(
-                                        teacher.uid,
-                                        learner.uid,
-                                      )] ??
-                                      const <String, _WageLog>{};
-                                  logCount += bucket.length;
-                                  teacherNet += bucket.values.fold<int>(
-                                    0,
-                                    (sum, log) => sum + log.teacherNet,
-                                  );
-                                }
-                                return _TeacherCard(
-                                  teacher: teacher,
-                                  learnerCount: learners.length,
-                                  logCount: logCount,
-                                  teacherNet: teacherNet,
-                                  onTap: () =>
-                                      _openTeacher(teacher, source, logs),
-                                );
-                              },
+                                ),
+                              ],
                             );
                           },
                         );
@@ -866,20 +1130,242 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
   }
 }
 
-class _TeacherWageDetailScreen extends StatelessWidget {
+class _TeacherWageDetailScreen extends StatefulWidget {
   const _TeacherWageDetailScreen({
     required this.teacher,
-    required this.learners,
+    required this.groups,
     required this.attendanceByPair,
-    required this.logsByPair,
     required this.onAddOrEditLog,
     required this.onDeleteLog,
   });
 
   final _PersonInfo teacher;
-  final List<_PersonInfo> learners;
+  final List<_LearnerGroup> groups;
   final Map<String, List<_AttendanceOption>> attendanceByPair;
+  final Future<void> Function({
+    required _PersonInfo teacher,
+    required _PersonInfo learner,
+    required List<_AttendanceOption> attendanceOptions,
+    _WageLog? existing,
+  })
+  onAddOrEditLog;
+  final Future<void> Function({
+    required _PersonInfo teacher,
+    required _PersonInfo learner,
+    required _WageLog log,
+  })
+  onDeleteLog;
+
+  @override
+  State<_TeacherWageDetailScreen> createState() =>
+      _TeacherWageDetailScreenState();
+}
+
+class _TeacherWageDetailScreenState extends State<_TeacherWageDetailScreen> {
+  final TextEditingController _searchC = TextEditingController();
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchC.addListener(() {
+      if (!mounted) return;
+      setState(() => _search = _searchC.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchC.dispose();
+    super.dispose();
+  }
+
+  List<_PersonInfo> get _uniqueLearners {
+    final byUid = <String, _PersonInfo>{};
+    for (final group in widget.groups) {
+      for (final learner in group.learners) {
+        byUid[learner.uid] = learner;
+      }
+    }
+    return byUid.values.toList();
+  }
+
+  List<_LearnerGroup> _filteredGroups() {
+    if (_search.isEmpty) return widget.groups;
+    final out = <_LearnerGroup>[];
+    for (final group in widget.groups) {
+      final groupText = '${group.title} ${group.subtitle} ${group.kind}'
+          .toLowerCase();
+      if (groupText.contains(_search)) {
+        out.add(group);
+        continue;
+      }
+      final learners = group.learners.where((learner) {
+        final text = '${learner.name} ${learner.serial} ${learner.uid}'
+            .toLowerCase();
+        return text.contains(_search);
+      }).toList();
+      if (learners.isNotEmpty) {
+        out.add(
+          _LearnerGroup(
+            id: group.id,
+            title: group.title,
+            subtitle: group.subtitle,
+            kind: group.kind,
+            learners: learners,
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AdminWagesScreen.appBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        title: Text(
+          widget.teacher.name,
+          style: const TextStyle(
+            color: AdminWagesScreen.primaryBlue,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+      body: adminWebBodyFrame(
+        context: context,
+        maxWidth: 1200,
+        child: StreamBuilder<DatabaseEvent>(
+          stream: FirebaseDatabase.instance
+              .ref('teacher_wage_logs/${widget.teacher.uid}')
+              .onValue,
+          builder: (context, snap) {
+            final logs = _AdminWagesScreenState._parseTeacherLogs(
+              widget.teacher.uid,
+              snap.data?.snapshot.value,
+            );
+            final uniqueLearners = _uniqueLearners;
+            var totalLogs = 0;
+            var totalNet = 0;
+            for (final learner in uniqueLearners) {
+              final bucket =
+                  logs[_AdminWagesScreenState._pairKey(
+                    widget.teacher.uid,
+                    learner.uid,
+                  )] ??
+                  const <String, _WageLog>{};
+              totalLogs += bucket.length;
+              totalNet += bucket.values.fold<int>(
+                0,
+                (sum, log) => sum + log.teacherNet,
+              );
+            }
+            final groups = _filteredGroups();
+            return Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AdminWagesScreen.uiBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      ProfileAvatar(
+                        name: widget.teacher.name,
+                        photoUrl: widget.teacher.photoUrl,
+                        radius: 34,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.teacher.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: AdminWagesScreen.primaryBlue,
+                                fontSize: 18,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _AdminWagesScreenState._pill(
+                                  'Learners: ${uniqueLearners.length}',
+                                  AdminWagesScreen.primaryBlue,
+                                ),
+                                _AdminWagesScreenState._pill(
+                                  'Groups: ${widget.groups.length}',
+                                  Colors.blueGrey,
+                                ),
+                                _AdminWagesScreenState._pill(
+                                  'Logs: $totalLogs',
+                                  Colors.blueGrey,
+                                ),
+                                _AdminWagesScreenState._pill(
+                                  'Teacher net: $totalNet DA',
+                                  Colors.green,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _SearchBox(
+                  controller: _searchC,
+                  hint: 'Search learners, class, or level...',
+                ),
+                Expanded(
+                  child: groups.isEmpty
+                      ? const Center(child: Text('No learners found.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                          itemCount: groups.length,
+                          itemBuilder: (context, i) => _LearnerGroupSection(
+                            group: groups[i],
+                            teacher: widget.teacher,
+                            logsByPair: logs,
+                            attendanceByPair: widget.attendanceByPair,
+                            onAddOrEditLog: widget.onAddOrEditLog,
+                            onDeleteLog: widget.onDeleteLog,
+                          ),
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _LearnerGroupSection extends StatelessWidget {
+  const _LearnerGroupSection({
+    required this.group,
+    required this.teacher,
+    required this.logsByPair,
+    required this.attendanceByPair,
+    required this.onAddOrEditLog,
+    required this.onDeleteLog,
+  });
+
+  final _LearnerGroup group;
+  final _PersonInfo teacher;
   final Map<String, Map<String, _WageLog>> logsByPair;
+  final Map<String, List<_AttendanceOption>> attendanceByPair;
   final Future<void> Function({
     required _PersonInfo teacher,
     required _PersonInfo learner,
@@ -896,141 +1382,138 @@ class _TeacherWageDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var totalLogs = 0;
-    var totalNet = 0;
-    for (final learner in learners) {
-      final bucket =
-          logsByPair[_AdminWagesScreenState._pairKey(
-            teacher.uid,
-            learner.uid,
-          )] ??
-          const <String, _WageLog>{};
-      totalLogs += bucket.length;
-      totalNet += bucket.values.fold<int>(
-        0,
-        (sum, log) => sum + log.teacherNet,
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: AdminWagesScreen.appBg,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        title: Text(
-          teacher.name,
-          style: const TextStyle(
-            color: AdminWagesScreen.primaryBlue,
-            fontWeight: FontWeight.w900,
-          ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 2),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AdminWagesScreen.uiBorder.withValues(alpha: 0.9),
         ),
       ),
-      body: adminWebBodyFrame(
-        context: context,
-        maxWidth: 1200,
-        child: Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AdminWagesScreen.uiBorder),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                group.kind == 'class'
+                    ? Icons.groups_2_rounded
+                    : Icons.school_rounded,
+                color: AdminWagesScreen.primaryBlue,
+                size: 20,
               ),
-              child: Row(
-                children: [
-                  ProfileAvatar(
-                    name: teacher.name,
-                    photoUrl: teacher.photoUrl,
-                    radius: 38,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          teacher.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: AdminWagesScreen.primaryBlue,
-                            fontSize: 20,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _AdminWagesScreenState._pill(
-                              'Learners: ${learners.length}',
-                              AdminWagesScreen.primaryBlue,
-                            ),
-                            _AdminWagesScreenState._pill(
-                              'Logs: $totalLogs',
-                              Colors.blueGrey,
-                            ),
-                            _AdminWagesScreenState._pill(
-                              'Teacher net: $totalNet DA',
-                              Colors.green,
-                            ),
-                          ],
-                        ),
-                      ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AdminWagesScreen.primaryBlue,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                ],
+                    if (group.subtitle.isNotEmpty)
+                      Text(
+                        group.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
               ),
+              _AdminWagesScreenState._pill(
+                '${group.learners.length} learners',
+                group.kind == 'class'
+                    ? AdminWagesScreen.primaryBlue
+                    : Colors.blueGrey,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final learner in group.learners)
+            Builder(
+              builder: (context) {
+                final pairKey = _AdminWagesScreenState._pairKey(
+                  teacher.uid,
+                  learner.uid,
+                );
+                final attendance =
+                    attendanceByPair[pairKey] ?? const <_AttendanceOption>[];
+                final logs =
+                    (logsByPair[pairKey] ?? const <String, _WageLog>{}).values
+                        .toList()
+                      ..sort((a, b) => b.sortKey.compareTo(a.sortKey));
+                return _LearnerWageCard(
+                  teacher: teacher,
+                  learner: learner,
+                  attendanceOptions: attendance,
+                  logs: logs,
+                  onAdd: () => onAddOrEditLog(
+                    teacher: teacher,
+                    learner: learner,
+                    attendanceOptions: attendance,
+                  ),
+                  onEdit: (log) => onAddOrEditLog(
+                    teacher: teacher,
+                    learner: learner,
+                    attendanceOptions: attendance,
+                    existing: log,
+                  ),
+                  onDelete: (log) =>
+                      onDeleteLog(teacher: teacher, learner: learner, log: log),
+                );
+              },
             ),
-            Expanded(
-              child: learners.isEmpty
-                  ? const Center(
-                      child: Text('No learners found for this teacher.'),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                      itemCount: learners.length,
-                      itemBuilder: (context, i) {
-                        final learner = learners[i];
-                        final pairKey = _AdminWagesScreenState._pairKey(
-                          teacher.uid,
-                          learner.uid,
-                        );
-                        final attendance =
-                            attendanceByPair[pairKey] ??
-                            const <_AttendanceOption>[];
-                        final logs =
-                            (logsByPair[pairKey] ?? const <String, _WageLog>{})
-                                .values
-                                .toList()
-                              ..sort((a, b) => b.sortKey.compareTo(a.sortKey));
-                        return _LearnerWageCard(
-                          teacher: teacher,
-                          learner: learner,
-                          attendanceOptions: attendance,
-                          logs: logs,
-                          onAdd: () => onAddOrEditLog(
-                            teacher: teacher,
-                            learner: learner,
-                            attendanceOptions: attendance,
-                          ),
-                          onEdit: (log) => onAddOrEditLog(
-                            teacher: teacher,
-                            learner: learner,
-                            attendanceOptions: attendance,
-                            existing: log,
-                          ),
-                          onDelete: (log) => onDeleteLog(
-                            teacher: teacher,
-                            learner: learner,
-                            log: log,
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchBox extends StatelessWidget {
+  const _SearchBox({required this.controller, required this.hint});
+
+  final TextEditingController controller;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: controller.text.trim().isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: controller.clear,
+                ),
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AdminWagesScreen.uiBorder),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: AdminWagesScreen.uiBorder),
+          ),
         ),
       ),
     );
@@ -1055,13 +1538,13 @@ class _TeacherCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: AdminWagesScreen.uiBorder.withValues(alpha: 0.85),
           ),
@@ -1073,40 +1556,56 @@ class _TeacherCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Row(
           children: [
             ProfileAvatar(
               name: teacher.name,
               photoUrl: teacher.photoUrl,
-              radius: 48,
+              radius: 30,
             ),
-            const SizedBox(height: 14),
-            Text(
-              teacher.name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w900,
-                color: AdminWagesScreen.primaryBlue,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _AdminWagesScreenState._pill(
-              '$learnerCount learners',
-              AdminWagesScreen.primaryBlue,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '$logCount logs • $teacherNet DA',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.black.withValues(alpha: 0.62),
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    teacher.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: AdminWagesScreen.primaryBlue,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 5,
+                    children: [
+                      _AdminWagesScreenState._pill(
+                        '$learnerCount learners',
+                        AdminWagesScreen.primaryBlue,
+                      ),
+                      _AdminWagesScreenState._pill(
+                        '$logCount logs',
+                        Colors.blueGrey,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '$teacherNet DA',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1288,11 +1787,29 @@ class _WageSourceData {
     required this.teachers,
     required this.learnersByTeacher,
     required this.attendanceByTeacherLearner,
+    required this.groupsByTeacher,
   });
 
   final List<_PersonInfo> teachers;
   final Map<String, List<_PersonInfo>> learnersByTeacher;
   final Map<String, List<_AttendanceOption>> attendanceByTeacherLearner;
+  final Map<String, List<_LearnerGroup>> groupsByTeacher;
+}
+
+class _LearnerGroup {
+  const _LearnerGroup({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.kind,
+    required this.learners,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String kind;
+  final List<_PersonInfo> learners;
 }
 
 class _PersonInfo {
@@ -1302,6 +1819,7 @@ class _PersonInfo {
     required this.serial,
     required this.role,
     required this.photoUrl,
+    required this.fallbackLevel,
   });
 
   final String uid;
@@ -1309,6 +1827,7 @@ class _PersonInfo {
   final String serial;
   final String role;
   final String photoUrl;
+  final String fallbackLevel;
 }
 
 class _AttendanceOption {

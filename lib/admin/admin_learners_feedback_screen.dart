@@ -59,9 +59,106 @@ class _AdminLearnersFeedbackScreenState
     return fallback;
   }
 
+  bool _isTeacherLikeRole(dynamic role) {
+    final r = (role ?? '').toString().trim().toLowerCase();
+    return r == 'teacher' ||
+        r == 'teachers' ||
+        r == 'teacher(s)' ||
+        r == 'instructor' ||
+        r == 'oteacher' ||
+        r == 'internationalteacher' ||
+        r == 'international_teacher';
+  }
+
+  String _firstNonEmpty(Iterable<dynamic> values) {
+    for (final value in values) {
+      final text = (value ?? '').toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
   String _classInstructorUid(Map<String, dynamic> cls) {
     final current = _safeMap(cls['instructor_current']);
     return (current['uid'] ?? '').toString().trim();
+  }
+
+  String _classInstructorName(Map<String, dynamic> cls) {
+    final current = _safeMap(cls['instructor_current']);
+    return _firstNonEmpty([
+      current['name'],
+      cls['teacherName'],
+      cls['teacher_name'],
+      cls['instructor'],
+    ]);
+  }
+
+  Map<String, String> _instructorNamesByUid(Map<String, dynamic> courses) {
+    final names = <String, String>{};
+    for (final courseRaw in courses.values) {
+      final course = _safeMap(courseRaw);
+
+      final instructorsMap = _safeMap(course['instructors_map']);
+      for (final entry in instructorsMap.entries) {
+        final uid = entry.key.toString().trim();
+        if (uid.isEmpty) continue;
+        final instructor = _safeMap(entry.value);
+        final name = (instructor['name'] ?? '').toString().trim();
+        if (name.isNotEmpty) names.putIfAbsent(uid, () => name);
+      }
+
+      final instructors = course['instructors'];
+      if (instructors is List) {
+        for (final item in instructors) {
+          final instructor = _safeMap(item);
+          final uid = (instructor['uid'] ?? '').toString().trim();
+          final name = instructor.isEmpty
+              ? item.toString().trim()
+              : (instructor['name'] ?? '').toString().trim();
+          if (uid.isNotEmpty && name.isNotEmpty) {
+            names.putIfAbsent(uid, () => name);
+          }
+        }
+      } else if (instructors is Map) {
+        final map = _safeMap(instructors);
+        for (final entry in map.entries) {
+          final instructor = _safeMap(entry.value);
+          final uid = instructor.isEmpty
+              ? entry.key.toString().trim()
+              : (instructor['uid'] ?? entry.key).toString().trim();
+          final name = instructor.isEmpty
+              ? entry.value.toString().trim()
+              : (instructor['name'] ?? '').toString().trim();
+          if (uid.isNotEmpty && name.isNotEmpty) {
+            names.putIfAbsent(uid, () => name);
+          }
+        }
+      }
+    }
+    return names;
+  }
+
+  _TeacherHomeworkStats _teacherStatsFromIdentity({
+    required String teacherUid,
+    required Map<String, dynamic> users,
+    String nameHint = '',
+  }) {
+    final uid = teacherUid.trim();
+    final user = _safeMap(users[uid]);
+    final fallback = nameHint.trim().isNotEmpty ? nameHint.trim() : 'Teacher';
+    if (user.isEmpty) {
+      return _TeacherHomeworkStats(
+        teacherUid: uid,
+        teacherName: fallback,
+        photoUrl: '',
+      );
+    }
+
+    return _TeacherHomeworkStats(
+      teacherUid: uid,
+      teacherName: _fullName(user, fallback),
+      photoUrl: ProfileAvatar.resolvePhotoFromMap(user),
+    );
   }
 
   bool _homeworkHasAssignment(Map<String, dynamic> hw) {
@@ -92,6 +189,7 @@ class _AdminLearnersFeedbackScreenState
     Map<String, _HomeworkStatItem> itemsByRef, {
     required String homeworkRef,
     required String teacherUid,
+    String teacherNameHint = '',
     required bool sent,
     required Map<String, dynamic> homework,
   }) {
@@ -103,6 +201,7 @@ class _AdminLearnersFeedbackScreenState
     if (existing == null) {
       itemsByRef[cleanRef] = _HomeworkStatItem(
         teacherUid: cleanTeacher,
+        teacherNameHint: teacherNameHint.trim(),
         sent: sent,
         submitted: _toInt(homework['submittedAt']) > 0,
         reviewed: _isReviewed(homework),
@@ -112,6 +211,9 @@ class _AdminLearnersFeedbackScreenState
     }
 
     if (existing.teacherUid != cleanTeacher) return;
+    if (existing.teacherNameHint.isEmpty && teacherNameHint.trim().isNotEmpty) {
+      existing.teacherNameHint = teacherNameHint.trim();
+    }
     existing.sent = existing.sent || sent;
     existing.submitted =
         existing.submitted || _toInt(homework['submittedAt']) > 0;
@@ -130,20 +232,24 @@ class _AdminLearnersFeedbackScreenState
   Future<List<_TeacherHomeworkStats>> _loadStats() async {
     final usersSnap = await _db.child('users').get();
     final classesSnap = await _db.child('classes').get();
+    final coursesSnap = await _db.child('courses').get();
     final threadsSnap = await _db.child('mail_threads').get();
 
     final users = _safeMap(usersSnap.value);
+    final instructorNamesByUid = _instructorNamesByUid(
+      _safeMap(coursesSnap.value),
+    );
     final teachers = <String, _TeacherHomeworkStats>{};
 
     for (final entry in users.entries) {
       final uid = entry.key.toString().trim();
       final user = _safeMap(entry.value);
       final role = (user['role'] ?? '').toString().trim().toLowerCase();
-      if (uid.isEmpty || role != 'teacher') continue;
-      teachers[uid] = _TeacherHomeworkStats(
+      if (uid.isEmpty || !_isTeacherLikeRole(role)) continue;
+      teachers[uid] = _teacherStatsFromIdentity(
         teacherUid: uid,
-        teacherName: _fullName(user, 'Teacher'),
-        photoUrl: ProfileAvatar.resolvePhotoFromMap(user),
+        users: users,
+        nameHint: instructorNamesByUid[uid] ?? '',
       );
     }
 
@@ -155,6 +261,7 @@ class _AdminLearnersFeedbackScreenState
       if (classId.isEmpty) continue;
       final cls = _safeMap(classEntry.value);
       final fallbackTeacherUid = _classInstructorUid(cls);
+      final fallbackTeacherName = _classInstructorName(cls);
       final learners = _safeMap(cls['learners']);
       if (learners.isEmpty) continue;
 
@@ -169,6 +276,12 @@ class _AdminLearnersFeedbackScreenState
         var teacherUid = (session['teacherUid'] ?? '').toString().trim();
         if (teacherUid.isEmpty) teacherUid = fallbackTeacherUid;
         if (teacherUid.isEmpty) continue;
+        final teacherNameHint = _firstNonEmpty([
+          session['teacherName'],
+          session['teacher_name'],
+          fallbackTeacherName,
+          instructorNamesByUid[teacherUid],
+        ]);
 
         for (final learnerEntry in learners.entries) {
           final learnerUid = learnerEntry.key.toString().trim();
@@ -196,6 +309,7 @@ class _AdminLearnersFeedbackScreenState
             homeworkRef:
                 'users/$learnerUid/courses/$courseKey/attendance/$sessionId/homework',
             teacherUid: teacherUid,
+            teacherNameHint: teacherNameHint,
             sent: true,
             homework: homework,
           );
@@ -203,7 +317,7 @@ class _AdminLearnersFeedbackScreenState
       }
     }
 
-    final threadRefsToLoad = <String, String>{};
+    final threadRefsToLoad = <String, _ThreadTeacherRef>{};
     final threads = _safeMap(threadsSnap.value);
     for (final entry in threads.entries) {
       final thread = _safeMap(entry.value);
@@ -217,19 +331,28 @@ class _AdminLearnersFeedbackScreenState
       if (!looksHomework || homeworkRef.isEmpty) continue;
       final teacherUid = (thread['teacherUid'] ?? '').toString().trim();
       if (teacherUid.isEmpty) continue;
-      threadRefsToLoad[homeworkRef] = teacherUid;
+      final teacherNameHint = _firstNonEmpty([
+        thread['teacherName'],
+        thread['teacher_name'],
+        instructorNamesByUid[teacherUid],
+      ]);
+      threadRefsToLoad[homeworkRef] = _ThreadTeacherRef(
+        teacherUid: teacherUid,
+        teacherNameHint: teacherNameHint,
+      );
     }
 
     for (final entry in threadRefsToLoad.entries) {
       final homeworkRef = entry.key;
-      final teacherUid = entry.value;
+      final teacherRef = entry.value;
       final snap = await _db.child(homeworkRef).get();
       final homework = _safeMap(snap.value);
       if (homework.isEmpty) continue;
       _mergeHomeworkItem(
         itemsByRef,
         homeworkRef: homeworkRef,
-        teacherUid: teacherUid,
+        teacherUid: teacherRef.teacherUid,
+        teacherNameHint: teacherRef.teacherNameHint,
         sent: true,
         homework: homework,
       );
@@ -238,10 +361,13 @@ class _AdminLearnersFeedbackScreenState
     for (final item in itemsByRef.values) {
       final teacher = teachers.putIfAbsent(
         item.teacherUid,
-        () => _TeacherHomeworkStats(
+        () => _teacherStatsFromIdentity(
           teacherUid: item.teacherUid,
-          teacherName: item.teacherUid,
-          photoUrl: '',
+          users: users,
+          nameHint: _firstNonEmpty([
+            item.teacherNameHint,
+            instructorNamesByUid[item.teacherUid],
+          ]),
         ),
       );
       if (item.sent) teacher.sent += 1;
@@ -589,6 +715,7 @@ class _TeacherStatsCard extends StatelessWidget {
 class _HomeworkStatItem {
   _HomeworkStatItem({
     required this.teacherUid,
+    required this.teacherNameHint,
     required this.sent,
     required this.submitted,
     required this.reviewed,
@@ -596,10 +723,21 @@ class _HomeworkStatItem {
   });
 
   final String teacherUid;
+  String teacherNameHint;
   bool sent;
   bool submitted;
   bool reviewed;
   int? score;
+}
+
+class _ThreadTeacherRef {
+  const _ThreadTeacherRef({
+    required this.teacherUid,
+    required this.teacherNameHint,
+  });
+
+  final String teacherUid;
+  final String teacherNameHint;
 }
 
 class _TeacherHomeworkStats {
