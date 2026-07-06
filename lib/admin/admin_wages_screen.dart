@@ -1317,8 +1317,9 @@ class _TeacherWageDetailScreenState extends State<_TeacherWageDetailScreen> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
                                     fontSize: 13,
-                                    color: Colors.blueGrey
-                                        .withValues(alpha: 0.85),
+                                    color: Colors.blueGrey.withValues(
+                                      alpha: 0.85,
+                                    ),
                                   ),
                                 ),
                                 _AdminWagesScreenState._dot,
@@ -1327,8 +1328,9 @@ class _TeacherWageDetailScreenState extends State<_TeacherWageDetailScreen> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
                                     fontSize: 13,
-                                    color: Colors.blueGrey
-                                        .withValues(alpha: 0.85),
+                                    color: Colors.blueGrey.withValues(
+                                      alpha: 0.85,
+                                    ),
                                   ),
                                 ),
                                 _AdminWagesScreenState._dot,
@@ -1509,13 +1511,48 @@ class _LearnerGroupSectionState extends State<_LearnerGroupSection> {
     addRow(Icons.school_rounded, Colors.teal, 'Delivery', variant);
 
     String scheduleStr = '';
-    final schedule = classData['schedule'];
-    if (schedule is String && schedule.trim().isNotEmpty) {
-      scheduleStr = schedule;
-    } else if (schedule is Map && schedule.isNotEmpty) {
-      scheduleStr = schedule.entries
-          .map((e) => '${e.key}: ${e.value}')
-          .join(', ');
+    final sched = classData['schedule'];
+    if (sched is Map) {
+      if (_AdminWagesScreenState._normalizeVariant(
+            classData['variantKey'] ?? classData['variant'],
+          ) ==
+          'flexible') {
+        scheduleStr = 'Flexible schedule';
+      } else if (_AdminWagesScreenState._normalizeVariant(
+            classData['variantKey'] ?? classData['variant'],
+          ) ==
+          'recorded') {
+        scheduleStr = 'On-demand access';
+      } else {
+        final sessions = sched['sessions'];
+        if (sessions is List && sessions.isNotEmpty) {
+          final parts = <String>[];
+          for (final s in sessions) {
+            if (s is! Map) continue;
+            final day = (s['day'] ?? '').toString().trim();
+            final startTime = (s['start_time'] ?? '').toString().trim();
+            final dur = _AdminWagesScreenState._asInt(s['duration_min']);
+            final label = '$day $startTime${dur > 0 ? ' (${dur}m)' : ''}';
+            if (day.isNotEmpty && startTime.isNotEmpty) {
+              parts.add(label);
+            }
+          }
+          if (parts.isNotEmpty) {
+            scheduleStr = parts.join('  •  ');
+          } else {
+            scheduleStr = 'No schedule';
+          }
+        } else {
+          scheduleStr = 'No schedule';
+        }
+
+        final firstDate = (sched['first_session_date'] ?? '').toString().trim();
+        if (firstDate.isNotEmpty) {
+          scheduleStr = 'Start: $firstDate  •  $scheduleStr';
+        }
+      }
+    } else {
+      scheduleStr = '—';
     }
     addRow(
       Icons.calendar_month_rounded,
@@ -1523,22 +1560,6 @@ class _LearnerGroupSectionState extends State<_LearnerGroupSection> {
       'Schedule',
       scheduleStr,
     );
-
-    String daysStr = '';
-    final days = classData['days'];
-    if (days is String && days.trim().isNotEmpty) {
-      daysStr = days;
-    } else if (days is List && days.isNotEmpty) {
-      daysStr = days.join(', ');
-    }
-    addRow(Icons.today_rounded, Colors.purple, 'Days', daysStr);
-
-    String timeStr = '';
-    final time = classData['time'];
-    if (time is String && time.trim().isNotEmpty) {
-      timeStr = time;
-    }
-    addRow(Icons.access_time_rounded, Colors.green, 'Time', timeStr);
 
     showDialog(
       context: context,
@@ -1801,31 +1822,26 @@ class _TeacherCard extends StatelessWidget {
                       fontSize: 15,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Text(
-                        '$learnerCount learners',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          color: AdminWagesScreen.primaryBlue.withValues(
-                            alpha: 0.8,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Text(
-                        '$logCount logs',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                          color: Colors.blueGrey.withValues(alpha: 0.9),
-                        ),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 8),
+                  Text(
+                    '$learnerCount learners',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: AdminWagesScreen.primaryBlue.withValues(
+                        alpha: 0.8,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '$logCount logs',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12,
+                      color: Colors.blueGrey.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
                   Text(
                     '$teacherNet DA',
                     maxLines: 1,
