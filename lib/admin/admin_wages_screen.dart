@@ -590,6 +590,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
     var endDate =
         existing?.endDate ??
         (attendanceOptions.isNotEmpty ? attendanceOptions.last.date : '');
+    var month = existing?.month ?? 1;
 
     try {
       final saved = await showDialog<bool>(
@@ -611,6 +612,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
               if (endDate.isNotEmpty && !dateValues.contains(endDate))
                 dateValues.add(endDate);
               dateValues.sort();
+              final mColor = monthColor(month);
 
               Widget dateDropdown({
                 required String label,
@@ -643,8 +645,21 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
               }
 
               return AlertDialog(
-                title: Text(
-                  existing == null ? 'Add wage log' : 'Edit wage log',
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.payments_rounded,
+                      color: AdminWagesScreen.actionOrange,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      existing == null ? 'Add wage log' : 'Edit wage log',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: AdminWagesScreen.primaryBlue,
+                      ),
+                    ),
+                  ],
                 ),
                 content: SizedBox(
                   width: 560,
@@ -653,14 +668,38 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '${learner.name} • ${teacher.name}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: AdminWagesScreen.primaryBlue,
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AdminWagesScreen.primaryBlue.withValues(
+                              alpha: 0.06,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              ProfileAvatar(
+                                name: learner.name,
+                                photoUrl: learner.photoUrl,
+                                radius: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${learner.name}  •  ${teacher.name}',
+                                  maxLines: 2,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    color: AdminWagesScreen.primaryBlue,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
                         if (attendanceOptions.isEmpty)
                           Container(
                             width: double.infinity,
@@ -673,12 +712,15 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                               ),
                             ),
                             child: const Text(
-                              'No in-class/private/flexible attendance found for this learner and teacher. Dates can still be typed manually.',
-                              style: TextStyle(fontWeight: FontWeight.w700),
+                              'No in-class/private/flexible attendance found. Dates can be typed manually.',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                         if (attendanceOptions.isEmpty)
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 16),
                         Row(
                           children: [
                             Expanded(
@@ -688,7 +730,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                                 onChanged: (v) => startDate = v,
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: dateDropdown(
                                 label: 'To date',
@@ -698,7 +740,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
                         Row(
                           children: [
                             Expanded(
@@ -706,12 +748,12 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                                 controller: sessionsC,
                                 keyboardType: TextInputType.number,
                                 decoration: const InputDecoration(
-                                  labelText: 'Number of sessions',
+                                  labelText: 'Sessions',
                                   border: OutlineInputBorder(),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: TextField(
                                 controller: amountC,
@@ -726,18 +768,61 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: percentC,
-                          keyboardType: TextInputType.number,
-                          onChanged: (_) => setD(() {}),
-                          decoration: const InputDecoration(
-                            labelText: 'Teacher percentage',
-                            suffixText: '%',
-                            border: OutlineInputBorder(),
-                          ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: percentC,
+                                keyboardType: TextInputType.number,
+                                onChanged: (_) => setD(() {}),
+                                decoration: const InputDecoration(
+                                  labelText: 'Teacher %',
+                                  suffixText: '%',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DropdownButtonFormField<int>(
+                                initialValue: month.clamp(1, 12),
+                                decoration: InputDecoration(
+                                  labelText: 'Month',
+                                  labelStyle: TextStyle(color: mColor),
+                                  border: const OutlineInputBorder(),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderSide: BorderSide(color: mColor),
+                                  ),
+                                ),
+                                items: List.generate(12, (i) {
+                                  final m = i + 1;
+                                  final c = monthColor(m);
+                                  return DropdownMenuItem(
+                                    value: m,
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 10,
+                                          height: 10,
+                                          decoration: BoxDecoration(
+                                            color: c,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text('$m'),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                                onChanged: (v) =>
+                                    setD(() => month = v ?? month),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
@@ -748,9 +833,10 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                               AdminWagesScreen.primaryBlue,
                             ),
                             _pill(
-                              'Attendance dates: ${attendanceOptions.length}',
+                              'Attendance: ${attendanceOptions.length}',
                               Colors.blueGrey,
                             ),
+                            _pill('Month: $month', mColor),
                           ],
                         ),
                       ],
@@ -796,7 +882,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                                     : 'Save changes?',
                               ),
                               content: Text(
-                                '${learner.name}\n$startDate to $endDate\n$sessions sessions • $amount DA • $pct%',
+                                '${learner.name}\n$startDate to $endDate\n$sessions sessions • $amount DA • $pct% • Month $month',
                               ),
                               actions: [
                                 TextButton(
@@ -847,6 +933,7 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
                         'teacherPercent': pct,
                         'teacherNet': teacherNet,
                         'schoolNet': schoolNet,
+                        'month': month,
                         'attendanceSessionIds': selectedSessionIds,
                         'updatedAt': ServerValue.timestamp,
                         'updatedBy': uid,
@@ -937,6 +1024,24 @@ class _AdminWagesScreenState extends State<AdminWagesScreen> {
       );
     }
   }
+
+  static const _monthColors = [
+    Color(0xFF4CAF50), //  1 Green
+    Color(0xFF2196F3), //  2 Blue
+    Color(0xFFFF9800), //  3 Orange
+    Color(0xFF9C27B0), //  4 Purple
+    Color(0xFFE91E63), //  5 Pink
+    Color(0xFF00BCD4), //  6 Cyan
+    Color(0xFFFF5722), //  7 Deep Orange
+    Color(0xFF607D8B), //  8 Blue Grey
+    Color(0xFF795548), //  9 Brown
+    Color(0xFF3F51B5), // 10 Indigo
+    Color(0xFFCDDC39), // 11 Lime
+    Color(0xFF009688), // 12 Teal
+  ];
+
+  static Color monthColor(int month) =>
+      month >= 1 && month <= 12 ? _monthColors[month - 1] : Colors.grey;
 
   static Widget get _dot => Text(
     ' • ',
@@ -1948,110 +2053,104 @@ class _LearnerWageCard extends StatelessWidget {
             )
           else
             for (final log in logs) ...[
-              _WageLogRow(
-                log: log,
-                onEdit: () => onEdit(log),
-                onDelete: () => onDelete(log),
-              ),
+              _buildLogCard(log),
               const SizedBox(height: 8),
             ],
         ],
       ),
     );
   }
-}
 
-class _WageLogRow extends StatelessWidget {
-  const _WageLogRow({
-    required this.log,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final _WageLog log;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildLogCard(_WageLog log) {
+    final mColor = _AdminWagesScreenState.monthColor(log.month);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
-        color: AdminWagesScreen.appBg,
+        color: mColor.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AdminWagesScreen.uiBorder.withValues(alpha: 0.7),
-        ),
+        border: Border(left: BorderSide(color: mColor, width: 4)),
       ),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 3,
-            child: Text(
-              '${log.startDate} -> ${log.endDate}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-                color: AdminWagesScreen.primaryBlue,
+          Text(
+            'From: ${log.startDate}  →  ${log.endDate}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              color: AdminWagesScreen.primaryBlue,
+            ),
+          ),
+          const SizedBox(height: 6),
+          DefaultTextStyle(
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: Colors.black.withValues(alpha: 0.7),
+            ),
+            child: Row(
+              children: [
+                Text('Sessions: ${log.sessionCount}'),
+                const SizedBox(width: 16),
+                Text('Amount: ${log.amount} DA'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          DefaultTextStyle(
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              color: Colors.black.withValues(alpha: 0.7),
+            ),
+            child: Row(
+              children: [
+                Text('Teacher: ${log.teacherNet} DA'),
+                const SizedBox(width: 16),
+                Text('School: ${log.schoolNet} DA'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: mColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'Month: ${log.month}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                    color: mColor,
+                  ),
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              '${log.sessionCount}',
-              maxLines: 1,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-                color: Colors.blueGrey,
+              const Spacer(),
+              IconButton(
+                tooltip: 'Edit',
+                onPressed: () => onEdit(log),
+                icon: const Icon(
+                  Icons.edit_rounded,
+                  color: AdminWagesScreen.actionOrange,
+                  size: 20,
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              '${log.amount} DA',
-              maxLines: 1,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-                color: Colors.black87,
+              IconButton(
+                tooltip: 'Delete',
+                onPressed: () => onDelete(log),
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.red,
+                  size: 20,
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              '${log.teacherPercent}% = ${log.teacherNet} DA',
-              maxLines: 1,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-                color: Colors.green,
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Edit',
-            onPressed: onEdit,
-            icon: const Icon(
-              Icons.edit_rounded,
-              color: AdminWagesScreen.actionOrange,
-              size: 20,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Delete',
-            onPressed: onDelete,
-            icon: const Icon(
-              Icons.delete_outline_rounded,
-              color: Colors.red,
-              size: 20,
-            ),
+            ],
           ),
         ],
       ),
@@ -2142,6 +2241,7 @@ class _WageLog {
     required this.teacherNet,
     required this.schoolNet,
     required this.updatedAt,
+    this.month = 1,
   });
 
   final String id;
@@ -2153,6 +2253,7 @@ class _WageLog {
   final int teacherNet;
   final int schoolNet;
   final int updatedAt;
+  final int month;
 
   int get sortKey => updatedAt > 0
       ? updatedAt
@@ -2180,6 +2281,7 @@ class _WageLog {
       updatedAt: _AdminWagesScreenState._asInt(
         map['updatedAt'] ?? map['createdAt'],
       ),
+      month: _AdminWagesScreenState._asInt(map['month']).clamp(1, 12),
     );
   }
 }
