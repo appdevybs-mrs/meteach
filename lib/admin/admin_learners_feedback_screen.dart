@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
@@ -185,11 +186,63 @@ class _AdminLearnersFeedbackScreenState
     return '';
   }
 
+  String _learnerNameFromUsers(Map<String, dynamic> users, String learnerUid) {
+    final user = _safeMap(users[learnerUid]);
+    if (user.isEmpty) return learnerUid;
+    return _fullName(user, learnerUid);
+  }
+
+  _CurrentTeacherTarget _currentTeacherForClass(
+    Map<String, dynamic> cls,
+    Map<String, dynamic> users,
+  ) {
+    final current = _safeMap(cls['instructor_current']);
+    var uid = (current['uid'] ?? '').toString().trim();
+    var name = _classInstructorName(cls);
+    if (uid.isEmpty) {
+      final attendance = _safeMap(cls['attendance']);
+      var bestTs = 0;
+      for (final entry in attendance.entries) {
+        final session = _safeMap(entry.value);
+        final sessionUid =
+            (session['teacherUid'] ?? session['teacher_uid'] ?? '')
+                .toString()
+                .trim();
+        if (sessionUid.isEmpty) continue;
+        final ts = _toInt(session['updatedAt']);
+        if (ts >= bestTs) {
+          bestTs = ts;
+          uid = sessionUid;
+          name = _firstNonEmpty([
+            session['teacherName'],
+            session['teacher_name'],
+            name,
+          ]);
+        }
+      }
+    }
+    if (uid.isEmpty) return const _CurrentTeacherTarget();
+    final user = _safeMap(users[uid]);
+    if (user.isNotEmpty) {
+      name = _fullName(user, name.isEmpty ? 'Teacher' : name);
+    }
+    if (name.isEmpty) name = 'Teacher';
+    return _CurrentTeacherTarget(uid: uid, name: name);
+  }
+
   void _mergeHomeworkItem(
     Map<String, _HomeworkStatItem> itemsByRef, {
     required String homeworkRef,
     required String teacherUid,
     String teacherNameHint = '',
+    String learnerUid = '',
+    String learnerName = '',
+    String classId = '',
+    String courseKey = '',
+    String sessionId = '',
+    String threadId = '',
+    _CurrentTeacherTarget targetTeacher = const _CurrentTeacherTarget(),
+    bool overrideOwner = false,
     required bool sent,
     required Map<String, dynamic> homework,
   }) {
@@ -202,6 +255,15 @@ class _AdminLearnersFeedbackScreenState
       itemsByRef[cleanRef] = _HomeworkStatItem(
         teacherUid: cleanTeacher,
         teacherNameHint: teacherNameHint.trim(),
+        learnerUid: learnerUid.trim(),
+        learnerName: learnerName.trim(),
+        classId: classId.trim(),
+        courseKey: courseKey.trim(),
+        sessionId: sessionId.trim(),
+        homeworkRef: cleanRef,
+        threadId: threadId.trim(),
+        targetTeacherUid: targetTeacher.uid,
+        targetTeacherName: targetTeacher.name,
         sent: sent,
         submitted: _toInt(homework['submittedAt']) > 0,
         reviewed: _isReviewed(homework),
@@ -210,9 +272,23 @@ class _AdminLearnersFeedbackScreenState
       return;
     }
 
-    if (existing.teacherUid != cleanTeacher) return;
+    if (existing.teacherUid != cleanTeacher) {
+      if (!overrideOwner) return;
+      existing.teacherUid = cleanTeacher;
+      existing.teacherNameHint = teacherNameHint.trim();
+    }
     if (existing.teacherNameHint.isEmpty && teacherNameHint.trim().isNotEmpty) {
       existing.teacherNameHint = teacherNameHint.trim();
+    }
+    if (existing.learnerUid.isEmpty) existing.learnerUid = learnerUid.trim();
+    if (existing.learnerName.isEmpty) existing.learnerName = learnerName.trim();
+    if (existing.classId.isEmpty) existing.classId = classId.trim();
+    if (existing.courseKey.isEmpty) existing.courseKey = courseKey.trim();
+    if (existing.sessionId.isEmpty) existing.sessionId = sessionId.trim();
+    if (existing.threadId.isEmpty) existing.threadId = threadId.trim();
+    if (existing.targetTeacherUid.isEmpty && targetTeacher.uid.isNotEmpty) {
+      existing.targetTeacherUid = targetTeacher.uid;
+      existing.targetTeacherName = targetTeacher.name;
     }
     existing.sent = existing.sent || sent;
     existing.submitted =
@@ -227,6 +303,446 @@ class _AdminLearnersFeedbackScreenState
     final parsed = int.tryParse(raw?.toString() ?? '');
     if (parsed == null) return null;
     return parsed.clamp(0, 100);
+  }
+
+  Map<String, List<_PendingHomeworkItem>> _groupPendingByLearner(
+    List<_PendingHomeworkItem> items,
+  ) {
+    final grouped = <String, List<_PendingHomeworkItem>>{};
+    for (final item in items) {
+      final key = '${item.learnerUid}|${item.targetTeacherUid}';
+      grouped.putIfAbsent(key, () => <_PendingHomeworkItem>[]).add(item);
+    }
+    return grouped;
+  }
+
+  Future<void> _showManagePendingDialog(_TeacherHomeworkStats stats) async {
+    final items = stats.pendingItems;
+    if (items.isEmpty) return;
+    final transferable = items
+        .where(
+          (item) =>
+              item.targetTeacherUid.isNotEmpty &&
+              item.targetTeacherUid != item.ownerUid,
+        )
+        .toList();
+    final groups = _groupPendingByLearner(items).values.toList()
+      ..sort((a, b) {
+        final an = a.first.learnerName.toLowerCase();
+        final bn = b.first.learnerName.toLowerCase();
+        return an.compareTo(bn);
+      });
+
+    if (!mounted) return;
+    final action = await showDialog<_PendingAction>(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 18,
+          ),
+          backgroundColor: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 720),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.14),
+                    blurRadius: 30,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(22, 20, 16, 18),
+                    decoration: const BoxDecoration(
+                      color: _deepBlue,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(28),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(
+                            Icons.route_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Review pending homework routing',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Current owner: ${stats.teacherName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.82),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+                    child: Row(
+                      children: [
+                        _DialogPill(
+                          label: 'Pending',
+                          value: '${items.length}',
+                          color: _actionOrange,
+                        ),
+                        const SizedBox(width: 8),
+                        _DialogPill(
+                          label: 'Transferable',
+                          value: '${transferable.length}',
+                          color: Colors.green,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.fromLTRB(18, 6, 18, 14),
+                      itemCount: groups.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (_, index) {
+                        final group = groups[index];
+                        final first = group.first;
+                        final hasTarget = first.targetTeacherUid.isNotEmpty;
+                        final sameOwner =
+                            first.targetTeacherUid == first.ownerUid;
+                        final targetLabel = hasTarget
+                            ? first.targetTeacherName
+                            : 'No current teacher found';
+                        final targetColor = !hasTarget
+                            ? Colors.red.shade700
+                            : (sameOwner ? _deepBlue : Colors.green.shade700);
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: hasTarget
+                                ? const Color(0xFFFAFCFF)
+                                : const Color(0xFFFFF4F4),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: hasTarget
+                                  ? _border
+                                  : Colors.red.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: _primaryBlue.withValues(
+                                  alpha: 0.10,
+                                ),
+                                foregroundColor: _primaryBlue,
+                                child: Text(
+                                  first.learnerName.trim().isEmpty
+                                      ? '?'
+                                      : first.learnerName.characters.first
+                                            .toUpperCase(),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      first.learnerName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: _deepBlue,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      '${group.length} pending homework',
+                                      style: TextStyle(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.58,
+                                        ),
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Flexible(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      sameOwner
+                                          ? 'Already with'
+                                          : 'Transfer to',
+                                      style: TextStyle(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.55,
+                                        ),
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      targetLabel,
+                                      textAlign: TextAlign.right,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: targetColor,
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(28),
+                      ),
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.black.withValues(alpha: 0.06),
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () =>
+                              Navigator.pop(ctx, _PendingAction.clear),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          label: const Text('Clear'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                            side: BorderSide(
+                              color: Colors.red.withValues(alpha: 0.3),
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: transferable.isEmpty
+                              ? null
+                              : () =>
+                                    Navigator.pop(ctx, _PendingAction.transfer),
+                          icon: const Icon(Icons.swap_horiz_rounded),
+                          label: const Text('Transfer'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _primaryBlue,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (action == _PendingAction.transfer) {
+      await _transferPendingHomework(transferable);
+    } else if (action == _PendingAction.clear) {
+      await _confirmAndClearPendingHomework(items);
+    }
+  }
+
+  Future<void> _transferPendingHomework(
+    List<_PendingHomeworkItem> items,
+  ) async {
+    if (items.isEmpty) return;
+    final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final updates = <String, dynamic>{};
+
+    for (final item in items) {
+      if (item.homeworkRef.isEmpty || item.targetTeacherUid.isEmpty) continue;
+      if (item.targetTeacherUid == item.ownerUid) continue;
+      updates['${item.homeworkRef}/originalTeacherUid'] = item.ownerUid;
+      updates['${item.homeworkRef}/originalTeacherName'] = item.ownerName;
+      updates['${item.homeworkRef}/assignedTeacherUid'] = item.targetTeacherUid;
+      updates['${item.homeworkRef}/assignedTeacherName'] =
+          item.targetTeacherName;
+      updates['${item.homeworkRef}/transferredFromUid'] = item.ownerUid;
+      updates['${item.homeworkRef}/transferredFromName'] = item.ownerName;
+      updates['${item.homeworkRef}/transferredToUid'] = item.targetTeacherUid;
+      updates['${item.homeworkRef}/transferredToName'] = item.targetTeacherName;
+      updates['${item.homeworkRef}/transferredAt'] = now;
+      updates['${item.homeworkRef}/transferredBy'] = adminUid;
+      updates['${item.homeworkRef}/routingStatus'] = 'transferred';
+
+      final threadId = item.threadId.trim();
+      if (threadId.isEmpty) continue;
+
+      final threadSnap = await _db.child('mail_threads/$threadId').get();
+      final thread = _safeMap(threadSnap.value);
+      final subject = (thread['subject'] ?? 'Homework').toString();
+      final lastMessage = (thread['lastMessage'] ?? '').toString();
+      final updatedAt = _toInt(thread['updatedAt']) > 0
+          ? _toInt(thread['updatedAt'])
+          : now;
+
+      updates['mail_threads/$threadId/teacherUid'] = item.targetTeacherUid;
+      updates['mail_threads/$threadId/participants/${item.targetTeacherUid}'] =
+          true;
+      if (item.ownerUid.isNotEmpty) {
+        updates['mail_threads/$threadId/participants/${item.ownerUid}'] = null;
+        updates['mail_index/${item.ownerUid}/$threadId'] = null;
+        updates['mail_state/${item.ownerUid}/$threadId'] = null;
+      }
+
+      updates['mail_index/${item.targetTeacherUid}/$threadId'] = {
+        'peerUid': item.learnerUid,
+        'peerName': item.learnerName.isEmpty ? 'Learner' : item.learnerName,
+        'peerRole': 'learner',
+        'subject': subject,
+        'lastMessage': lastMessage,
+        'updatedAt': updatedAt,
+        'type': 'homework',
+        'homeworkRef': item.homeworkRef,
+        'deletedAt': null,
+        'unreadCount': 1,
+      };
+      if (item.learnerUid.isNotEmpty) {
+        updates['mail_index/${item.learnerUid}/$threadId/peerUid'] =
+            item.targetTeacherUid;
+        updates['mail_index/${item.learnerUid}/$threadId/peerName'] =
+            item.targetTeacherName;
+        updates['mail_index/${item.learnerUid}/$threadId/peerRole'] = 'teacher';
+        updates['mail_index/${item.learnerUid}/$threadId/homeworkRef'] =
+            item.homeworkRef;
+      }
+      updates['mail_state/${item.targetTeacherUid}/$threadId/lastDeliveredAt'] =
+          now;
+    }
+
+    if (updates.isEmpty) return;
+    await _db.update(updates);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Transferred ${items.length} homework item(s).')),
+    );
+    _refresh();
+  }
+
+  Future<void> _confirmAndClearPendingHomework(
+    List<_PendingHomeworkItem> items,
+  ) async {
+    if (items.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear learner homework?'),
+        content: Text(
+          'This deletes ${items.length} learner homework submission(s) and removes related homework mail list entries. The class homework assignment remains.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final updates = <String, dynamic>{};
+    for (final item in items) {
+      if (item.homeworkRef.isNotEmpty) updates[item.homeworkRef] = null;
+      final threadId = item.threadId.trim();
+      if (threadId.isEmpty) continue;
+      if (item.learnerUid.isNotEmpty) {
+        updates['mail_index/${item.learnerUid}/$threadId'] = null;
+        updates['mail_state/${item.learnerUid}/$threadId'] = null;
+      }
+      if (item.ownerUid.isNotEmpty) {
+        updates['mail_index/${item.ownerUid}/$threadId'] = null;
+        updates['mail_state/${item.ownerUid}/$threadId'] = null;
+      }
+      if (item.targetTeacherUid.isNotEmpty) {
+        updates['mail_index/${item.targetTeacherUid}/$threadId'] = null;
+        updates['mail_state/${item.targetTeacherUid}/$threadId'] = null;
+      }
+    }
+
+    if (updates.isEmpty) return;
+    await _db.update(updates);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Cleared ${items.length} homework item(s).')),
+    );
+    _refresh();
   }
 
   Future<List<_TeacherHomeworkStats>> _loadStats() async {
@@ -262,6 +778,7 @@ class _AdminLearnersFeedbackScreenState
       final cls = _safeMap(classEntry.value);
       final fallbackTeacherUid = _classInstructorUid(cls);
       final fallbackTeacherName = _classInstructorName(cls);
+      final targetTeacher = _currentTeacherForClass(cls, users);
       final learners = _safeMap(cls['learners']);
       if (learners.isEmpty) continue;
 
@@ -286,6 +803,7 @@ class _AdminLearnersFeedbackScreenState
         for (final learnerEntry in learners.entries) {
           final learnerUid = learnerEntry.key.toString().trim();
           if (learnerUid.isEmpty) continue;
+          final learnerName = _learnerNameFromUsers(users, learnerUid);
           final courseKey = _courseKeyForClass(
             users: users,
             learnerUid: learnerUid,
@@ -310,6 +828,12 @@ class _AdminLearnersFeedbackScreenState
                 'users/$learnerUid/courses/$courseKey/attendance/$sessionId/homework',
             teacherUid: teacherUid,
             teacherNameHint: teacherNameHint,
+            learnerUid: learnerUid,
+            learnerName: learnerName,
+            classId: classId,
+            courseKey: courseKey,
+            sessionId: sessionId,
+            targetTeacher: targetTeacher,
             sent: true,
             homework: homework,
           );
@@ -339,6 +863,11 @@ class _AdminLearnersFeedbackScreenState
       threadRefsToLoad[homeworkRef] = _ThreadTeacherRef(
         teacherUid: teacherUid,
         teacherNameHint: teacherNameHint,
+        threadId: entry.key.toString().trim(),
+        learnerUid: (thread['learnerUid'] ?? '').toString().trim(),
+        courseKey: (thread['courseKey'] ?? '').toString().trim(),
+        sessionId: (thread['sessionId'] ?? '').toString().trim(),
+        classId: (thread['classId'] ?? '').toString().trim(),
       );
     }
 
@@ -348,11 +877,38 @@ class _AdminLearnersFeedbackScreenState
       final snap = await _db.child(homeworkRef).get();
       final homework = _safeMap(snap.value);
       if (homework.isEmpty) continue;
+      var classId = teacherRef.classId;
+      var learnerName = '';
+      _CurrentTeacherTarget targetTeacher = const _CurrentTeacherTarget();
+      if (teacherRef.learnerUid.isNotEmpty) {
+        learnerName = _learnerNameFromUsers(users, teacherRef.learnerUid);
+      }
+      if (classId.isEmpty &&
+          teacherRef.learnerUid.isNotEmpty &&
+          teacherRef.courseKey.isNotEmpty) {
+        final user = _safeMap(users[teacherRef.learnerUid]);
+        final courses = _safeMap(user['courses']);
+        final course = _safeMap(courses[teacherRef.courseKey]);
+        final cls = _safeMap(course['class']);
+        classId = (cls['class_id'] ?? '').toString().trim();
+      }
+      if (classId.isNotEmpty) {
+        final cls = _safeMap(classes[classId]);
+        targetTeacher = _currentTeacherForClass(cls, users);
+      }
       _mergeHomeworkItem(
         itemsByRef,
         homeworkRef: homeworkRef,
         teacherUid: teacherRef.teacherUid,
         teacherNameHint: teacherRef.teacherNameHint,
+        learnerUid: teacherRef.learnerUid,
+        learnerName: learnerName,
+        classId: classId,
+        courseKey: teacherRef.courseKey,
+        sessionId: teacherRef.sessionId,
+        threadId: teacherRef.threadId,
+        targetTeacher: targetTeacher,
+        overrideOwner: true,
         sent: true,
         homework: homework,
       );
@@ -373,6 +929,25 @@ class _AdminLearnersFeedbackScreenState
       if (item.sent) teacher.sent += 1;
       if (item.reviewed) teacher.reviewed += 1;
       if (item.submitted && !item.reviewed) teacher.pending += 1;
+      if (item.submitted && !item.reviewed) {
+        teacher.pendingItems.add(
+          _PendingHomeworkItem(
+            ownerUid: item.teacherUid,
+            ownerName: teacher.teacherName,
+            learnerUid: item.learnerUid,
+            learnerName: item.learnerName.isEmpty
+                ? item.learnerUid
+                : item.learnerName,
+            classId: item.classId,
+            courseKey: item.courseKey,
+            sessionId: item.sessionId,
+            homeworkRef: item.homeworkRef,
+            threadId: item.threadId,
+            targetTeacherUid: item.targetTeacherUid,
+            targetTeacherName: item.targetTeacherName,
+          ),
+        );
+      }
       if (item.reviewed && item.score != null) {
         teacher.scoreSum += item.score!;
         teacher.scoredReviews += 1;
@@ -471,7 +1046,11 @@ class _AdminLearnersFeedbackScreenState
                           childAspectRatio: width >= 720 ? 2.25 : 1.78,
                         ),
                         itemBuilder: (context, index) {
-                          return _TeacherStatsCard(stats: rows[index]);
+                          return _TeacherStatsCard(
+                            stats: rows[index],
+                            onManage: () =>
+                                _showManagePendingDialog(rows[index]),
+                          );
                         },
                       );
                     },
@@ -588,10 +1167,56 @@ class _HeaderStats extends StatelessWidget {
   }
 }
 
+class _DialogPill extends StatelessWidget {
+  const _DialogPill({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.20)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label ',
+            style: TextStyle(
+              color: Colors.black.withValues(alpha: 0.62),
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TeacherStatsCard extends StatelessWidget {
-  const _TeacherStatsCard({required this.stats});
+  const _TeacherStatsCard({required this.stats, required this.onManage});
 
   final _TeacherHomeworkStats stats;
+  final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -685,6 +1310,23 @@ class _TeacherStatsCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (stats.pendingItems.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: onManage,
+                    icon: const Icon(Icons.route_rounded, size: 17),
+                    label: const Text('Manage'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor:
+                          _AdminLearnersFeedbackScreenState._deepBlue,
+                      side: BorderSide(
+                        color: _AdminLearnersFeedbackScreenState._deepBlue
+                            .withValues(alpha: 0.24),
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
               ],
             ),
             const Spacer(),
@@ -716,28 +1358,93 @@ class _HomeworkStatItem {
   _HomeworkStatItem({
     required this.teacherUid,
     required this.teacherNameHint,
+    required this.learnerUid,
+    required this.learnerName,
+    required this.classId,
+    required this.courseKey,
+    required this.sessionId,
+    required this.homeworkRef,
+    required this.threadId,
+    required this.targetTeacherUid,
+    required this.targetTeacherName,
     required this.sent,
     required this.submitted,
     required this.reviewed,
     required this.score,
   });
 
-  final String teacherUid;
+  String teacherUid;
   String teacherNameHint;
+  String learnerUid;
+  String learnerName;
+  String classId;
+  String courseKey;
+  String sessionId;
+  final String homeworkRef;
+  String threadId;
+  String targetTeacherUid;
+  String targetTeacherName;
   bool sent;
   bool submitted;
   bool reviewed;
   int? score;
 }
 
+class _CurrentTeacherTarget {
+  const _CurrentTeacherTarget({this.uid = '', this.name = ''});
+
+  final String uid;
+  final String name;
+}
+
+class _PendingHomeworkItem {
+  const _PendingHomeworkItem({
+    required this.ownerUid,
+    required this.ownerName,
+    required this.learnerUid,
+    required this.learnerName,
+    required this.classId,
+    required this.courseKey,
+    required this.sessionId,
+    required this.homeworkRef,
+    required this.threadId,
+    required this.targetTeacherUid,
+    required this.targetTeacherName,
+  });
+
+  final String ownerUid;
+  final String ownerName;
+  final String learnerUid;
+  final String learnerName;
+  final String classId;
+  final String courseKey;
+  final String sessionId;
+  final String homeworkRef;
+  final String threadId;
+  final String targetTeacherUid;
+  final String targetTeacherName;
+}
+
+enum _PendingAction { transfer, clear }
+
 class _ThreadTeacherRef {
   const _ThreadTeacherRef({
     required this.teacherUid,
     required this.teacherNameHint,
+    required this.threadId,
+    required this.learnerUid,
+    required this.courseKey,
+    required this.sessionId,
+    required this.classId,
   });
 
   final String teacherUid;
   final String teacherNameHint;
+  final String threadId;
+  final String learnerUid;
+  final String courseKey;
+  final String sessionId;
+  final String classId;
 }
 
 class _TeacherHomeworkStats {
@@ -755,6 +1462,7 @@ class _TeacherHomeworkStats {
   int pending = 0;
   int scoreSum = 0;
   int scoredReviews = 0;
+  final List<_PendingHomeworkItem> pendingItems = <_PendingHomeworkItem>[];
 
   int? get averageScore =>
       scoredReviews == 0 ? null : (scoreSum / scoredReviews).round();

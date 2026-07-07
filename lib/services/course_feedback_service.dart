@@ -169,32 +169,95 @@ class CourseFeedbackService {
 
     final out = <String>{};
     try {
+      // 1. Check classes node (existing logic)
       final classesSnap = await _db.child('classes').get();
-      if (!classesSnap.exists || classesSnap.value is! Map) return out;
+      if (classesSnap.exists && classesSnap.value is Map) {
+        final raw = Map<dynamic, dynamic>.from(classesSnap.value as Map);
+        for (final entry in raw.entries) {
+          final val = entry.value;
+          if (val is! Map) continue;
 
-      final raw = Map<dynamic, dynamic>.from(classesSnap.value as Map);
-      for (final entry in raw.entries) {
-        final val = entry.value;
-        if (val is! Map) continue;
+          final cls = val.map((k, v) => MapEntry(k.toString(), v));
+          final classCourseId = _safe(cls['course_id']);
+          if (classCourseId != safeCourseId) continue;
 
-        final cls = val.map((k, v) => MapEntry(k.toString(), v));
-        final classCourseId = _safe(cls['course_id']);
-        if (classCourseId != safeCourseId) continue;
+          final directTeacher = _safe(
+            cls['teacherUid'] ??
+                cls['teacher_uid'] ??
+                cls['teacherId'] ??
+                cls['teacher_id'] ??
+                cls['instructorUid'],
+          );
+          if (directTeacher.isNotEmpty) out.add(directTeacher);
 
-        final directTeacher = _safe(
-          cls['teacherUid'] ??
-              cls['teacher_uid'] ??
-              cls['teacherId'] ??
-              cls['teacher_id'] ??
-              cls['instructorUid'],
-        );
-        if (directTeacher.isNotEmpty) out.add(directTeacher);
+          final currentInstructor = cls['instructor_current'];
+          if (currentInstructor is Map) {
+            final m = currentInstructor
+                .map((k, v) => MapEntry(k.toString(), v));
+            final uid = _safe(m['uid']);
+            if (uid.isNotEmpty) out.add(uid);
+          }
+        }
+      }
 
-        final currentInstructor = cls['instructor_current'];
-        if (currentInstructor is Map) {
-          final m = currentInstructor.map((k, v) => MapEntry(k.toString(), v));
-          final uid = _safe(m['uid']);
-          if (uid.isNotEmpty) out.add(uid);
+      // 2. Check courses/{courseId}/instructors_map and instructors
+      final courseSnap = await _db.child('courses').child(safeCourseId).get();
+      if (courseSnap.exists && courseSnap.value is Map) {
+        final courseData =
+            Map<String, dynamic>.from(courseSnap.value as Map);
+
+        final instructorsMap = courseData['instructors_map'];
+        if (instructorsMap is Map) {
+          for (final uid in instructorsMap.keys) {
+            final clean = uid.toString().trim();
+            if (clean.isNotEmpty) out.add(clean);
+          }
+        }
+
+        final instructors = courseData['instructors'];
+        if (instructors is List) {
+          for (final item in instructors) {
+            if (item is Map) {
+              final uid = _safe(item['uid']);
+              if (uid.isNotEmpty) out.add(uid);
+            }
+          }
+        } else if (instructors is Map) {
+          for (final entry in instructors.entries) {
+            final uid = entry.value is Map
+                ? _safe((entry.value as Map)['uid'])
+                : entry.key.toString().trim();
+            if (uid.isNotEmpty) out.add(uid);
+          }
+        }
+      }
+
+      // 3. Check payments with matching courseId + teacherId
+      final paymentsSnap = await _db.child('payments').get();
+      if (paymentsSnap.exists && paymentsSnap.value is Map) {
+        for (final entry
+            in (paymentsSnap.value as Map).entries) {
+          if (entry.value is! Map) continue;
+          final p = (entry.value as Map)
+              .map((k, v) => MapEntry(k.toString(), v));
+          final pCourseId =
+              (p['courseId'] ??
+                      p['course_id'] ??
+                      p['courseKey'] ??
+                      p['course_key'] ??
+                      '')
+                  .toString()
+                  .trim();
+          if (pCourseId != safeCourseId) continue;
+          final teacherUid =
+              (p['teacherId'] ??
+                      p['teacher_id'] ??
+                      p['teacherUid'] ??
+                      p['teacher_uid'] ??
+                      '')
+                  .toString()
+                  .trim();
+          if (teacherUid.isNotEmpty) out.add(teacherUid);
         }
       }
     } catch (_) {}
@@ -280,6 +343,51 @@ class CourseFeedbackService {
         );
       } catch (_) {}
     }
+  }
+
+  static Future<void> _notifyCommentApprovedToLearner({
+    required String courseId,
+    required String lessonId,
+    required String commentId,
+    required String learnerUid,
+  }) async {
+    final safeCourseId = _sanitizeEventPart(courseId);
+    final safeLessonId = _sanitizeEventPart(lessonId);
+    final safeCommentId = _sanitizeEventPart(commentId);
+    final safeLearnerUid = learnerUid.trim();
+    if (safeCourseId.isEmpty ||
+        safeLessonId.isEmpty ||
+        safeCommentId.isEmpty ||
+        safeLearnerUid.isEmpty) {
+      return;
+    }
+
+    const title = 'Reflection Approved';
+    const body =
+        'Your learning reflection has been reviewed and approved by your teacher.';
+
+    try {
+      await PushDispatchService.dispatchToUser(
+        intent: PushIntent.recordedComment,
+        targetUid: safeLearnerUid,
+        title: title,
+        message: body,
+        context: const PushDispatchContext(
+          screen: 'services/course_feedback_service',
+          action: 'comment_approved_to_learner',
+        ),
+        eventParts: [
+          'comment_approved_${safeCourseId}_${safeLessonId}_${safeCommentId}_$safeLearnerUid',
+        ],
+        route: 'recorded_comment',
+        data: <String, dynamic>{
+          'courseId': courseId,
+          'lessonId': lessonId,
+          'commentId': commentId,
+          'learnerUid': safeLearnerUid,
+        },
+      );
+    } catch (_) {}
   }
 
   static String firstNameFromDisplayName(String fullName) {
@@ -865,6 +973,22 @@ class CourseFeedbackService {
     required String commentId,
     required String status,
   }) async {
+    String? learnerUid;
+    if (status == statusVisible) {
+      try {
+        final uidSnap = await _db
+            .child(lessonCommentsNode)
+            .child(courseId)
+            .child(lessonId)
+            .child(commentId)
+            .child('uid')
+            .get();
+        if (uidSnap.exists) {
+          learnerUid = (uidSnap.value ?? '').toString().trim();
+        }
+      } catch (_) {}
+    }
+
     await _db
         .child(lessonCommentsNode)
         .child(courseId)
@@ -874,6 +998,19 @@ class CourseFeedbackService {
           'status': status,
           'updatedAt': DateTime.now().millisecondsSinceEpoch,
         });
+
+    if (status == statusVisible &&
+        learnerUid != null &&
+        learnerUid.isNotEmpty) {
+      try {
+        await _notifyCommentApprovedToLearner(
+          courseId: courseId,
+          lessonId: lessonId,
+          commentId: commentId,
+          learnerUid: learnerUid,
+        );
+      } catch (_) {}
+    }
   }
 
   static Future<void> deleteLessonCommentPermanently({
