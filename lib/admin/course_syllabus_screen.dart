@@ -11,6 +11,8 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../shared/app_feedback.dart';
 import '../shared/human_error.dart';
+import '../shared/material_webview_screen.dart';
+import '../shared/shared_pdf_reader_screen.dart';
 import '../services/backend_api.dart';
 
 /// ----------------------------
@@ -2338,13 +2340,36 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       return;
     }
 
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      AppToast.show(
+    final ext = (_courseBook?.ext ?? '').toLowerCase();
+    if (ext == 'pdf') {
+      await Navigator.push(
         context,
-        'Could not open the course book.',
-        type: AppToastType.error,
+        MaterialPageRoute(
+          builder: (_) => SharedPdfReaderScreen(
+            title: 'Course Book',
+            pdfUrl: url,
+          ),
+        ),
       );
+    } else if (ext == 'html' || ext == 'htm') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MaterialWebViewScreen.fromUrl(
+            title: 'Course Book',
+            url: url,
+          ),
+        ),
+      );
+    } else {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        AppToast.show(
+          context,
+          'Could not open the course book.',
+          type: AppToastType.error,
+        );
+      }
     }
   }
 
@@ -2361,7 +2386,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
       final pickedRes = await FilePicker.platform.pickFiles(
         allowMultiple: false,
         type: FileType.custom,
-        allowedExtensions: const ['pdf'],
+        allowedExtensions: const ['pdf', 'html', 'htm'],
         withData: kIsWeb,
       );
       if (pickedRes == null || pickedRes.files.isEmpty) return;
@@ -2373,8 +2398,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         'hasBytes=${picked.bytes != null}',
       );
       final ext = picked.extension?.trim().toLowerCase() ?? '';
-      if (ext != 'pdf') {
-        throw Exception('Only PDF files are allowed for course book.');
+      if (ext != 'pdf' && ext != 'html' && ext != 'htm') {
+        throw Exception('Only PDF and HTML files are allowed for course book.');
       }
       final hasPath = (picked.path ?? '').trim().isNotEmpty;
       final hasBytes = picked.bytes != null;
@@ -2415,7 +2440,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
         _courseBook = _CourseBookAsset(
           url: url,
           name: picked.name.trim(),
-          ext: 'pdf',
+          ext: ext,
           sizeBytes: picked.size,
           uploadedAt: now,
           uploadedByUid: uid,
@@ -2504,7 +2529,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Course Digital Book (PDF)',
+                    'Course Digital Book',
                     style: TextStyle(fontWeight: FontWeight.w900),
                   ),
                 ),
@@ -2513,8 +2538,8 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
             const SizedBox(height: 6),
             Text(
               hasBook
-                  ? '${book.name.isEmpty ? 'PDF uploaded' : book.name} ${fileSize.isEmpty ? '' : '• $fileSize'} ${uploadedAt.isEmpty ? '' : '• $uploadedAt'}'
-                  : 'Upload one PDF for this variant. This is separate from lesson materials.',
+                  ? '${book.name.isEmpty ? '${book.ext.toUpperCase()} uploaded' : book.name} ${fileSize.isEmpty ? '' : '• $fileSize'} ${uploadedAt.isEmpty ? '' : '• $uploadedAt'}'
+                  : 'Upload a PDF or HTML file for this variant. This is separate from lesson materials.',
               style: TextStyle(
                 color: Colors.black.withValues(alpha: 0.66),
                 fontWeight: FontWeight.w700,
@@ -2544,7 +2569,7 @@ class _CourseSyllabusScreenState extends State<CourseSyllabusScreen> {
                   label: Text(
                     _uploadingCourseBook
                         ? 'Uploading ${(_courseBookUploadProgress * 100).round()}%'
-                        : (hasBook ? 'Replace PDF' : 'Upload PDF'),
+                        : (hasBook ? 'Replace' : 'Upload'),
                   ),
                 ),
                 OutlinedButton.icon(

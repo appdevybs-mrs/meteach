@@ -120,6 +120,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       {}; // sessionNumber -> title (for online taughtSummary)
   Map<int, Map<String, dynamic>> _sessionReviewsByNo = {};
   String _courseBookUrl = '';
+  String _courseBookExt = '';
 
   // ✅ meetings total (optional)
   int? _plannedMeetings;
@@ -1536,6 +1537,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
       _sessionTitleByNumber = {};
       _sessionReviewsByNo = {};
       _courseBookUrl = '';
+      _courseBookExt = '';
       _plannedMeetings = null;
       _derivedSessionsPaidTotal = 0;
       _derivedSessionsReady = false;
@@ -1697,6 +1699,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               ? Map<String, dynamic>.from(s['courseBook'] as Map)
               : const <String, dynamic>{};
           _courseBookUrl = (courseBookMap['url'] ?? '').toString().trim();
+          _courseBookExt = (courseBookMap['ext'] ?? '').toString().trim().toLowerCase();
           final List<Map<String, dynamic>> flat = [];
           final modules = s['modules'];
           if (modules is List) {
@@ -6243,19 +6246,41 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
         context,
         'learner.course_detail.book.${widget.courseKey}',
         () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  SharedPdfReaderScreen(title: 'Course Book', pdfUrl: url),
-            ),
-          );
+          final ext = _courseBookExt.isEmpty
+              ? _inferExtensionFromUrl(url)
+              : _courseBookExt;
+          if (ext == 'pdf') {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    SharedPdfReaderScreen(title: 'Course Book', pdfUrl: url),
+              ),
+            );
+          } else {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MaterialWebViewScreen.fromUrl(
+                  title: 'Course Book',
+                  url: url,
+                ),
+              ),
+            );
+          }
         },
       );
     } catch (_) {
       if (!mounted) return;
       _notice('Could not open course book.', tone: LearnerNoticeTone.error);
     }
+  }
+
+  String _inferExtensionFromUrl(String url) {
+    final lower = url.toLowerCase();
+    if (lower.endsWith('.pdf')) return 'pdf';
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+    return 'pdf';
   }
 
   Widget _sessionLessonRow(Map<String, dynamic> s) {

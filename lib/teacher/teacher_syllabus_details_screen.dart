@@ -152,15 +152,15 @@ class _TeacherSyllabusDetailsScreenState
           });
         }
 
+        final courseBookMap = _asStringKeyMap(variantMap?['courseBook']);
         variants[key] = _SyllabusVariant(
           key: key,
           title: title,
           code: code,
           duration: duration,
           updatedAt: updatedAt,
-          courseBookUrl: _readString(
-            _asStringKeyMap(variantMap?['courseBook'])?['url'],
-          ),
+          courseBookUrl: _readString(courseBookMap?['url']),
+          courseBookExt: _readString(courseBookMap?['ext']).toLowerCase(),
           units: units,
         );
       }
@@ -556,7 +556,10 @@ class _TeacherSyllabusDetailsScreenState
             child: SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: () => _openCourseBook(variant.courseBookUrl),
+                onPressed: () => _openCourseBook(
+                  variant.courseBookUrl,
+                  ext: variant.courseBookExt,
+                ),
                 icon: const Icon(Icons.menu_book_rounded),
                 label: const Text(
                   'Open Course Book',
@@ -599,7 +602,7 @@ class _TeacherSyllabusDetailsScreenState
     );
   }
 
-  Future<void> _openCourseBook(String url) async {
+  Future<void> _openCourseBook(String url, {String ext = ''}) async {
     final cleanUrl = url.trim();
     final uri = Uri.tryParse(cleanUrl);
     final isHttp =
@@ -614,12 +617,35 @@ class _TeacherSyllabusDetailsScreenState
     }
 
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            SharedPdfReaderScreen(title: 'Course Book', pdfUrl: cleanUrl),
-      ),
-    );
+
+    if (ext.isEmpty) {
+      final lower = cleanUrl.toLowerCase();
+      if (lower.endsWith('.pdf')) {
+        ext = 'pdf';
+      } else if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+        ext = 'html';
+      } else {
+        ext = 'pdf';
+      }
+    }
+
+    if (ext == 'pdf') {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              SharedPdfReaderScreen(title: 'Course Book', pdfUrl: cleanUrl),
+        ),
+      );
+    } else {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MaterialWebViewScreen.fromUrl(
+            title: 'Course Book',
+            url: cleanUrl,
+          ),
+        ),
+      );
+    }
   }
 }
 
@@ -1893,6 +1919,7 @@ class _SyllabusVariant {
     required this.duration,
     required this.updatedAt,
     required this.courseBookUrl,
+    required this.courseBookExt,
     required this.units,
   });
 
@@ -1902,6 +1929,7 @@ class _SyllabusVariant {
   final String duration;
   final int updatedAt;
   final String courseBookUrl;
+  final String courseBookExt;
   final List<_Unit> units;
 }
 
