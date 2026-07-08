@@ -421,18 +421,67 @@
       }
     },
 
-    "payments": {
-      ".read": "auth != null",
-      ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
-      ".indexOn": ["paidAt", "uid"]
-    },
+   "payments": {
+  ".read": "auth != null",
+  ".write": "auth != null && root.child('admins').child(auth.uid).exists()",
+  ".indexOn": ["paidAt", "uid"]
+},
+  
+  "teacher_wage_logs": {
+  ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+  "$teacherUid": {
+    "$learnerUid": {
+      "$logId": {
+        ".write": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".validate": "!newData.exists() || newData.hasChildren(['teacherUid','teacherName','learnerUid','learnerName','sessionCount','startDate','endDate','amount','teacherPercent','teacherNet','schoolNet','updatedAt','updatedBy'])",
+
+        "teacherUid": { ".validate": "newData.isString() && newData.val() == $teacherUid" },
+        "teacherName": { ".validate": "newData.isString()" },
+        "learnerUid": { ".validate": "newData.isString() && newData.val() == $learnerUid" },
+        "learnerName": { ".validate": "newData.isString()" },
+        "learnerSerial": { ".validate": "!newData.exists() || newData.isString()" },
+
+        "sessionCount": { ".validate": "newData.isNumber() && newData.val() > 0" },
+        "startDate": { ".validate": "newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/)" },
+        "endDate": { ".validate": "newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/)" },
+
+        "amount": { ".validate": "newData.isNumber() && newData.val() > 0" },
+        "teacherPercent": { ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 100" },
+        "teacherNet": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "schoolNet": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+
+        "attendanceSessionIds": { ".validate": "!newData.exists() || newData.hasChildren()" },
+
+        "createdAt": { ".validate": "!newData.exists() || newData.isNumber() || newData.val() == now" },
+        "createdBy": { ".validate": "!newData.exists() || newData.isString()" },
+        "updatedAt": { ".validate": "newData.isNumber() || newData.val() == now" },
+        "updatedBy": { ".validate": "newData.isString()" },
+
+        "$other": { ".validate": false }
+      }
+    }
+  }
+},
 
     "payment_periods": {
       ".read": "auth != null && root.child('admins').child(auth.uid).exists()",
       ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
     },
 
-    "subscriptions": {
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+          "subscriptions": {
       ".read": "auth != null",
       "$subscriptionId": {
         ".write": "(auth != null && root.child('admins').child(auth.uid).exists()) || (!data.exists() && newData.hasChildren(['courseId','courseTitle','fullName','phone','createdAt']) && newData.child('courseId').isString() && newData.child('courseTitle').isString() && newData.child('fullName').isString() && newData.child('phone').isString() && newData.child('createdAt').isNumber())",
@@ -480,7 +529,7 @@
     "promo_usage_counters": {
       ".read": true,
       "$code": {
-        ".write": "auth != null",
+        ".write": "true",
         "usedCount": {
           ".validate": "newData.isNumber() && newData.val() >= 0 && (root.child('admins').child(auth.uid).exists() || (!data.exists() && newData.val() == 1) || (data.exists() && newData.val() == data.val() + 1))"
         },
@@ -489,11 +538,11 @@
       }
     },
 
-    "promo_claims": {
-      ".read": "auth != null",
+     "promo_claims": {
+      ".read": true,
       "$code": {
         "$identityKey": {
-          ".write": "auth != null && (!data.exists() || root.child('admins').child(auth.uid).exists())",
+          ".write": "true",
           "subscriptionId": { ".validate": "newData.isString()" },
           "courseId": { ".validate": "newData.isString()" },
           "courseTitle": { ".validate": "newData.isString()" },
@@ -508,7 +557,17 @@
         }
       }
     },
-
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
     "contract": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('admins').child(auth.uid).exists()"
@@ -788,23 +847,22 @@
       }
     },
 
-    "mail_messages": {
-      "$threadId": {
-        ".indexOn": ["createdAt"],
-        ".read": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()",
-        "$messageId": {
-          ".write": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && ((!newData.exists() && data.child('fromUid').val() == auth.uid) || (newData.exists() && newData.child('fromUid').val() == auth.uid))",
-          ".validate": "newData.hasChildren(['fromUid','body','createdAt']) && newData.child('fromUid').isString() && newData.child('body').isString() && newData.child('createdAt').isNumber()",
-          "readBy": {
-            "$uid": {
-              ".write": "auth != null && auth.uid == $uid && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()",
-              ".validate": "newData.isNumber() && (!data.exists() || newData.val() == data.val())"
-            }
-          }
+ "mail_messages": {
+  "$threadId": {
+    ".indexOn": ["createdAt"],
+    ".read": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()",
+    "$messageId": {
+      ".write": "auth != null && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() && ((!newData.exists() && data.child('fromUid').val() == auth.uid) || (newData.exists() && newData.child('fromUid').val() == auth.uid))",
+      ".validate": "!newData.exists() || (newData.hasChildren(['fromUid','body','createdAt']) && newData.child('fromUid').isString() && newData.child('body').isString() && newData.child('createdAt').isNumber())",
+      "readBy": {
+        "$uid": {
+          ".write": "auth != null && auth.uid == $uid && root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists()",
+          ".validate": "newData.isNumber() && (!data.exists() || newData.val() == data.val())"
         }
       }
-    },
-
+    }
+  }
+},
     "mail_index": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
