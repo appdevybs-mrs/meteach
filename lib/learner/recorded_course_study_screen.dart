@@ -587,68 +587,28 @@ class _GuidelineHeader extends StatelessWidget {
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
-            height: 106,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  width: 62,
-                  height: 62,
-                  padding: const EdgeInsets.all(9),
+            height: 80,
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 260),
+                child: Container(
+                  key: ValueKey(icon),
+                  width: 58,
+                  height: 58,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.16),
+                        color: Colors.black.withValues(alpha: 0.18),
                         blurRadius: 16,
                         offset: const Offset(0, 8),
                       ),
                     ],
                   ),
-                  child: Image.asset('assets/images/ybs_logo.png'),
+                  child: Icon(icon, color: accentColor, size: 31),
                 ),
-                Container(
-                  width: 118,
-                  height: 86,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.17),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.20),
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(30),
-                    child: Image.asset(
-                      'assets/images/character.png',
-                      height: 86,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 260),
-                  child: Container(
-                    key: ValueKey(icon),
-                    width: 58,
-                    height: 58,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.18),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: Icon(icon, color: accentColor, size: 31),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 16),

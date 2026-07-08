@@ -354,6 +354,16 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
 
   String get _studyMode => resolveCourseStudyMode(_course);
 
+  bool get _hasCourseBook {
+    final url = _courseBookUrl.trim();
+    if (!_isHttpUrl(url)) return false;
+
+    final ext = _courseBookExt.trim().toLowerCase().isEmpty
+        ? _inferCourseBookExtensionFromUrl(url)
+        : _courseBookExt.trim().toLowerCase();
+    return ext == 'pdf' || ext == 'html' || ext == 'htm';
+  }
+
   String get _legacyVariantKey =>
       (_course['variantKey'] ?? _course['variant'] ?? '')
           .toString()
@@ -1699,7 +1709,10 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
               ? Map<String, dynamic>.from(s['courseBook'] as Map)
               : const <String, dynamic>{};
           _courseBookUrl = (courseBookMap['url'] ?? '').toString().trim();
-          _courseBookExt = (courseBookMap['ext'] ?? '').toString().trim().toLowerCase();
+          _courseBookExt = (courseBookMap['ext'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
           final List<Map<String, dynamic>> flat = [];
           final modules = s['modules'];
           if (modules is List) {
@@ -3739,6 +3752,7 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
           final s = (v ?? '').toString().trim().toLowerCase();
           return s == 'true' || s == '1';
         }
+
         for (final e in pm.entries) {
           final sid = e.key.toString().trim();
           if (sid.isEmpty || e.value is! Map) continue;
@@ -4174,36 +4188,50 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
   }
 
   Widget _recordedActionGrid({required bool compact}) {
-    return Column(
-      children: [
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final effectiveCompact = compact || constraints.maxWidth < 360;
+        final tiles = <Widget>[
+          _heroActionTile(
+            label: 'Review',
+            subtitle: 'Progress',
+            icon: Icons.reviews_rounded,
+            iconBg: const Color(0xFF223E79),
+            iconFg: const Color(0xFF52A3FF),
+            onTap: _openReviewSheet,
+            compact: effectiveCompact,
+          ),
+          if (_hasCourseBook)
+            _heroActionTile(
+              label: 'Book',
+              subtitle: 'Course',
+              icon: Icons.menu_book_rounded,
+              iconBg: const Color(0xFF0E4F8A),
+              iconFg: const Color(0xFF6FE8F1),
+              onTap: _openCourseBook,
+              compact: effectiveCompact,
+            ),
+          _heroActionTile(
+            label: 'Message',
+            subtitle: 'Teacher',
+            icon: Icons.mail_rounded,
+            iconBg: const Color(0xFF4A2F77),
+            iconFg: const Color(0xFFD279FF),
+            onTap: _mailingTeacher ? null : _mailTeacherDirectly,
+            compact: effectiveCompact,
+          ),
+        ];
+
+        return Row(
           children: [
-            Expanded(
-              child: _heroActionTile(
-                label: 'Review',
-                subtitle: 'Progress',
-                icon: Icons.reviews_rounded,
-                iconBg: const Color(0xFF223E79),
-                iconFg: const Color(0xFF52A3FF),
-                onTap: _openReviewSheet,
-                compact: compact,
-              ),
-            ),
-            _heroDividerV(compact: compact),
-            Expanded(
-              child: _heroActionTile(
-                label: 'Message',
-                subtitle: 'Teacher',
-                icon: Icons.mail_rounded,
-                iconBg: const Color(0xFF4A2F77),
-                iconFg: const Color(0xFFD279FF),
-                onTap: _mailingTeacher ? null : _mailTeacherDirectly,
-                compact: compact,
-              ),
-            ),
+            for (int i = 0; i < tiles.length; i++) ...[
+              Expanded(child: tiles[i]),
+              if (i != tiles.length - 1)
+                _heroDividerV(compact: effectiveCompact),
+            ],
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -6281,6 +6309,15 @@ class _LearnerCourseDetailScreenState extends State<LearnerCourseDetailScreen>
     if (lower.endsWith('.pdf')) return 'pdf';
     if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
     return 'pdf';
+  }
+
+  String _inferCourseBookExtensionFromUrl(String url) {
+    final uri = Uri.tryParse(url.trim());
+    final path = (uri?.path ?? url).toLowerCase();
+    if (path.endsWith('.pdf')) return 'pdf';
+    if (path.endsWith('.html')) return 'html';
+    if (path.endsWith('.htm')) return 'htm';
+    return '';
   }
 
   Widget _sessionLessonRow(Map<String, dynamic> s) {
