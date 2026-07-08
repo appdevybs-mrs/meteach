@@ -40,6 +40,7 @@ import 'shared/app_feedback.dart';
 import 'shared/app_connectivity.dart';
 import 'shared/course_join_rules.dart';
 import 'shared/human_error.dart';
+import 'shared/promo_redemption.dart';
 import 'shared/profile_avatar.dart';
 import 'shared/ybs_busy_logo.dart';
 import 'shared/icon_theme.dart';
@@ -5211,7 +5212,7 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
     _promoError = false;
   }
 
-  void _confirmPromo() {
+  Future<void> _confirmPromo() async {
     final selected = _selectedOption;
     final baseFee = selected?.fee ?? 0;
     final code = PromoCode.normalize(promoC.text);
@@ -5245,14 +5246,33 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
       return;
     }
 
+    final check = await PromoRedemptionService.checkPromo(
+      courseId: course.id,
+      deliveryKey: selected.key,
+      code: code,
+      email: emailC.text,
+      phone: phoneC.text,
+      uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+    );
+    if (!mounted) return;
+    if (!check.isValid) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = check.message;
+        _promoError = true;
+      });
+      return;
+    }
+
     setState(() {
       promoC.text = code;
       _appliedPromo = AppliedPromo(
         promo: promo,
         originalFee: baseFee,
         discountAmount: discount,
+        usedCountAtConfirm: check.usedCount,
       );
-      _promoMessage = 'Promo code applied.';
+      _promoMessage = check.message;
       _promoError = false;
     });
   }
@@ -5402,6 +5422,31 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
           : '';
       final appliedPromo = _appliedPromo;
       final selectedFee = _effectiveFee(selected);
+      PromoReservation? promoReservation;
+
+      if (appliedPromo != null) {
+        promoReservation = await PromoRedemptionService.reservePromoUse(
+          courseId: course.id,
+          courseTitle: course.title,
+          deliveryKey: selected.key,
+          code: appliedPromo.promo.code,
+          email: emailC.text,
+          phone: phoneC.text,
+          fullName: fullNameC.text.trim(),
+          subscriptionId: ref.key ?? '',
+          uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        );
+        if (!promoReservation.success) {
+          if (!mounted) return;
+          setState(() {
+            _appliedPromo = null;
+            _promoMessage = promoReservation!.check.message;
+            _promoError = true;
+            saving = false;
+          });
+          return;
+        }
+      }
 
       await ref.set({
         'courseId': course.id,
@@ -5425,6 +5470,14 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
         'promoType': appliedPromo?.promo.type,
         'promoValue': appliedPromo?.promo.value,
         'discountAmount': appliedPromo?.discountAmount,
+        'promoUsageLimit': appliedPromo?.promo.usageLimit,
+        'promoMaxUsesPerUser': appliedPromo?.promo.maxUsesPerUser,
+        'promoExpiresAt': appliedPromo?.promo.expiresAt,
+        'promoUsedCountAfterApply': promoReservation?.usedCountAfterApply,
+        'promoAppliedAt': appliedPromo == null ? null : ServerValue.timestamp,
+        'promoClaimKeys': promoReservation == null
+            ? null
+            : {for (final key in promoReservation.claimKeys) key: true},
         'accessMode': selected.accessMode,
         'accessDurationMonths': selected.accessDurationMonths,
         'accessLabel': _accessSummary(selected),
@@ -6327,7 +6380,11 @@ class _CourseDetailsSheetState extends State<_CourseDetailsSheet>
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: saving ? null : _confirmPromo,
+                onPressed: saving
+                    ? null
+                    : () {
+                        _confirmPromo();
+                      },
                 style: FilledButton.styleFrom(
                   backgroundColor: accent,
                   foregroundColor: Colors.white,

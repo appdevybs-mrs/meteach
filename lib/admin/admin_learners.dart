@@ -2601,6 +2601,12 @@ class LearnerPrefill {
     this.promoType = '',
     this.promoValue,
     this.discountAmount,
+    this.promoUsageLimit,
+    this.promoMaxUsesPerUser,
+    this.promoExpiresAt,
+    this.promoUsedCountAfterApply,
+    this.promoAppliedAt,
+    this.promoClaimKeys = const <String, bool>{},
   });
 
   final String firstName;
@@ -2624,6 +2630,12 @@ class LearnerPrefill {
   final String promoType;
   final double? promoValue;
   final double? discountAmount;
+  final int? promoUsageLimit;
+  final int? promoMaxUsesPerUser;
+  final int? promoExpiresAt;
+  final int? promoUsedCountAfterApply;
+  final int? promoAppliedAt;
+  final Map<String, bool> promoClaimKeys;
 }
 
 enum LearnerGender {
@@ -3249,6 +3261,26 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
             if (prefill.discountedFee != null) {
               enrollmentPromo['discountedFee'] = prefill.discountedFee;
             }
+            if (prefill.promoUsageLimit != null) {
+              enrollmentPromo['promoUsageLimit'] = prefill.promoUsageLimit;
+            }
+            if (prefill.promoMaxUsesPerUser != null) {
+              enrollmentPromo['promoMaxUsesPerUser'] =
+                  prefill.promoMaxUsesPerUser;
+            }
+            if (prefill.promoExpiresAt != null) {
+              enrollmentPromo['promoExpiresAt'] = prefill.promoExpiresAt;
+            }
+            if (prefill.promoUsedCountAfterApply != null) {
+              enrollmentPromo['promoUsedCountAfterApply'] =
+                  prefill.promoUsedCountAfterApply;
+            }
+            if (prefill.promoAppliedAt != null) {
+              enrollmentPromo['promoAppliedAt'] = prefill.promoAppliedAt;
+            }
+            if (prefill.promoClaimKeys.isNotEmpty) {
+              enrollmentPromo['promoClaimKeys'] = prefill.promoClaimKeys;
+            }
           }
           if (enrollmentPromo.isNotEmpty) {
             courseData['enrollmentPromo'] = enrollmentPromo;
@@ -3279,6 +3311,12 @@ class _LearnerEditorScreenState extends State<LearnerEditorScreen> {
                 'selectedFee': prefill.selectedFee,
                 'originalFee': prefill.originalFee,
                 'discountedFee': prefill.discountedFee,
+                'promoUsageLimit': prefill.promoUsageLimit,
+                'promoMaxUsesPerUser': prefill.promoMaxUsesPerUser,
+                'promoExpiresAt': prefill.promoExpiresAt,
+                'promoUsedCountAfterApply': prefill.promoUsedCountAfterApply,
+                'promoAppliedAt': prefill.promoAppliedAt,
+                'promoClaimKeys': prefill.promoClaimKeys,
                 'fullName': '${prefill.firstName} ${prefill.lastName}'.trim(),
                 'courseTitle': prefill.courseTitle,
                 'createdAt': subMap['createdAt'] ?? ServerValue.timestamp,

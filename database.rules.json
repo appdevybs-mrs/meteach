@@ -466,8 +466,46 @@
         "promoType": { ".validate": "!newData.exists() || newData.isString()" },
         "promoValue": { ".validate": "!newData.exists() || newData.isNumber()" },
         "discountAmount": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "promoUsageLimit": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "promoMaxUsesPerUser": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "promoExpiresAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "promoUsedCountAfterApply": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "promoAppliedAt": { ".validate": "!newData.exists() || newData.isNumber() || newData.val() == now" },
+        "promoClaimKeys": { ".validate": "!newData.exists() || newData.hasChildren()" },
 
         "$other": { ".validate": false }
+      }
+    },
+
+    "promo_usage_counters": {
+      ".read": true,
+      "$code": {
+        ".write": "auth != null",
+        "usedCount": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && (root.child('admins').child(auth.uid).exists() || (!data.exists() && newData.val() == 1) || (data.exists() && newData.val() == data.val() + 1))"
+        },
+        "updatedAt": { ".validate": "newData.isNumber() || newData.val() == now" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "promo_claims": {
+      ".read": "auth != null",
+      "$code": {
+        "$identityKey": {
+          ".write": "auth != null && (!data.exists() || root.child('admins').child(auth.uid).exists())",
+          "subscriptionId": { ".validate": "newData.isString()" },
+          "courseId": { ".validate": "newData.isString()" },
+          "courseTitle": { ".validate": "newData.isString()" },
+          "deliveryKey": { ".validate": "newData.isString()" },
+          "promoCode": { ".validate": "newData.isString()" },
+          "fullName": { ".validate": "newData.isString()" },
+          "email": { ".validate": "!newData.exists() || newData.isString()" },
+          "phone": { ".validate": "!newData.exists() || newData.isString()" },
+          "uid": { ".validate": "!newData.exists() || newData.isString()" },
+          "createdAt": { ".validate": "newData.isNumber() || newData.val() == now" },
+          "$other": { ".validate": false }
+        }
       }
     },
 

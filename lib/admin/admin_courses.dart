@@ -2333,6 +2333,9 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
             type: entry.value.type,
             value: entry.value.value,
             enabled: entry.value.enabled,
+            usageLimit: entry.value.usageLimit,
+            maxUsesPerUser: entry.value.maxUsesPerUser,
+            expiresAt: entry.value.expiresAt,
           ),
         )
         .toList();
@@ -2354,9 +2357,25 @@ class _CourseEditorScreenState extends State<CourseEditorScreen> {
         type: type,
         value: value,
         enabled: item.enabled,
+        usageLimit: _parseIntOrNull(item.usageLimitC.text),
+        maxUsesPerUser: _parseIntOrNull(item.maxUsesPerUserC.text) ?? 1,
+        expiresAt: _parseExpiryDateMs(item.expiresAtC.text),
       );
     }
     return out;
+  }
+
+  static int? _parseExpiryDateMs(String input) {
+    final t = input.trim();
+    if (t.isEmpty) return null;
+    final parts = t.split('-');
+    if (parts.length != 3) return null;
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return null;
+    final endOfDay = DateTime(y, m, d, 23, 59, 59, 999);
+    return endOfDay.millisecondsSinceEpoch;
   }
 
   Widget _buildResponsiveSections(List<Widget> sections) {
@@ -2873,12 +2892,18 @@ class CoursePromoCode {
     required this.type,
     required this.value,
     required this.enabled,
+    this.usageLimit,
+    this.maxUsesPerUser = 1,
+    this.expiresAt,
   });
 
   final String code;
   final String type;
   final double value;
   final bool enabled;
+  final int? usageLimit;
+  final int maxUsesPerUser;
+  final int? expiresAt;
 
   static String normalizeCode(String raw) => raw.trim().toUpperCase();
 
@@ -2888,6 +2913,9 @@ class CoursePromoCode {
       'type': type == 'fixed' ? 'fixed' : 'percent',
       'value': value,
       'enabled': enabled,
+      if (usageLimit != null && usageLimit! > 0) 'usageLimit': usageLimit,
+      'maxUsesPerUser': maxUsesPerUser <= 0 ? 1 : maxUsesPerUser,
+      if (expiresAt != null && expiresAt! > 0) 'expiresAt': expiresAt,
     };
   }
 
@@ -2898,6 +2926,7 @@ class CoursePromoCode {
         type: 'percent',
         value: 0,
         enabled: false,
+        maxUsesPerUser: 1,
       );
     }
 
@@ -2916,6 +2945,10 @@ class CoursePromoCode {
       type: rawType == 'fixed' ? 'fixed' : 'percent',
       value: value,
       enabled: m['enabled'] != false,
+      usageLimit: _parseInt(m['usageLimit'] ?? m['usage_limit']),
+      maxUsesPerUser:
+          _parseInt(m['maxUsesPerUser'] ?? m['max_uses_per_user']) ?? 1,
+      expiresAt: _parseInt(m['expiresAt'] ?? m['expires_at']),
     );
   }
 
@@ -2929,6 +2962,13 @@ class CoursePromoCode {
     });
     return out;
   }
+
+  static int? _parseInt(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw.toString().trim());
+  }
 }
 
 class _EditablePromoCode {
@@ -2937,18 +2977,43 @@ class _EditablePromoCode {
     required String type,
     required double value,
     required this.enabled,
+    int? usageLimit,
+    int maxUsesPerUser = 1,
+    int? expiresAt,
   }) : codeC = TextEditingController(text: code),
        valueC = TextEditingController(text: value <= 0 ? '' : value.toString()),
+       usageLimitC = TextEditingController(
+         text: usageLimit == null || usageLimit <= 0
+             ? ''
+             : usageLimit.toString(),
+       ),
+       maxUsesPerUserC = TextEditingController(
+         text: maxUsesPerUser <= 0 ? '1' : maxUsesPerUser.toString(),
+       ),
+       expiresAtC = TextEditingController(text: _formatDate(expiresAt)),
        type = type == 'fixed' ? 'fixed' : 'percent';
 
   final TextEditingController codeC;
   final TextEditingController valueC;
+  final TextEditingController usageLimitC;
+  final TextEditingController maxUsesPerUserC;
+  final TextEditingController expiresAtC;
   String type;
   bool enabled;
 
   void dispose() {
     codeC.dispose();
     valueC.dispose();
+    usageLimitC.dispose();
+    maxUsesPerUserC.dispose();
+    expiresAtC.dispose();
+  }
+
+  static String _formatDate(int? ms) {
+    if (ms == null || ms <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)}';
   }
 }
 
@@ -3386,6 +3451,9 @@ class _PromoCodesEditor extends StatelessWidget {
                       type: 'percent',
                       value: 0,
                       enabled: true,
+                      usageLimit: null,
+                      maxUsesPerUser: 1,
+                      expiresAt: null,
                     ),
                   );
                   onChanged();
@@ -3529,6 +3597,107 @@ class _PromoCodeRow extends StatelessWidget {
                     },
                   ),
                 ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: item.usageLimitC,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Total uses',
+                    hintText: 'Unlimited',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => onChanged(),
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.isEmpty) return null;
+                    final n = int.tryParse(t);
+                    if (n == null) return 'Whole number required';
+                    if (n <= 0) return 'Must be > 0';
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: item.maxUsesPerUserC,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Uses per user',
+                    hintText: '1',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => onChanged(),
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.isEmpty) return null;
+                    final n = int.tryParse(t);
+                    if (n == null) return 'Whole number required';
+                    if (n <= 0) return 'Must be > 0';
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: item.expiresAtC,
+                  readOnly: true,
+                  decoration: InputDecoration(
+                    labelText: 'Expires on',
+                    hintText: 'No expiry',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (item.expiresAtC.text.trim().isNotEmpty)
+                          IconButton(
+                            tooltip: 'Clear date',
+                            onPressed: () {
+                              item.expiresAtC.clear();
+                              onChanged();
+                            },
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        IconButton(
+                          tooltip: 'Pick date',
+                          onPressed: () async {
+                            final now = DateTime.now();
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: now,
+                              firstDate: DateTime(now.year - 1),
+                              lastDate: DateTime(now.year + 10),
+                            );
+                            if (picked == null) return;
+                            String two(int n) => n.toString().padLeft(2, '0');
+                            item.expiresAtC.text =
+                                '${picked.year}-${two(picked.month)}-${two(picked.day)}';
+                            onChanged();
+                          },
+                          icon: const Icon(Icons.calendar_month_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.isEmpty) return null;
+                    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(t)) {
+                      return 'Use YYYY-MM-DD';
+                    }
+                    return null;
+                  },
+                ),
               ),
             ],
           ),

@@ -91,15 +91,12 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
             return StreamBuilder<DatabaseEvent>(
               stream: _historyRef.onValue,
               builder: (context, snap2) {
-                final history =
-                    parsePromoHistory(snap2.data?.snapshot.value);
+                final history = parsePromoHistory(snap2.data?.snapshot.value);
                 final summaries = _promoSummaries(allItems, history);
                 final items = _filterByPromo(allItems, _promoFilter);
 
                 if (allItems.isEmpty && history.isEmpty) {
-                  return const Center(
-                    child: Text('No subscriptions yet.'),
-                  );
+                  return const Center(child: Text('No subscriptions yet.'));
                 }
 
                 final webWide = isWebDesktop(context, minWidth: 1100);
@@ -116,9 +113,7 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
                             filteredCount: items.length,
                           ),
                         ),
-                        const SliverToBoxAdapter(
-                          child: SizedBox(height: 10),
-                        ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 10)),
                         if (items.isEmpty)
                           const SliverToBoxAdapter(
                             child: Center(
@@ -131,11 +126,11 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
                           SliverGrid(
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: 3.4,
-                            ),
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                  childAspectRatio: 3.4,
+                                ),
                             delegate: SliverChildBuilderDelegate(
                               (context, i) =>
                                   _buildSubscriptionTile(context, items[i]),
@@ -337,9 +332,7 @@ class _AdminSubscriptionsScreenState extends State<AdminSubscriptionsScreen> {
                 child: TextButton.icon(
                   icon: const Icon(Icons.delete_sweep_rounded, size: 16),
                   label: const Text('Clear history'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.red,
-                  ),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
                   onPressed: () async {
                     final ok = await showDialog<bool>(
                       context: context,
@@ -640,6 +633,13 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                             promoType: sub.promoType,
                             promoValue: sub.promoValue,
                             discountAmount: sub.discountAmount,
+                            promoUsageLimit: sub.promoUsageLimit,
+                            promoMaxUsesPerUser: sub.promoMaxUsesPerUser,
+                            promoExpiresAt: sub.promoExpiresAt,
+                            promoUsedCountAfterApply:
+                                sub.promoUsedCountAfterApply,
+                            promoAppliedAt: sub.promoAppliedAt,
+                            promoClaimKeys: sub.promoClaimKeys,
                           ),
                         ),
                       ),
@@ -683,7 +683,11 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                     sub.studyTypeDisplay,
                   ),
                 if (sub.studyModeLabel.isNotEmpty)
-                  _infoRow(Icons.laptop_rounded, 'Study mode', sub.studyModeLabel),
+                  _infoRow(
+                    Icons.laptop_rounded,
+                    'Study mode',
+                    sub.studyModeLabel,
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -704,7 +708,11 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                       sub.accessDurationMonths.toString(),
                     ),
                   if (sub.accessLabel.trim().isNotEmpty)
-                    _infoRow(Icons.label_rounded, 'Access label', sub.accessLabel),
+                    _infoRow(
+                      Icons.label_rounded,
+                      'Access label',
+                      sub.accessLabel,
+                    ),
                 ],
               ),
             ],
@@ -928,7 +936,9 @@ class SubscriptionDetailsScreen extends StatelessWidget {
                       color: actionOrange,
                     ),
                   ),
-                  if (hasPromo && sub.promoValue != null && sub.promoValue! > 0) ...[
+                  if (hasPromo &&
+                      sub.promoValue != null &&
+                      sub.promoValue! > 0) ...[
                     const SizedBox(width: 8),
                     _pill(
                       label: sub.promoType == 'percent'
@@ -953,8 +963,8 @@ class SubscriptionDetailsScreen extends StatelessWidget {
               sub.promoValue == null
                   ? ''
                   : sub.promoType == 'percent'
-                      ? '${sub.promoValue!.toStringAsFixed(0)}%'
-                      : '${sub.promoValue!.toStringAsFixed(0)} DA',
+                  ? '${sub.promoValue!.toStringAsFixed(0)}%'
+                  : '${sub.promoValue!.toStringAsFixed(0)} DA',
             ),
             if (hasDiscount)
               _infoRow(
@@ -1013,7 +1023,11 @@ class SubscriptionDetailsScreen extends StatelessWidget {
         children: [
           SizedBox(
             width: 20,
-            child: Icon(icon, size: 16, color: actionOrange.withValues(alpha: 0.7)),
+            child: Icon(
+              icon,
+              size: 16,
+              color: actionOrange.withValues(alpha: 0.7),
+            ),
           ),
           const SizedBox(width: 6),
           SizedBox(
@@ -1030,7 +1044,8 @@ class SubscriptionDetailsScreen extends StatelessWidget {
           Expanded(
             child: Text(
               displayValue,
-              style: valueStyle ??
+              style:
+                  valueStyle ??
                   TextStyle(
                     fontWeight: FontWeight.w700,
                     color: Colors.black.withValues(alpha: 0.7),
@@ -1051,11 +1066,7 @@ class SubscriptionDetailsScreen extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: fg),
       ),
     );
   }
@@ -1472,13 +1483,15 @@ List<_PromoHistoryEntry> parsePromoHistory(dynamic v) {
     final m = val.map((kk, vv) => MapEntry(kk.toString(), vv));
     final code = (m['promoCode'] ?? '').toString().trim();
     if (code.isEmpty) return;
-    out.add(_PromoHistoryEntry(
-      promoCode: code,
-      discountAmount: _asDouble(m['discountAmount']),
-      selectedFee: _asDouble(m['selectedFee']),
-      originalFee: _asDouble(m['originalFee']),
-      discountedFee: _asDouble(m['discountedFee']),
-    ));
+    out.add(
+      _PromoHistoryEntry(
+        promoCode: code,
+        discountAmount: _asDouble(m['discountAmount']),
+        selectedFee: _asDouble(m['selectedFee']),
+        originalFee: _asDouble(m['originalFee']),
+        discountedFee: _asDouble(m['discountedFee']),
+      ),
+    );
   });
   return out;
 }
@@ -1510,6 +1523,12 @@ class SubscriptionItem {
     required this.promoType,
     required this.promoValue,
     required this.discountAmount,
+    required this.promoUsageLimit,
+    required this.promoMaxUsesPerUser,
+    required this.promoExpiresAt,
+    required this.promoUsedCountAfterApply,
+    required this.promoAppliedAt,
+    required this.promoClaimKeys,
     required this.accessMode,
     required this.accessDurationMonths,
     required this.accessLabel,
@@ -1537,6 +1556,12 @@ class SubscriptionItem {
   final String promoType;
   final double? promoValue;
   final double? discountAmount;
+  final int? promoUsageLimit;
+  final int? promoMaxUsesPerUser;
+  final int? promoExpiresAt;
+  final int? promoUsedCountAfterApply;
+  final int? promoAppliedAt;
+  final Map<String, bool> promoClaimKeys;
   final String accessMode;
   final int? accessDurationMonths;
   final String accessLabel;
@@ -1584,6 +1609,16 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
       if (s.isNotEmpty) return s;
     }
     return '';
+  }
+
+  Map<String, bool> readBoolMap(dynamic raw) {
+    if (raw is! Map) return const <String, bool>{};
+    final out = <String, bool>{};
+    raw.forEach((key, value) {
+      if (key == null) return;
+      out[key.toString()] = value == true;
+    });
+    return out;
   }
 
   final out = <SubscriptionItem>[];
@@ -1644,6 +1679,30 @@ List<SubscriptionItem> parseSubscriptions(dynamic v) {
         promoType: readString(m, ['promoType', 'promo_type']),
         promoValue: asDouble(m['promoValue'] ?? m['promo_value']),
         discountAmount: asDouble(m['discountAmount'] ?? m['discount_amount']),
+        promoUsageLimit:
+            (m['promoUsageLimit'] ?? m['promo_usage_limit']) == null
+            ? null
+            : asInt(m['promoUsageLimit'] ?? m['promo_usage_limit']),
+        promoMaxUsesPerUser:
+            (m['promoMaxUsesPerUser'] ?? m['promo_max_uses_per_user']) == null
+            ? null
+            : asInt(m['promoMaxUsesPerUser'] ?? m['promo_max_uses_per_user']),
+        promoExpiresAt: (m['promoExpiresAt'] ?? m['promo_expires_at']) == null
+            ? null
+            : asInt(m['promoExpiresAt'] ?? m['promo_expires_at']),
+        promoUsedCountAfterApply:
+            (m['promoUsedCountAfterApply'] ??
+                    m['promo_used_count_after_apply']) ==
+                null
+            ? null
+            : asInt(
+                m['promoUsedCountAfterApply'] ??
+                    m['promo_used_count_after_apply'],
+              ),
+        promoAppliedAt: (m['promoAppliedAt'] ?? m['promo_applied_at']) == null
+            ? null
+            : asInt(m['promoAppliedAt'] ?? m['promo_applied_at']),
+        promoClaimKeys: readBoolMap(m['promoClaimKeys']),
         accessMode: readString(m, ['accessMode', 'access_mode']),
         accessDurationMonths:
             (m['accessDurationMonths'] ?? m['access_duration_months']) == null

@@ -1,9 +1,11 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'shared/human_error.dart';
 import 'shared/app_feedback.dart';
+import 'shared/promo_redemption.dart';
 import 'shared/responsive_layout.dart';
 import 'widgets/enrollment_success_dialog.dart';
 
@@ -308,12 +310,18 @@ class PromoCode {
     required this.type,
     required this.value,
     required this.enabled,
+    this.usageLimit,
+    this.maxUsesPerUser = 1,
+    this.expiresAt,
   });
 
   final String code;
   final String type;
   final double value;
   final bool enabled;
+  final int? usageLimit;
+  final int maxUsesPerUser;
+  final int? expiresAt;
 
   static String normalize(String raw) => raw.trim().toUpperCase();
 
@@ -324,6 +332,7 @@ class PromoCode {
         type: 'percent',
         value: 0,
         enabled: false,
+        maxUsesPerUser: 1,
       );
     }
 
@@ -342,6 +351,10 @@ class PromoCode {
       type: rawType == 'fixed' ? 'fixed' : 'percent',
       value: value,
       enabled: m['enabled'] != false,
+      usageLimit: _parseInt(m['usageLimit'] ?? m['usage_limit']),
+      maxUsesPerUser:
+          _parseInt(m['maxUsesPerUser'] ?? m['max_uses_per_user']) ?? 1,
+      expiresAt: _parseInt(m['expiresAt'] ?? m['expires_at']),
     );
   }
 
@@ -361,6 +374,13 @@ class PromoCode {
     final discount = type == 'fixed' ? value : price * (value / 100);
     return discount.clamp(0, price).toDouble();
   }
+
+  static int? _parseInt(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw.toString().trim());
+  }
 }
 
 class AppliedPromo {
@@ -368,11 +388,13 @@ class AppliedPromo {
     required this.promo,
     required this.originalFee,
     required this.discountAmount,
+    this.usedCountAtConfirm = 0,
   });
 
   final PromoCode promo;
   final double originalFee;
   final double discountAmount;
+  final int usedCountAtConfirm;
 
   double get finalFee => (originalFee - discountAmount).clamp(0, originalFee);
 }
@@ -504,7 +526,7 @@ class _EnrollScreenState extends State<EnrollScreen> {
     _promoError = false;
   }
 
-  void _confirmPromo() {
+  Future<void> _confirmPromo() async {
     final selected = _selectedOption;
     final baseFee = selected?.fee ?? 0;
     final code = PromoCode.normalize(promoC.text);
@@ -538,14 +560,33 @@ class _EnrollScreenState extends State<EnrollScreen> {
       return;
     }
 
+    final check = await PromoRedemptionService.checkPromo(
+      courseId: widget.courseId,
+      deliveryKey: selected.key,
+      code: code,
+      email: emailC.text,
+      phone: phoneC.text,
+      uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+    );
+    if (!mounted) return;
+    if (!check.isValid) {
+      setState(() {
+        _appliedPromo = null;
+        _promoMessage = check.message;
+        _promoError = true;
+      });
+      return;
+    }
+
     setState(() {
       promoC.text = code;
       _appliedPromo = AppliedPromo(
         promo: promo,
         originalFee: baseFee,
         discountAmount: discount,
+        usedCountAtConfirm: check.usedCount,
       );
-      _promoMessage = 'Promo code applied.';
+      _promoMessage = check.message;
       _promoError = false;
     });
   }
@@ -671,6 +712,31 @@ class _EnrollScreenState extends State<EnrollScreen> {
           : '';
       final appliedPromo = _appliedPromo;
       final selectedFee = _effectiveFee(selected);
+      PromoReservation? promoReservation;
+
+      if (appliedPromo != null) {
+        promoReservation = await PromoRedemptionService.reservePromoUse(
+          courseId: widget.courseId,
+          courseTitle: widget.courseTitle,
+          deliveryKey: selected.key,
+          code: appliedPromo.promo.code,
+          email: emailC.text,
+          phone: phoneC.text,
+          fullName: fullNameC.text.trim(),
+          subscriptionId: ref.key ?? '',
+          uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+        );
+        if (!promoReservation.success) {
+          if (!mounted) return;
+          setState(() {
+            _appliedPromo = null;
+            _promoMessage = promoReservation!.check.message;
+            _promoError = true;
+            saving = false;
+          });
+          return;
+        }
+      }
 
       await ref.set({
         'courseId': widget.courseId,
@@ -698,6 +764,14 @@ class _EnrollScreenState extends State<EnrollScreen> {
         'promoType': appliedPromo?.promo.type,
         'promoValue': appliedPromo?.promo.value,
         'discountAmount': appliedPromo?.discountAmount,
+        'promoUsageLimit': appliedPromo?.promo.usageLimit,
+        'promoMaxUsesPerUser': appliedPromo?.promo.maxUsesPerUser,
+        'promoExpiresAt': appliedPromo?.promo.expiresAt,
+        'promoUsedCountAfterApply': promoReservation?.usedCountAfterApply,
+        'promoAppliedAt': appliedPromo == null ? null : ServerValue.timestamp,
+        'promoClaimKeys': promoReservation == null
+            ? null
+            : {for (final key in promoReservation.claimKeys) key: true},
         'accessMode': selected.accessMode,
         'accessDurationMonths': selected.accessDurationMonths,
         'accessLabel': _accessSummary(selected),
@@ -927,7 +1001,11 @@ class _EnrollScreenState extends State<EnrollScreen> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: saving ? null : _confirmPromo,
+                onPressed: saving
+                    ? null
+                    : () {
+                        _confirmPromo();
+                      },
                 style: FilledButton.styleFrom(
                   backgroundColor: Brand.primaryBlue,
                   foregroundColor: Colors.white,
@@ -1157,7 +1235,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 controller: fullNameC,
                                 textInputAction: TextInputAction.next,
                                 scrollPadding: EdgeInsets.only(
-                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                  bottom:
+                                      MediaQuery.of(context).viewInsets.bottom +
+                                      80,
                                 ),
                                 decoration: _inputDeco(
                                   label: 'Full name | الاسم الكامل',
@@ -1185,7 +1265,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 keyboardType: TextInputType.phone,
                                 textInputAction: TextInputAction.next,
                                 scrollPadding: EdgeInsets.only(
-                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                  bottom:
+                                      MediaQuery.of(context).viewInsets.bottom +
+                                      80,
                                 ),
                                 decoration: _inputDeco(
                                   label: 'Phone number | رقم الهاتف',
@@ -1214,7 +1296,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 onTap: _pickDob,
                                 textInputAction: TextInputAction.next,
                                 scrollPadding: EdgeInsets.only(
-                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                  bottom:
+                                      MediaQuery.of(context).viewInsets.bottom +
+                                      80,
                                 ),
                                 decoration: _inputDeco(
                                   label: 'Date of birth | تاريخ الميلاد',
@@ -1336,7 +1420,9 @@ class _EnrollScreenState extends State<EnrollScreen> {
                                 keyboardType: TextInputType.emailAddress,
                                 textInputAction: TextInputAction.done,
                                 scrollPadding: EdgeInsets.only(
-                                  bottom: MediaQuery.of(context).viewInsets.bottom + 80,
+                                  bottom:
+                                      MediaQuery.of(context).viewInsets.bottom +
+                                      80,
                                 ),
                                 decoration: _inputDeco(
                                   label:
@@ -1861,7 +1947,11 @@ class _SelectedOptionSummary extends StatelessWidget {
 }
 
 class _PromoPricePill extends StatelessWidget {
-  const _PromoPricePill({required this.icon, required this.label, this.accentColor});
+  const _PromoPricePill({
+    required this.icon,
+    required this.label,
+    this.accentColor,
+  });
 
   final IconData icon;
   final String label;
@@ -1876,13 +1966,19 @@ class _PromoPricePill extends StatelessWidget {
         color: useAccent ? accentColor!.withValues(alpha: 0.12) : Brand.appBg,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: useAccent ? accentColor!.withValues(alpha: 0.4) : Brand.uiBorder,
+          color: useAccent
+              ? accentColor!.withValues(alpha: 0.4)
+              : Brand.uiBorder,
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: useAccent ? accentColor : Brand.primaryBlue),
+          Icon(
+            icon,
+            size: 14,
+            color: useAccent ? accentColor : Brand.primaryBlue,
+          ),
           const SizedBox(width: 6),
           Text(
             label,
