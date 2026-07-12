@@ -305,6 +305,32 @@ class _AdminLearnersFeedbackScreenState
     return parsed.clamp(0, 100);
   }
 
+  _HomeworkOwner _ownerFromHomework({
+    required Map<String, dynamic> homework,
+    required String fallbackUid,
+    required String fallbackNameHint,
+    required Map<String, dynamic> users,
+  }) {
+    final assignedUid = (homework['assignedTeacherUid'] ?? '')
+        .toString()
+        .trim();
+    final uid = assignedUid.isNotEmpty ? assignedUid : fallbackUid.trim();
+    var nameHint = assignedUid.isNotEmpty
+        ? _firstNonEmpty([
+            homework['assignedTeacherName'],
+            homework['transferredToName'],
+            fallbackNameHint,
+          ])
+        : fallbackNameHint.trim();
+    if (uid.isNotEmpty) {
+      final user = _safeMap(users[uid]);
+      if (user.isNotEmpty) {
+        nameHint = _fullName(user, nameHint.isEmpty ? 'Teacher' : nameHint);
+      }
+    }
+    return _HomeworkOwner(uid: uid, nameHint: nameHint);
+  }
+
   Map<String, List<_PendingHomeworkItem>> _groupPendingByLearner(
     List<_PendingHomeworkItem> items,
   ) {
@@ -620,10 +646,12 @@ class _AdminLearnersFeedbackScreenState
     final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
     final updates = <String, dynamic>{};
+    var transferCount = 0;
 
     for (final item in items) {
       if (item.homeworkRef.isEmpty || item.targetTeacherUid.isEmpty) continue;
       if (item.targetTeacherUid == item.ownerUid) continue;
+      transferCount += 1;
       updates['${item.homeworkRef}/originalTeacherUid'] = item.ownerUid;
       updates['${item.homeworkRef}/originalTeacherName'] = item.ownerName;
       updates['${item.homeworkRef}/assignedTeacherUid'] = item.targetTeacherUid;
@@ -682,11 +710,17 @@ class _AdminLearnersFeedbackScreenState
           now;
     }
 
-    if (updates.isEmpty) return;
+    if (updates.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No transferable homework found.')),
+      );
+      return;
+    }
     await _db.update(updates);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Transferred ${items.length} homework item(s).')),
+      SnackBar(content: Text('Transferred $transferCount homework item(s).')),
     );
     _refresh();
   }
@@ -822,12 +856,20 @@ class _AdminLearnersFeedbackScreenState
               : <String, dynamic>{...classHomework, ...learnerHomework};
           if (!_homeworkHasAssignment(homework)) continue;
 
+          final owner = _ownerFromHomework(
+            homework: homework,
+            fallbackUid: teacherUid,
+            fallbackNameHint: teacherNameHint,
+            users: users,
+          );
+          if (owner.uid.isEmpty) continue;
+
           _mergeHomeworkItem(
             itemsByRef,
             homeworkRef:
                 'users/$learnerUid/courses/$courseKey/attendance/$sessionId/homework',
-            teacherUid: teacherUid,
-            teacherNameHint: teacherNameHint,
+            teacherUid: owner.uid,
+            teacherNameHint: owner.nameHint,
             learnerUid: learnerUid,
             learnerName: learnerName,
             classId: classId,
@@ -896,11 +938,18 @@ class _AdminLearnersFeedbackScreenState
         final cls = _safeMap(classes[classId]);
         targetTeacher = _currentTeacherForClass(cls, users);
       }
+      final owner = _ownerFromHomework(
+        homework: homework,
+        fallbackUid: teacherRef.teacherUid,
+        fallbackNameHint: teacherRef.teacherNameHint,
+        users: users,
+      );
+      if (owner.uid.isEmpty) continue;
       _mergeHomeworkItem(
         itemsByRef,
         homeworkRef: homeworkRef,
-        teacherUid: teacherRef.teacherUid,
-        teacherNameHint: teacherRef.teacherNameHint,
+        teacherUid: owner.uid,
+        teacherNameHint: owner.nameHint,
         learnerUid: teacherRef.learnerUid,
         learnerName: learnerName,
         classId: classId,
@@ -1395,6 +1444,13 @@ class _CurrentTeacherTarget {
 
   final String uid;
   final String name;
+}
+
+class _HomeworkOwner {
+  const _HomeworkOwner({required this.uid, required this.nameHint});
+
+  final String uid;
+  final String nameHint;
 }
 
 class _PendingHomeworkItem {

@@ -828,9 +828,10 @@
     },
 
     "mail_threads": {
+      ".read": "auth != null && (root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
       "$threadId": {
-        ".read": "auth != null && data.child('participants').child(auth.uid).exists()",
-        ".write": "auth != null && (data.child('participants').child(auth.uid).exists() || (!data.exists() && newData.child('participants').child(auth.uid).exists()))",
+        ".read": "auth != null && (data.child('participants').child(auth.uid).exists() || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
+        ".write": "auth != null && (data.child('participants').child(auth.uid).exists() || (!data.exists() && newData.child('participants').child(auth.uid).exists()) || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
 
         "participants": {
           "$participantUid": {
@@ -867,7 +868,7 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         "$threadId": {
-          ".write": "auth != null && (auth.uid == $uid || root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists())",
+          ".write": "auth != null && (auth.uid == $uid || root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "(!newData.isString() && !newData.isNumber() && !newData.isBoolean()) && newData.child('updatedAt').isNumber() && (!newData.child('subject').exists() || newData.child('subject').isString()) && (!newData.child('lastMessage').exists() || newData.child('lastMessage').isString()) && (!newData.child('unreadCount').exists() || newData.child('unreadCount').isNumber()) && (!newData.child('peerUid').exists() || newData.child('peerUid').isString()) && (!newData.child('peerName').exists() || newData.child('peerName').isString()) && (!newData.child('deletedAt').exists() || newData.child('deletedAt').isNumber() || newData.child('deletedAt').val() == null) && (!newData.child('type').exists() || newData.child('type').isString()) && (!newData.child('homeworkRef').exists() || newData.child('homeworkRef').isString()) && (!newData.child('isGroup').exists() || newData.child('isGroup').isBoolean()) && (!newData.child('groupName').exists() || newData.child('groupName').isString()) && (!newData.child('groupPicUrl').exists() || newData.child('groupPicUrl').isString()) && (!newData.child('participantCount').exists() || newData.child('participantCount').isNumber())"
         }
       }
@@ -877,7 +878,7 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         "$threadId": {
-          ".write": "auth != null && (auth.uid == $uid || root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists())",
+          ".write": "auth != null && (auth.uid == $uid || root.child('mail_threads').child($threadId).child('participants').child(auth.uid).exists() || root.child('admins').child(auth.uid).exists() || root.child('users').child(auth.uid).child('role').val() == 'admin')",
           ".validate": "!newData.exists() || (!newData.isString() && !newData.isNumber() && !newData.isBoolean())"
         }
       }
