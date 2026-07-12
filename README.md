@@ -2,6 +2,10 @@
 
 Your Bridge School - Not for The Certificate, for The Skill
 
+## Release Version Rule
+
+When updating either the web or phone app version, increment both builds together by +1. Keep `pubspec.yaml` and `android/local.properties` synchronized, then rebuild both web and phone artifacts from the same version.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

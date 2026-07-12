@@ -228,6 +228,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
   Future<void> _createHomeworkMailAndOpen({
     required String sessionId,
     required String homeworkRefPath,
+    required String existingThreadId,
     required String teacherUid,
     required String teacherName,
     required String date,
@@ -245,7 +246,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
 
     // ✅ Deterministic thread per session (prevents duplicates/spam)
     // If learner undoes then marks done again, it continues same thread.
-    final threadId = '${_uid}_${teacherUid}_$sessionId';
+    final threadId = existingThreadId.trim().isNotEmpty
+        ? existingThreadId.trim()
+        : '${_uid}_${teacherUid}_$sessionId';
 
     final subject = _hwSubject(date: date, taughtTitle: taughtTitle);
 
@@ -322,6 +325,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
       'mail_threads/$threadId/learnerUid': _uid,
       'mail_threads/$threadId/teacherUid': teacherUid,
       'mail_threads/$threadId/homeworkRef': homeworkRefPath,
+      '$homeworkRefPath/threadId': threadId,
     };
 
     // Create the thread first. RTDB rules require the participant to already
@@ -764,11 +768,21 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
               ? _formatOnlineWhen(rec)
               : (rec['date'] ?? '').toString();
 
-          final seenAt = hw['seenAt'];
-          final doneAt = hw['doneAt'];
-          final submittedAt = hw['submittedAt'];
-          final reviewedAt = hw['reviewedAt'];
+          dynamic positiveOrNull(dynamic value) {
+            if (value is num) return value > 0 ? value : null;
+            final parsed = int.tryParse(value?.toString() ?? '');
+            return parsed != null && parsed > 0 ? parsed : null;
+          }
+
+          final seenAt = positiveOrNull(hw['seenAt']);
+          final doneAt = positiveOrNull(hw['doneAt']);
+          final submittedAt = positiveOrNull(hw['submittedAt']);
+          final reviewedAt = positiveOrNull(hw['reviewedAt']);
           final autoMailMsgKey = (hw['autoMailMsgKey'] ?? '').toString().trim();
+          final homeworkThreadId =
+              (hw['threadId'] ?? rec['homeworkThreadId'] ?? '')
+                  .toString()
+                  .trim();
           final reviewStatus = (hw['reviewStatus'] ?? '').toString().trim();
           final reviewScore = hw['reviewScore'];
           final reviewGrade = (hw['reviewGrade'] ?? '').toString().trim();
@@ -796,6 +810,7 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
             'doneAt': doneAt,
             'submittedAt': submittedAt,
             'autoMailMsgKey': autoMailMsgKey,
+            'homeworkThreadId': homeworkThreadId,
             'reviewedAt': reviewedAt,
             'reviewStatus': reviewStatus,
             'reviewScore': reviewScore,
@@ -1404,15 +1419,48 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                         const SizedBox(height: 10),
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: UiK.uiBorder.withValues(alpha: 0.85),
+                              color: UiK.actionOrange.withValues(alpha: 0.34),
                             ),
-                            color: Colors.white.withValues(alpha: 0.65),
+                            color: UiK.actionOrange.withValues(alpha: 0.08),
                           ),
-                          child: Text(text, style: UiK.subtleText()),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.assignment_rounded,
+                                    size: 18,
+                                    color: UiK.actionOrange.withValues(
+                                      alpha: 0.9,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Text(
+                                    'Homework',
+                                    style: TextStyle(
+                                      color: UiK.actionOrange.withValues(
+                                        alpha: 0.95,
+                                      ),
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                text,
+                                style: UiK.subtleText().copyWith(
+                                  color: UiK.mainText.withValues(alpha: 0.92),
+                                  height: 1.35,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                       const SizedBox(height: 12),
@@ -1493,6 +1541,9 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                             taughtTitle: taughtTitle,
                                             homeworkText: text,
                                             homeworkRefPath: homeworkRefPath,
+                                            existingThreadId:
+                                                (it['homeworkThreadId'] ?? '')
+                                                    .toString(),
                                           );
                                         } catch (e) {
                                           _showError(
@@ -1535,7 +1586,14 @@ class _LearnerHomeworkScreenState extends State<LearnerHomeworkScreen> {
                                       .trim();
                                   if (teacherUid.isEmpty) return;
                                   final threadId =
-                                      '${_uid}_${teacherUid}_$sessionId';
+                                      ((it['homeworkThreadId'] ?? '')
+                                          .toString()
+                                          .trim()
+                                          .isNotEmpty)
+                                      ? (it['homeworkThreadId'] ?? '')
+                                            .toString()
+                                            .trim()
+                                      : '${_uid}_${teacherUid}_$sessionId';
                                   final subject =
                                       '[HW] ${widget.courseTitle} • $date${taughtTitle.isEmpty ? '' : ' • $taughtTitle'}';
                                   await OfflineActionGuard.runExclusive(

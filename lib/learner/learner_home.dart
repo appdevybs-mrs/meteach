@@ -6456,6 +6456,7 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
   }
 
   final db = FirebaseDatabase.instance.ref();
+  final learnerUid = await _resolveLearnerUidForAuth(db, uid);
   final p = _paletteFromTheme();
 
   final courses = <_HomeworkPickerCourse>[];
@@ -6485,6 +6486,7 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
         int numVal(dynamic vv) =>
             (vv is num) ? vv.toInt() : int.tryParse(vv?.toString() ?? '') ?? 0;
         final assignedAt = numVal(m['assignedAt']);
+        bool isDone(dynamic value) => numVal(value) > 0;
 
         int pendingCount = 0;
         final attendance = m['attendance'];
@@ -6499,9 +6501,31 @@ Future<void> _openHomeworkCoursePicker(BuildContext context) async {
             final text = (hwMap['text'] ?? '').toString().trim();
             final due = (hwMap['dueDate'] ?? '').toString().trim();
             if (text.isEmpty && due.isEmpty) continue;
-            if (hwMap['doneAt'] == null) pendingCount += 1;
+            if (!isDone(hwMap['doneAt'])) pendingCount += 1;
           }
         }
+
+        try {
+          final onlineSnap = await db
+              .child('booking_progress/$learnerUid/$courseId/online_attendance')
+              .get();
+          if (onlineSnap.exists && onlineSnap.value is Map) {
+            final onlineMap = Map<dynamic, dynamic>.from(
+              onlineSnap.value as Map,
+            );
+            for (final bookingVal in onlineMap.values) {
+              if (bookingVal is! Map) continue;
+              final rec = Map<dynamic, dynamic>.from(bookingVal);
+              final hwMapAny = rec['homework'];
+              if (hwMapAny is! Map) continue;
+              final hwMap = Map<dynamic, dynamic>.from(hwMapAny);
+              final text = (hwMap['text'] ?? '').toString().trim();
+              final due = (hwMap['dueDate'] ?? '').toString().trim();
+              if (text.isEmpty && due.isEmpty) continue;
+              if (!isDone(hwMap['doneAt'])) pendingCount += 1;
+            }
+          }
+        } catch (_) {}
 
         final catalogNode = coursesCatalog[courseId] ?? coursesCatalog[key];
         final catalogMap = (catalogNode is Map)
@@ -6917,9 +6941,21 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
     int undoneTotal = 0;
     final Set<String> courseKeysWithUndone = {};
 
+    int numVal(dynamic value) => (value is num)
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '') ?? 0;
+    bool isDone(dynamic value) => numVal(value) > 0;
+
     for (final c in courses) {
       final courseKey = (c['courseKey'] ?? '').toString().trim();
       if (courseKey.isEmpty) continue;
+      final courseMap = c['course'] is Map
+          ? Map<dynamic, dynamic>.from(c['course'] as Map)
+          : const <dynamic, dynamic>{};
+      final rawCourseId = (courseMap['id'] ?? courseMap['courseId'] ?? '')
+          .toString()
+          .trim();
+      final courseId = rawCourseId.isNotEmpty ? rawCourseId : courseKey;
 
       bool thisCourseHasUndone = false;
 
@@ -6938,7 +6974,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             final text = (hwMap['text'] ?? '').toString().trim();
             final due = (hwMap['dueDate'] ?? '').toString().trim();
             if (text.isEmpty && due.isEmpty) continue;
-            if (hwMap['doneAt'] == null) {
+            if (!isDone(hwMap['doneAt'])) {
               undoneTotal += 1;
               thisCourseHasUndone = true;
             }
@@ -6948,7 +6984,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
 
       try {
         final onlineSnap = await db
-            .child('booking_progress/$learnerUid/$courseKey/online_attendance')
+            .child('booking_progress/$learnerUid/$courseId/online_attendance')
             .get();
         if (onlineSnap.exists && onlineSnap.value is Map) {
           final onlineMap = Map<dynamic, dynamic>.from(onlineSnap.value as Map);
@@ -6961,7 +6997,7 @@ class _LearnerHomeworkHomeCard extends StatelessWidget {
             final text = (hwMap['text'] ?? '').toString().trim();
             final due = (hwMap['dueDate'] ?? '').toString().trim();
             if (text.isEmpty && due.isEmpty) continue;
-            if (hwMap['doneAt'] == null) {
+            if (!isDone(hwMap['doneAt'])) {
               undoneTotal += 1;
               thisCourseHasUndone = true;
             }
